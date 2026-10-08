@@ -46,7 +46,7 @@ Module Contents
 
 
    .. py:attribute:: datatypes
-      :value: ['string', 'integer', 'floating', 'boolean', 'datetime']
+      :value: ['string', 'integer', 'float', 'floating', 'boolean', 'datetime', 'enum', 'array', 'json_string']
 
 
 
@@ -73,10 +73,11 @@ Module Contents
 
 
 
-   .. py:method:: _crossSchemasCheck()
+   .. py:method:: _crossSchemasCheck(graphSchemas=None)
 
       Method designed to perform a series of checks across the defined schemas
-      @ In, None
+      @ In, graphSchemas, dict, optional registry of schemas to check; defaults
+          to the committed session registry (self.graphSchemas)
       @ Out, None
 
 
@@ -89,11 +90,65 @@ Module Contents
 
 
 
+   .. py:method:: _loadAndValidateSchemaFile(tomlFilename)
+
+      Parse one TOML schema file and run the per-file checks (base-schema
+      structure and allowed data types). Does not mutate session state.
+      @ In, tomlFilename, string, .toml file containing the schema
+      @ Out, configData, dict, parsed and per-file-validated schema
+
+
+
+   .. py:method:: importGraphSchemas(schemaFiles, crossCheck=True, replace=False)
+
+      Method that imports a batch of schemas atomically. Each file is parsed
+      and per-file-validated into a temporary candidate registry; the whole
+      candidate is cross-checked; session state (self.graphSchemas) is
+      replaced only once every check passes, so a failure anywhere leaves the
+      existing registry untouched (no partial load).
+      @ In, schemaFiles, dict, mapping {schemaName: tomlFilename}
+      @ In, crossCheck, bool, run whole-set cross-schema integrity (duplicate
+          nodes/relation-triples and endpoint resolution) on the candidate
+          before committing. Pass False for a known-partial batch whose
+          endpoints resolve in schemas loaded elsewhere (default True).
+      @ In, replace, bool, build the candidate from an empty registry rather
+          than layering on the committed set, so re-loading the same set is
+          idempotent instead of failing on existing names (default False).
+      @ Out, None
+
+
+
    .. py:method:: importGraphSchema(graphSchemaName, tomlFilename)
 
       Method that imports new schema contained in a .toml file
       @ In, graphSchemaName, string, name of the schema to be imported
       @ In, tomlFilename, string, .toml file contained the new schema
+      @ Out, None
+
+
+
+   .. py:method:: loadPredefinedGraphSchemas()
+
+      Method that loads the full curated set of predefined DACKAR schemas and
+      validates cross-schema integrity once the whole set is in memory. The
+      load is atomic (session state is replaced only after the whole set
+      validates) and idempotent (a repeat load rebuilds the same set rather
+      than failing on existing names).
+      @ In, None
+      @ Out, None
+
+
+
+   .. py:method:: removeGraphSchema(graphSchemaName)
+
+      Method that removes a single schema from the session registry and
+      revalidates the cross-schema references among the schemas that remain,
+      so the registry is never left with a relation pointing at a node label
+      the removal just deleted. The removal is atomic and symmetric with the
+      import path: session state (self.graphSchemas) is replaced only after
+      the remaining set validates, so a removal that would strand a reference
+      raises and leaves the existing registry untouched.
+      @ In, graphSchemaName, string, name of the schema to remove
       @ Out, None
 
 
@@ -182,6 +237,26 @@ Module Contents
       @ In, relID, string, specific relation
       @ In, propID, string, specific node property
       @ Out, allowedType, string, allowed type of the specified relation property
+
+
+
+   .. py:method:: _returnPropertyEnumValues(labelID, propID, isRelation=False)
+
+      Method that returns the declared enum_values of a node/relation property,
+      used for enum-membership validation. Returns None when the property
+      declares none (membership then cannot be checked).
+      @ In, labelID, string, node label or relation name
+      @ In, propID, string, property name
+      @ In, isRelation, bool, look up a relation property when True, else a node property
+      @ Out, enumValues, list|None, declared allowed values, or None if absent
+
+
+
+   .. py:method:: _createIteractivePlot(output_file='knowledge_graph_schema_interactive.html')
+
+      Method that renders the currently loaded schemas as an interactive HTML graph.
+      @ In, output_file, string, path of the HTML file to write
+      @ Out, None
 
 
 

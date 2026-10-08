@@ -1,0 +1,248 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.knowledge_graph.temporal_relations &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.knowledge_graph.temporal_relations</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.knowledge_graph.temporal_relations</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Allen's interval-algebra classification for the temporal-relation schema.</span>
+
+<span class="sd">Dependency-free helper (standard library only) so it can be unit-tested</span>
+<span class="sd">without pandas or a Neo4j driver. It computes the qualitative temporal</span>
+<span class="sd">relation between two events for the ``temporally_related.allen_relation``</span>
+<span class="sd">property defined in ``schemas/temporalRelationSchema.toml``.</span>
+
+<span class="sd">Both time-instant events (``t_end`` omitted / None -&gt; treated as a zero-length</span>
+<span class="sd">interval at ``t_start``) and time-interval events are supported. When an</span>
+<span class="sd">instant coincides with an interval endpoint, the point is treated as part of</span>
+<span class="sd">the interval (``starts`` / ``finishes``) rather than as merely touching it</span>
+<span class="sd">(``meets`` / ``met_by``).</span>
+
+<span class="sd">The returned string is always one of :data:`ALLEN_RELATIONS`, matching the</span>
+<span class="sd">enum values in the schema exactly.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">date</span><span class="p">,</span> <span class="n">datetime</span>
+
+<span class="c1"># The 13 Allen interval relations, matching the temporalRelationSchema enum.</span>
+<div class="viewcode-block" id="ALLEN_RELATIONS">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/temporal_relations/index.html#src.dackar.knowledge_graph.temporal_relations.ALLEN_RELATIONS">[docs]</a>
+<span class="n">ALLEN_RELATIONS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">"before"</span><span class="p">,</span> <span class="s2">"after"</span><span class="p">,</span> <span class="s2">"meets"</span><span class="p">,</span> <span class="s2">"met_by"</span><span class="p">,</span> <span class="s2">"overlaps"</span><span class="p">,</span> <span class="s2">"overlapped_by"</span><span class="p">,</span>
+    <span class="s2">"starts"</span><span class="p">,</span> <span class="s2">"started_by"</span><span class="p">,</span> <span class="s2">"during"</span><span class="p">,</span> <span class="s2">"contains"</span><span class="p">,</span> <span class="s2">"finishes"</span><span class="p">,</span> <span class="s2">"finished_by"</span><span class="p">,</span>
+    <span class="s2">"equals"</span><span class="p">,</span>
+<span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_coerce">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/temporal_relations/index.html#src.dackar.knowledge_graph.temporal_relations._coerce">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_coerce</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Coerce *value* to a comparable scalar.</span>
+
+<span class="sd">    ISO-8601 strings are parsed to ``datetime``; ``datetime``/``date`` and</span>
+<span class="sd">    numeric values are returned unchanged. A string that is not valid ISO-8601</span>
+<span class="sd">    is rejected with ``ValueError`` rather than returned for lexicographic</span>
+<span class="sd">    comparison, which would silently produce false temporal relations (e.g.</span>
+<span class="sd">    ``"9" &gt; "10"`` as strings).</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"malformed timestamp string </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">: not ISO-8601 and cannot "</span>
+                <span class="s2">"be compared temporally"</span>
+            <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="kc">None</span>
+    <span class="k">return</span> <span class="n">value</span></div>
+
+
+
+<div class="viewcode-block" id="_check_timezone_policy">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/temporal_relations/index.html#src.dackar.knowledge_graph.temporal_relations._check_timezone_policy">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_check_timezone_policy</span><span class="p">(</span><span class="n">values</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Enforce a uniform timezone policy across the datetime endpoints.</span>
+
+<span class="sd">    Timezone-aware and naive ``datetime`` values cannot be compared in Python</span>
+<span class="sd">    (it raises ``TypeError``), and silently assuming a timezone would invent</span>
+<span class="sd">    data. The explicit policy is therefore: every ``datetime`` endpoint in a</span>
+<span class="sd">    single call must be uniformly timezone-aware or uniformly naive.</span>
+<span class="sd">    """</span>
+    <span class="n">datetimes</span> <span class="o">=</span> <span class="p">[</span><span class="n">v</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">values</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">datetime</span><span class="p">)]</span>
+    <span class="n">aware</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">tzinfo</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">datetimes</span><span class="p">)</span>
+    <span class="n">naive</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">tzinfo</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">datetimes</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">aware</span> <span class="ow">and</span> <span class="n">naive</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">"cannot compare timezone-aware and naive timestamps; provide all "</span>
+            <span class="s2">"datetime endpoints with a consistent timezone policy"</span>
+        <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="allen_relation">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/temporal_relations/index.html#src.dackar.knowledge_graph.temporal_relations.allen_relation">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">allen_relation</span><span class="p">(</span><span class="n">a_start</span><span class="p">,</span> <span class="n">a_end</span><span class="p">,</span> <span class="n">b_start</span><span class="p">,</span> <span class="n">b_end</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Return the Allen relation of interval/instant A to B for edge (A)-&gt;(B).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        a_start: Start of A (``t_start``). Required.</span>
+<span class="sd">        a_end: End of A (``t_end``); None for a time-instant event.</span>
+<span class="sd">        b_start: Start of B (``t_start``). Required.</span>
+<span class="sd">        b_end: End of B (``t_end``); None for a time-instant event.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        One of :data:`ALLEN_RELATIONS` describing how A relates to B.</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        ValueError: if a timestamp string is not valid ISO-8601, if timezone-</span>
+<span class="sd">            aware and naive datetimes are mixed, if the endpoints are not</span>
+<span class="sd">            mutually comparable, or if either event's end precedes its start.</span>
+<span class="sd">    """</span>
+    <span class="n">a1</span> <span class="o">=</span> <span class="n">_coerce</span><span class="p">(</span><span class="n">a_start</span><span class="p">)</span>
+    <span class="n">a2</span> <span class="o">=</span> <span class="n">_coerce</span><span class="p">(</span><span class="n">a_start</span> <span class="k">if</span> <span class="n">a_end</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">a_end</span><span class="p">)</span>
+    <span class="n">b1</span> <span class="o">=</span> <span class="n">_coerce</span><span class="p">(</span><span class="n">b_start</span><span class="p">)</span>
+    <span class="n">b2</span> <span class="o">=</span> <span class="n">_coerce</span><span class="p">(</span><span class="n">b_start</span> <span class="k">if</span> <span class="n">b_end</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">b_end</span><span class="p">)</span>
+
+    <span class="n">_check_timezone_policy</span><span class="p">((</span><span class="n">a1</span><span class="p">,</span> <span class="n">a2</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">b2</span><span class="p">))</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">a2</span> <span class="o">&lt;</span> <span class="n">a1</span> <span class="ow">or</span> <span class="n">b2</span> <span class="o">&lt;</span> <span class="n">b1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"event t_end must not precede t_start"</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">a1</span> <span class="o">==</span> <span class="n">b1</span> <span class="ow">and</span> <span class="n">a2</span> <span class="o">==</span> <span class="n">b2</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"equals"</span>
+        <span class="k">if</span> <span class="n">a2</span> <span class="o">&lt;</span> <span class="n">b1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"before"</span>
+        <span class="k">if</span> <span class="n">a1</span> <span class="o">&gt;</span> <span class="n">b2</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"after"</span>
+
+        <span class="k">if</span> <span class="n">a1</span> <span class="o">&lt;</span> <span class="n">b1</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">a2</span> <span class="o">==</span> <span class="n">b1</span><span class="p">:</span>
+                <span class="k">return</span> <span class="s2">"meets"</span>
+            <span class="k">if</span> <span class="n">a2</span> <span class="o">&lt;</span> <span class="n">b2</span><span class="p">:</span>
+                <span class="k">return</span> <span class="s2">"overlaps"</span>
+            <span class="k">if</span> <span class="n">a2</span> <span class="o">==</span> <span class="n">b2</span><span class="p">:</span>
+                <span class="k">return</span> <span class="s2">"finished_by"</span>
+            <span class="k">return</span> <span class="s2">"contains"</span>  <span class="c1"># a2 &gt; b2</span>
+        <span class="k">if</span> <span class="n">a1</span> <span class="o">==</span> <span class="n">b1</span><span class="p">:</span>
+            <span class="c1"># a2 != b2 (equality handled above)</span>
+            <span class="k">return</span> <span class="s2">"starts"</span> <span class="k">if</span> <span class="n">a2</span> <span class="o">&lt;</span> <span class="n">b2</span> <span class="k">else</span> <span class="s2">"started_by"</span>
+        <span class="c1"># a1 &gt; b1 (and a1 &lt;= b2)</span>
+        <span class="k">if</span> <span class="n">a2</span> <span class="o">==</span> <span class="n">b2</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"finishes"</span>
+        <span class="k">if</span> <span class="n">a1</span> <span class="o">==</span> <span class="n">b2</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"met_by"</span>
+        <span class="k">if</span> <span class="n">a2</span> <span class="o">&lt;</span> <span class="n">b2</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"during"</span>
+        <span class="k">return</span> <span class="s2">"overlapped_by"</span>  <span class="c1"># a2 &gt; b2</span>
+    <span class="k">except</span> <span class="ne">TypeError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="c1"># Endpoints of incomparable kinds (e.g. a number against a datetime)</span>
+        <span class="c1"># otherwise surface as an incidental TypeError; report it clearly.</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"temporal endpoints are not mutually comparable: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span>
+        <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,345 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.knowledge_graph.visualize_schema &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.knowledge_graph.visualize_schema</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.knowledge_graph.visualize_schema</h1><div class="highlight"><pre>
+<span></span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pyvis.network</span><span class="w"> </span><span class="kn">import</span> <span class="n">Network</span>
+
+<span class="c1"># If you need 3.10 compatibility, add fallback:</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">tomllib</span>  <span class="c1"># Python 3.11+</span>
+<span class="k">except</span> <span class="ne">ModuleNotFoundError</span><span class="p">:</span>  <span class="c1"># pragma: no cover</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">tomli</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">tomllib</span>   <span class="c1"># Python 3.10 fallback</span>
+
+
+<div class="viewcode-block" id="_iter_relations">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/visualize_schema/index.html#src.dackar.knowledge_graph.visualize_schema._iter_relations">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_iter_relations</span><span class="p">(</span><span class="n">relations_section</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Yield (relation_name, relation_entry) for each concrete relation entry.</span>
+<span class="sd">    Supports both:</span>
+<span class="sd">      - relation_name -&gt; dict</span>
+<span class="sd">      - relation_name -&gt; list[dict]</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">relations_section</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span>  <span class="c1"># or raise ValueError</span>
+
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">relations_section</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">yield</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="k">yield</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">entry</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Relation '</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">' contains non-dict entry: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Relation '</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">' is not dict or list: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_collect_nodes">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/visualize_schema/index.html#src.dackar.knowledge_graph.visualize_schema._collect_nodes">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_collect_nodes</span><span class="p">(</span><span class="n">schema</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+    <span class="n">nodes</span> <span class="o">=</span> <span class="n">schema</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"node"</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">nodes</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"'node' section is not a dict."</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{}</span>
+    <span class="k">return</span> <span class="n">nodes</span></div>
+
+
+
+<div class="viewcode-block" id="_collect_relations">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/visualize_schema/index.html#src.dackar.knowledge_graph.visualize_schema._collect_relations">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_collect_relations</span><span class="p">(</span><span class="n">schema</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]:</span>
+    <span class="n">relations</span> <span class="o">=</span> <span class="n">schema</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation"</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">_iter_relations</span><span class="p">(</span><span class="n">relations</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="createInteractiveFile">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/visualize_schema/index.html#src.dackar.knowledge_graph.visualize_schema.createInteractiveFile">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">createInteractiveFile</span><span class="p">(</span><span class="n">schema_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+                          <span class="n">output_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"knowledge_graph_schema_interactive.html"</span><span class="p">,</span>
+                          <span class="n">namespace_by_schema</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+                          <span class="n">raise_on_collision</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Build an interactive HTML visualization from a list of parsed schema dicts.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    schema_list : list[dict]</span>
+<span class="sd">        Each dict is a parsed TOML schema with 'node' and 'relation'.</span>
+<span class="sd">    output_file : str</span>
+<span class="sd">        Where to write the HTML.</span>
+<span class="sd">    namespace_by_schema : bool</span>
+<span class="sd">        If True, prefix node and relation labels with schema index to prevent collisions.</span>
+<span class="sd">    raise_on_collision : bool</span>
+<span class="sd">        If True, raise on duplicate node or relation names; else, log warning and overwrite.</span>
+<span class="sd">    """</span>
+    <span class="c1"># Build combined collections with optional namespacing</span>
+    <span class="n">combined_nodes</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">combined_relations</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">schema</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">schema_list</span><span class="p">):</span>
+        <span class="n">ns_prefix</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"s</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">::"</span> <span class="k">if</span> <span class="n">namespace_by_schema</span> <span class="k">else</span> <span class="s2">""</span>
+
+        <span class="n">nodes</span> <span class="o">=</span> <span class="n">_collect_nodes</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">node_label</span><span class="p">,</span> <span class="n">node_info</span> <span class="ow">in</span> <span class="n">nodes</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="n">ns_prefix</span> <span class="o">+</span> <span class="n">node_label</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">combined_nodes</span><span class="p">:</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"Duplicate node name after namespacing: '</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">'."</span>
+                <span class="k">if</span> <span class="n">raise_on_collision</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="n">combined_nodes</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">node_info</span>
+
+        <span class="k">for</span> <span class="n">rel_name</span><span class="p">,</span> <span class="n">rel_entry</span> <span class="ow">in</span> <span class="n">_collect_relations</span><span class="p">(</span><span class="n">schema</span><span class="p">):</span>
+            <span class="c1"># Normalize endpoints and move any description</span>
+            <span class="c1"># Standardize expected fields: from_entity and to_entity</span>
+            <span class="n">from_node</span> <span class="o">=</span> <span class="n">rel_entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"from_entity"</span><span class="p">)</span>
+            <span class="n">to_node</span> <span class="o">=</span> <span class="n">rel_entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"to_entity"</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">from_node</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">to_node</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Relation '</span><span class="si">{</span><span class="n">rel_name</span><span class="si">}</span><span class="s2">' missing endpoints: </span><span class="si">{</span><span class="n">rel_entry</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+                <span class="k">continue</span>
+
+            <span class="c1"># Apply same namespacing to endpoints so they connect to namespaced nodes if enabled</span>
+            <span class="n">rel_copy</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">rel_entry</span><span class="p">)</span>
+            <span class="n">rel_copy</span><span class="p">[</span><span class="s2">"from_node"</span><span class="p">]</span> <span class="o">=</span> <span class="n">ns_prefix</span> <span class="o">+</span> <span class="n">from_node</span> <span class="k">if</span> <span class="n">namespace_by_schema</span> <span class="k">else</span> <span class="n">from_node</span>
+            <span class="n">rel_copy</span><span class="p">[</span><span class="s2">"to_node"</span><span class="p">]</span> <span class="o">=</span> <span class="n">ns_prefix</span> <span class="o">+</span> <span class="n">to_node</span> <span class="k">if</span> <span class="n">namespace_by_schema</span> <span class="k">else</span> <span class="n">to_node</span>
+
+            <span class="n">combined_relations</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">ns_prefix</span> <span class="o">+</span> <span class="n">rel_name</span> <span class="k">if</span> <span class="n">namespace_by_schema</span> <span class="k">else</span> <span class="n">rel_name</span><span class="p">,</span> <span class="n">rel_copy</span><span class="p">))</span>
+
+    <span class="c1"># Optional: detect relation duplicates by (name, from_node, to_node)</span>
+    <span class="n">seen_rel_keys</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">rel</span> <span class="ow">in</span> <span class="n">combined_relations</span><span class="p">:</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">rel</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"from_node"</span><span class="p">),</span> <span class="n">rel</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"to_node"</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">seen_rel_keys</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"Duplicate relation entry: </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">"</span>
+            <span class="k">if</span> <span class="n">raise_on_collision</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="n">seen_rel_keys</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+
+    <span class="c1"># Create PyVis network</span>
+    <span class="n">net</span> <span class="o">=</span> <span class="n">Network</span><span class="p">(</span><span class="n">height</span><span class="o">=</span><span class="s2">"900px"</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="s2">"100%"</span><span class="p">,</span> <span class="n">directed</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="c1"># Colors</span>
+    <span class="n">node_color</span> <span class="o">=</span> <span class="s2">"#AED6F1"</span>          <span class="c1"># Main nodes</span>
+    <span class="n">relation_color</span> <span class="o">=</span> <span class="s2">"#F5B7B1"</span>      <span class="c1"># Relation nodes</span>
+    <span class="n">node_prop_color</span> <span class="o">=</span> <span class="s2">"#A9DFBF"</span>     <span class="c1"># Node properties</span>
+    <span class="n">relation_prop_color</span> <span class="o">=</span> <span class="s2">"#F9E79F"</span> <span class="c1"># Relation properties</span>
+
+    <span class="c1"># Add main nodes &amp; properties</span>
+    <span class="k">for</span> <span class="n">node_label</span><span class="p">,</span> <span class="n">node_info</span> <span class="ow">in</span> <span class="n">combined_nodes</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">description</span> <span class="o">=</span> <span class="n">node_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"node_description"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">net</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">node_label</span><span class="p">,</span>
+                     <span class="n">label</span><span class="o">=</span><span class="n">node_label</span><span class="p">,</span>
+                     <span class="n">title</span><span class="o">=</span><span class="n">description</span><span class="p">,</span>
+                     <span class="n">color</span><span class="o">=</span><span class="n">node_color</span><span class="p">,</span>
+                     <span class="n">shape</span><span class="o">=</span><span class="s2">"ellipse"</span><span class="p">)</span>
+
+        <span class="n">props</span> <span class="o">=</span> <span class="n">node_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"node_properties"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">prop</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">props</span><span class="p">):</span>
+            <span class="n">prop_node</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">node_label</span><span class="si">}</span><span class="s2">::prop::</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">prop_label</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">prop</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'name'</span><span class="p">,</span><span class="w"> </span><span class="s1">'?'</span><span class="p">)</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">prop</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'type'</span><span class="p">,</span><span class="w"> </span><span class="s1">'?'</span><span class="p">)</span><span class="si">}</span><span class="s2">)"</span>
+            <span class="n">prop_title</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="s1">'Optional'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">prop</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'optional'</span><span class="p">)</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'Required'</span><span class="si">}</span><span class="s2"> - </span><span class="si">{</span><span class="n">prop</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'description'</span><span class="p">,</span><span class="w"> </span><span class="s1">''</span><span class="p">)</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="s1">''</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">net</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">prop_node</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">prop_label</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="n">prop_title</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">node_prop_color</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="s2">"box"</span><span class="p">)</span>
+            <span class="c1"># No arrows for property edges</span>
+            <span class="n">net</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">node_label</span><span class="p">,</span> <span class="n">prop_node</span><span class="p">,</span> <span class="n">arrows</span><span class="o">=</span><span class="p">{</span><span class="s1">'to'</span><span class="p">:</span> <span class="p">{</span><span class="s1">'enabled'</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span> <span class="s1">'from'</span><span class="p">:</span> <span class="p">{</span><span class="s1">'enabled'</span><span class="p">:</span> <span class="kc">False</span><span class="p">}})</span>
+
+    <span class="c1"># Add relations</span>
+    <span class="k">for</span> <span class="n">rel_label</span><span class="p">,</span> <span class="n">rel_info</span> <span class="ow">in</span> <span class="n">combined_relations</span><span class="p">:</span>
+        <span class="n">rel_title</span> <span class="o">=</span> <span class="n">rel_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation_description"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">from_node</span> <span class="o">=</span> <span class="n">rel_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"from_node"</span><span class="p">)</span>
+        <span class="n">to_node</span> <span class="o">=</span> <span class="n">rel_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"to_node"</span><span class="p">)</span>
+
+        <span class="c1"># Guard: nodes must exist</span>
+        <span class="k">if</span> <span class="n">from_node</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">combined_nodes</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Relation '</span><span class="si">{</span><span class="n">rel_label</span><span class="si">}</span><span class="s2">' from '</span><span class="si">{</span><span class="n">from_node</span><span class="si">}</span><span class="s2">' not found among nodes. Skipping."</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">to_node</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">combined_nodes</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Relation '</span><span class="si">{</span><span class="n">rel_label</span><span class="si">}</span><span class="s2">' to '</span><span class="si">{</span><span class="n">to_node</span><span class="si">}</span><span class="s2">' not found among nodes. Skipping."</span><span class="p">)</span>
+            <span class="k">continue</span>
+
+        <span class="n">rel_node</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"rel::</span><span class="si">{</span><span class="n">rel_label</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">from_node</span><span class="si">}</span><span class="s2">-&gt;</span><span class="si">{</span><span class="n">to_node</span><span class="si">}</span><span class="s2">"</span>
+        <span class="n">net</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">rel_node</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">rel_label</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="n">rel_title</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">relation_color</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="s2">"ellipse"</span><span class="p">)</span>
+
+        <span class="c1"># Connect relation node between endpoints (directional chain)</span>
+        <span class="n">net</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">from_node</span><span class="p">,</span> <span class="n">rel_node</span><span class="p">)</span>    <span class="c1"># implicit arrows to rel_node disabled by default</span>
+        <span class="n">net</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">rel_node</span><span class="p">,</span> <span class="n">to_node</span><span class="p">)</span>      <span class="c1"># global arrows show direction to 'to_node'</span>
+
+        <span class="c1"># Relation properties (if any)</span>
+        <span class="n">rel_props</span> <span class="o">=</span> <span class="n">rel_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation_properties"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">prop</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">rel_props</span><span class="p">):</span>
+            <span class="n">prop_node</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">rel_node</span><span class="si">}</span><span class="s2">::prop::</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">prop_label</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">prop</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'name'</span><span class="p">,</span><span class="s1">'?'</span><span class="p">)</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">prop</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'type'</span><span class="p">,</span><span class="s1">'?'</span><span class="p">)</span><span class="si">}</span><span class="s2">)"</span>
+            <span class="n">prop_title</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="s1">'Optional'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">prop</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'optional'</span><span class="p">)</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'Required'</span><span class="si">}</span><span class="s2"> - </span><span class="si">{</span><span class="n">prop</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'description'</span><span class="p">,</span><span class="w"> </span><span class="s1">''</span><span class="p">)</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="s1">''</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">net</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">prop_node</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">prop_label</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="n">prop_title</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">relation_prop_color</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="s2">"box"</span><span class="p">)</span>
+            <span class="n">net</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">rel_node</span><span class="p">,</span> <span class="n">prop_node</span><span class="p">,</span> <span class="n">arrows</span><span class="o">=</span><span class="p">{</span><span class="s1">'to'</span><span class="p">:</span> <span class="p">{</span><span class="s1">'enabled'</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span> <span class="s1">'from'</span><span class="p">:</span> <span class="p">{</span><span class="s1">'enabled'</span><span class="p">:</span> <span class="kc">False</span><span class="p">}})</span>
+
+    <span class="c1"># Configure graph options</span>
+    <span class="n">net</span><span class="o">.</span><span class="n">set_options</span><span class="p">(</span><span class="s1">'''</span>
+<span class="s1">    var options = {</span>
+<span class="s1">      "nodes": {"font": {"size": 14}},</span>
+<span class="s1">      "edges": {</span>
+<span class="s1">        "font": {"size": 12, "align": "middle"},</span>
+<span class="s1">        "arrows": {"to": {"enabled": true}},</span>
+<span class="s1">        "smooth": {"type": "cubicBezier"}</span>
+<span class="s1">      },</span>
+<span class="s1">      "interaction": {</span>
+<span class="s1">        "hover": true,</span>
+<span class="s1">        "tooltipDelay": 100,</span>
+<span class="s1">        "navigationButtons": true</span>
+<span class="s1">      },</span>
+<span class="s1">      "physics": {</span>
+<span class="s1">        "enabled": true,</span>
+<span class="s1">        "barnesHut": {</span>
+<span class="s1">          "gravitationalConstant": -8000,</span>
+<span class="s1">          "centralGravity": 0.3,</span>
+<span class="s1">          "springLength": 95</span>
+<span class="s1">        }</span>
+<span class="s1">      }</span>
+<span class="s1">    }</span>
+<span class="s1">    '''</span><span class="p">)</span>
+
+    <span class="c1"># Write HTML</span>
+    <span class="n">net</span><span class="o">.</span><span class="n">write_html</span><span class="p">(</span><span class="n">output_file</span><span class="p">,</span> <span class="n">open_browser</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="c1"># Inject legend safely</span>
+    <span class="n">legend_html</span> <span class="o">=</span> <span class="s2">"""</span>
+<span class="s2">    &lt;div style='position:fixed;bottom:10px;left:10px;background:#fff;padding:10px;border:1px solid #ccc;font-family:Arial;font-size:14px;z-index:999;'&gt;</span>
+<span class="s2">      &lt;b&gt;Legend:&lt;/b&gt;&lt;br&gt;</span>
+<span class="s2">      &lt;span style='background-color:#AED6F1;padding:4px;'&gt; Main Node &lt;/span&gt;&lt;br&gt;</span>
+<span class="s2">      &lt;span style='background-color:#F5B7B1;padding:4px;'&gt; Relation Node &lt;/span&gt;&lt;br&gt;</span>
+<span class="s2">      &lt;span style='background-color:#A9DFBF;padding:4px;'&gt; Node Property &lt;/span&gt;&lt;br&gt;</span>
+<span class="s2">      &lt;span style='background-color:#F9E79F;padding:4px;'&gt; Relation Property &lt;/span&gt;</span>
+<span class="s2">    &lt;/div&gt;</span>
+<span class="s2">    """</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">output_file</span><span class="p">,</span> <span class="s2">"r+"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="k">if</span> <span class="s2">"&lt;/body&gt;"</span> <span class="ow">in</span> <span class="n">content</span><span class="p">:</span>
+                <span class="n">content</span> <span class="o">=</span> <span class="n">content</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"&lt;/body&gt;"</span><span class="p">,</span> <span class="n">legend_html</span> <span class="o">+</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">&lt;/body&gt;"</span><span class="p">)</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">truncate</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Could not find '&lt;/body&gt;' to inject legend; leaving file unchanged."</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Failed to inject legend into '</span><span class="si">{</span><span class="n">output_file</span><span class="si">}</span><span class="s2">': </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span></div>
+
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

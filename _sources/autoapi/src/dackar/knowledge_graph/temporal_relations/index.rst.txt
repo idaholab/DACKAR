@@ -1,0 +1,87 @@
+src.dackar.knowledge_graph.temporal_relations
+=============================================
+
+.. py:module:: src.dackar.knowledge_graph.temporal_relations
+
+.. autoapi-nested-parse::
+
+   Allen's interval-algebra classification for the temporal-relation schema.
+
+   Dependency-free helper (standard library only) so it can be unit-tested
+   without pandas or a Neo4j driver. It computes the qualitative temporal
+   relation between two events for the ``temporally_related.allen_relation``
+   property defined in ``schemas/temporalRelationSchema.toml``.
+
+   Both time-instant events (``t_end`` omitted / None -> treated as a zero-length
+   interval at ``t_start``) and time-interval events are supported. When an
+   instant coincides with an interval endpoint, the point is treated as part of
+   the interval (``starts`` / ``finishes``) rather than as merely touching it
+   (``meets`` / ``met_by``).
+
+   The returned string is always one of :data:`ALLEN_RELATIONS`, matching the
+   enum values in the schema exactly.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.knowledge_graph.temporal_relations.ALLEN_RELATIONS
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.knowledge_graph.temporal_relations._coerce
+   src.dackar.knowledge_graph.temporal_relations._check_timezone_policy
+   src.dackar.knowledge_graph.temporal_relations.allen_relation
+
+
+Module Contents
+---------------
+
+.. py:data:: ALLEN_RELATIONS
+   :value: ('before', 'after', 'meets', 'met_by', 'overlaps', 'overlapped_by', 'starts', 'started_by',...
+
+
+.. py:function:: _coerce(value)
+
+   Coerce *value* to a comparable scalar.
+
+   ISO-8601 strings are parsed to ``datetime``; ``datetime``/``date`` and
+   numeric values are returned unchanged. A string that is not valid ISO-8601
+   is rejected with ``ValueError`` rather than returned for lexicographic
+   comparison, which would silently produce false temporal relations (e.g.
+   ``"9" > "10"`` as strings).
+
+
+.. py:function:: _check_timezone_policy(values)
+
+   Enforce a uniform timezone policy across the datetime endpoints.
+
+   Timezone-aware and naive ``datetime`` values cannot be compared in Python
+   (it raises ``TypeError``), and silently assuming a timezone would invent
+   data. The explicit policy is therefore: every ``datetime`` endpoint in a
+   single call must be uniformly timezone-aware or uniformly naive.
+
+
+.. py:function:: allen_relation(a_start, a_end, b_start, b_end)
+
+   Return the Allen relation of interval/instant A to B for edge (A)->(B).
+
+   :param a_start: Start of A (``t_start``). Required.
+   :param a_end: End of A (``t_end``); None for a time-instant event.
+   :param b_start: Start of B (``t_start``). Required.
+   :param b_end: End of B (``t_end``); None for a time-instant event.
+
+   :returns: One of :data:`ALLEN_RELATIONS` describing how A relates to B.
+
+   :raises ValueError: if a timestamp string is not valid ISO-8601, if timezone-
+       aware and naive datetimes are mixed, if the endpoints are not
+       mutually comparable, or if either event's end precedes its start.
+
+

@@ -296,36 +296,45 @@ Module Contents
 
 
 
-   .. py:method:: upsert_nodes_batch(nodes, db=None)
+   .. py:method:: upsert_nodes_batch(nodes, db=None, primary_keys=None)
 
       Batch-upsert a collection of nodes, grouped by label.
 
-      Nodes are merged on their ``id`` attribute so that repeated calls are
-      idempotent. Each dict in *nodes* must have ``"label"`` and ``"attrs"``
-      keys; ``attrs`` must contain ``"id"``. Used by the schema-governed KG
+      Nodes are merged on their primary-key attribute so that repeated calls
+      are idempotent. The merge key for each label is taken from
+      *primary_keys* (a ``{label: key_name}`` mapping, typically derived from
+      the TOML schema's ``primary_key`` fields) and defaults to ``"id"`` when
+      the label is absent, preserving backward-compatible behaviour. Each
+      dict in *nodes* must have ``"label"`` and ``"attrs"`` keys; ``attrs``
+      must contain the merge-key property. Used by the schema-governed KG
       batch-ingestion workflows.
 
       :param nodes: sequence of ``{"label": str, "attrs": dict}`` dicts.
       :type nodes: Sequence[dict]
       :param db: target database name; uses the driver default when None. Defaults to None.
       :type db: str, optional
+      :param primary_keys: ``{label: key_name}`` merge-key map. Defaults to ``"id"`` per label.
+      :type primary_keys: dict, optional
 
 
 
-   .. py:method:: upsert_edges_batch(edges, db=None)
+   .. py:method:: upsert_edges_batch(edges, db=None, primary_keys=None)
 
       Batch-upsert a collection of relationships, grouped by endpoint labels and type.
 
       Each dict in *edges* must contain ``"from_label"``, ``"to_label"``,
       ``"type"``, ``"from"`` (source node id), ``"to"`` (target node id),
       and an optional ``"attrs"`` dict for relationship properties. Endpoints
-      are matched on their ``id`` attribute. Used by the schema-governed KG
-      batch-ingestion workflows.
+      are matched on their primary-key attribute, taken from *primary_keys*
+      (a ``{label: key_name}`` mapping) and defaulting to ``"id"`` per label.
+      Used by the schema-governed KG batch-ingestion workflows.
 
       :param edges: sequence of edge descriptor dicts.
       :type edges: Sequence[dict]
       :param db: target database name; uses the driver default when None. Defaults to None.
       :type db: str, optional
+      :param primary_keys: ``{label: key_name}`` merge-key map. Defaults to ``"id"`` per label.
+      :type primary_keys: dict, optional
 
 
 

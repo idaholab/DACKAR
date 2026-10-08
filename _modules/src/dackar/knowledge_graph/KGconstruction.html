@@ -99,6 +99,8 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">dateutil.parser</span><span class="w"> </span><span class="kn">import</span> <span class="n">parse</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pandas.api.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">infer_dtype</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.knowledge_graph.schema_types</span><span class="w"> </span><span class="kn">import</span> <span class="n">ALLOWED_SCHEMA_TYPES</span><span class="p">,</span> <span class="n">isCompatibleDtype</span><span class="p">,</span> <span class="n">validateValueSemantics</span>
+
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 
 <div class="viewcode-block" id="currentDir">
@@ -133,9 +135,14 @@
         <span class="k">if</span> <span class="n">importFolderPath</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">set_neo4j_import_folder</span><span class="p">(</span><span class="n">configFilePath</span><span class="p">,</span> <span class="n">importFolderPath</span><span class="p">)</span>
 
+        <span class="c1"># Allowed property data types. Sourced from schema_types so the</span>
+        <span class="c1"># allowlist, the baseSchema.json type enum, and the dataframe dtype</span>
+        <span class="c1"># compatibility map share a single definition. 'floating' is retained</span>
+        <span class="c1"># as an alias of 'float'; 'array'/'json_string' support the document</span>
+        <span class="c1"># / RAG schema.</span>
 <div class="viewcode-block" id="KG.datatypes">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.datatypes">[docs]</a>
-        <span class="bp">self</span><span class="o">.</span><span class="n">datatypes</span> <span class="o">=</span> <span class="p">[</span><span class="s1">'string'</span><span class="p">,</span> <span class="s1">'integer'</span><span class="p">,</span> <span class="s1">'floating'</span><span class="p">,</span> <span class="s1">'boolean'</span><span class="p">,</span> <span class="s1">'datetime'</span><span class="p">]</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">datatypes</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">ALLOWED_SCHEMA_TYPES</span><span class="p">)</span></div>
 
 
         <span class="c1"># Create python to neo4j driver</span>
@@ -164,15 +171,38 @@
         <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">baseSchemaLocation</span><span class="p">,</span> <span class="s2">"r"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">baseSchema</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
 
-        <span class="c1"># set of predefined schemas available in DACKAR generated for the RIAM project</span>
+        <span class="c1"># Curated set of predefined schemas available in DACKAR. Deprecated</span>
+        <span class="c1"># schemas (customMbseSchema, reqTechspecSchema) are intentionally</span>
+        <span class="c1"># excluded; their node definitions are superseded by mbseSchema.toml.</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">_schemaPath</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">currentDir</span><span class="p">,</span> <span class="s1">'schemas'</span><span class="p">,</span> <span class="n">name</span> <span class="o">+</span> <span class="s1">'.toml'</span><span class="p">)</span>
+
 <div class="viewcode-block" id="KG.predefinedGraphSchemas">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.predefinedGraphSchemas">[docs]</a>
-        <span class="bp">self</span><span class="o">.</span><span class="n">predefinedGraphSchemas</span> <span class="o">=</span> <span class="p">{</span><span class="s1">'conditionReportSchema'</span>  <span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">currentDir</span><span class="p">,</span><span class="s1">'schemas'</span><span class="p">,</span><span class="s1">'conditionReportSchema.toml'</span><span class="p">),</span>
-                                       <span class="s1">'mbseSchema'</span>             <span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">currentDir</span><span class="p">,</span><span class="s1">'schemas'</span><span class="p">,</span><span class="s1">'mbseSchema.toml'</span><span class="p">),</span>
-                                       <span class="s1">'monitoringSystemSchema'</span> <span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">currentDir</span><span class="p">,</span><span class="s1">'schemas'</span><span class="p">,</span><span class="s1">'monitoringSystemSchema.toml'</span><span class="p">),</span>
-                                       <span class="s1">'nuclearEntitySchema'</span>    <span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">currentDir</span><span class="p">,</span><span class="s1">'schemas'</span><span class="p">,</span><span class="s1">'nuclearEntitySchema.toml'</span><span class="p">),</span>
-                                       <span class="s1">'numericPerformanceSchema'</span><span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">currentDir</span><span class="p">,</span><span class="s1">'schemas'</span><span class="p">,</span><span class="s1">'numericPerformanceSchema.toml'</span><span class="p">),</span>
-                                       <span class="s1">'causalSchema'</span>           <span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">currentDir</span><span class="p">,</span><span class="s1">'schemas'</span><span class="p">,</span><span class="s1">'causalSchema.toml'</span><span class="p">)}</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">predefinedGraphSchemas</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">name</span><span class="p">:</span> <span class="n">_schemaPath</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">[</span>
+                <span class="s1">'nuclearEntitySchema'</span><span class="p">,</span>
+                <span class="s1">'mbseSchema'</span><span class="p">,</span>
+                <span class="s1">'documentSchema'</span><span class="p">,</span>
+                <span class="s1">'conditionReportSchema'</span><span class="p">,</span>
+                <span class="s1">'fmeaSchema'</span><span class="p">,</span>
+                <span class="s1">'causalSchema'</span><span class="p">,</span>
+                <span class="s1">'safetyRiskSchema'</span><span class="p">,</span>
+                <span class="s1">'rootCauseAnalysisSchema'</span><span class="p">,</span>
+                <span class="s1">'hazopSchema'</span><span class="p">,</span>
+                <span class="s1">'stpaSchema'</span><span class="p">,</span>
+                <span class="s1">'workOrderSchema'</span><span class="p">,</span>
+                <span class="s1">'outageSchema'</span><span class="p">,</span>
+                <span class="s1">'equipmentOperationSchema'</span><span class="p">,</span>
+                <span class="s1">'monitoringSystemSchema'</span><span class="p">,</span>
+                <span class="s1">'numericPerformanceSchema'</span><span class="p">,</span>
+                <span class="s1">'supplyChainSchema'</span><span class="p">,</span>
+                <span class="s1">'systemSimulationSchema'</span><span class="p">,</span>
+                <span class="s1">'temporalRelationSchema'</span><span class="p">,</span>
+                <span class="s1">'regulatorySchema'</span><span class="p">,</span>
+            <span class="p">]</span>
+        <span class="p">}</span></div>
 
 
 <div class="viewcode-block" id="KG.resetGraph">
@@ -188,17 +218,21 @@
 
 <div class="viewcode-block" id="KG._crossSchemasCheck">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG._crossSchemasCheck">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_crossSchemasCheck</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_crossSchemasCheck</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graphSchemas</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Method designed to perform a series of checks across the defined schemas</span>
-<span class="sd">        @ In, None</span>
+<span class="sd">        @ In, graphSchemas, dict, optional registry of schemas to check; defaults</span>
+<span class="sd">            to the committed session registry (self.graphSchemas)</span>
 <span class="sd">        @ Out, None</span>
 <span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">graphSchemas</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">graphSchemas</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span>
+
         <span class="bp">self</span><span class="o">.</span><span class="n">nodeList</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">relationList</span> <span class="o">=</span> <span class="p">[]</span>
 
-        <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">'node'</span><span class="p">]:</span>
+        <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="n">graphSchemas</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'node'</span><span class="p">,</span> <span class="p">{}):</span>
                 <span class="c1"># check that the node is not duplicated</span>
                 <span class="k">if</span> <span class="n">node</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">nodeList</span><span class="p">:</span>
                     <span class="n">message</span> <span class="o">=</span> <span class="s1">'Schema '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' - Node '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' has been defined twice'</span>
@@ -206,18 +240,22 @@
                 <span class="k">else</span><span class="p">:</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">nodeList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
 
-        <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">rel</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">'relation'</span><span class="p">]:</span>
-                <span class="c1"># check that the relation is not duplicated</span>
-                <span class="k">if</span> <span class="n">rel</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">relationList</span><span class="p">:</span>
-                    <span class="n">message</span> <span class="o">=</span> <span class="s1">'Duplicate relation definition encountered: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' in schema: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="n">graphSchemas</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">rel</span> <span class="ow">in</span> <span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'relation'</span><span class="p">,</span> <span class="p">{}):</span>
+                <span class="c1"># check that the defined relations link nodes that have been defined</span>
+                <span class="n">origin</span> <span class="o">=</span> <span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">'relation'</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">'from_entity'</span><span class="p">]</span>
+                <span class="n">destin</span> <span class="o">=</span> <span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">'relation'</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">'to_entity'</span><span class="p">]</span>
+
+                <span class="c1"># A relation is keyed by the (name, from_entity, to_entity)</span>
+                <span class="c1"># triple, so the same generic verb (e.g. caused_by,</span>
+                <span class="c1"># targets_element) may be reused across schemas as long as it</span>
+                <span class="c1"># connects a different pair of node labels.</span>
+                <span class="n">relationKey</span> <span class="o">=</span> <span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">origin</span><span class="p">,</span> <span class="n">destin</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">relationKey</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">relationList</span><span class="p">:</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s1">'Duplicate relation definition encountered: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">relationKey</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' in schema: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
                     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">relationList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span>
-
-                <span class="c1"># check that the defined relations link nodes that have been defined</span>
-                <span class="n">origin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">'relation'</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">'from_entity'</span><span class="p">]</span>
-                <span class="n">destin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">'relation'</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">'to_entity'</span><span class="p">]</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">relationList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">relationKey</span><span class="p">)</span>
 
                 <span class="k">if</span> <span class="n">origin</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">nodeList</span><span class="p">:</span>
                     <span class="n">message</span> <span class="o">=</span> <span class="s1">'Schema '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' - Relation '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="o">+</span> <span class="s1">': Node label '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">origin</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' is not defined'</span>
@@ -238,20 +276,19 @@
         <span class="k">try</span><span class="p">:</span>
             <span class="n">validate</span><span class="p">(</span><span class="n">instance</span><span class="o">=</span><span class="n">importedSchema</span><span class="p">,</span> <span class="n">schema</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">baseSchema</span><span class="p">)</span>
             <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"TOML content is valid against the schema."</span><span class="p">)</span>
-        <span class="k">except</span> <span class="n">tomllib</span><span class="o">.</span><span class="n">TOMLDecodeError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">"TOML syntax error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
         <span class="k">except</span> <span class="n">ValidationError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">"TOML schema validation error: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">message</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span></div>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">"TOML schema validation error: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">message</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="k">raise</span></div>
 
 
-<div class="viewcode-block" id="KG.importGraphSchema">
-<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.importGraphSchema">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">importGraphSchema</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graphSchemaName</span><span class="p">,</span> <span class="n">tomlFilename</span><span class="p">):</span>
+<div class="viewcode-block" id="KG._loadAndValidateSchemaFile">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG._loadAndValidateSchemaFile">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_loadAndValidateSchemaFile</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tomlFilename</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">"""</span>
-<span class="sd">        Method that imports new schema contained in a .toml file</span>
-<span class="sd">        @ In, graphSchemaName, string, name of the schema to be imported</span>
-<span class="sd">        @ In, tomlFilename, string, .toml file contained the new schema</span>
-<span class="sd">        @ Out, None</span>
+<span class="sd">        Parse one TOML schema file and run the per-file checks (base-schema</span>
+<span class="sd">        structure and allowed data types). Does not mutate session state.</span>
+<span class="sd">        @ In, tomlFilename, string, .toml file containing the schema</span>
+<span class="sd">        @ Out, configData, dict, parsed and per-file-validated schema</span>
 <span class="sd">        """</span>
         <span class="n">fullPath</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">tomlFilename</span><span class="p">)</span>
 
@@ -267,29 +304,104 @@
         <span class="c1">#check data types against self.datatypes</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_checkSchemaDataTypes</span><span class="p">(</span><span class="n">configData</span><span class="p">)</span>
 
-        <span class="c1"># Check imported graphSchema against self.graphSchemas</span>
-        <span class="c1"># check schema name is not used before</span>
-        <span class="k">if</span> <span class="n">graphSchemaName</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="o">.</span><span class="n">keys</span><span class="p">()):</span>
-            <span class="n">message</span> <span class="o">=</span> <span class="s1">'Schema '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">graphSchemaName</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' is already defined in the exisiting schemas'</span>
+        <span class="k">return</span> <span class="n">configData</span></div>
+
+
+<div class="viewcode-block" id="KG.importGraphSchemas">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.importGraphSchemas">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">importGraphSchemas</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">schemaFiles</span><span class="p">,</span> <span class="n">crossCheck</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Method that imports a batch of schemas atomically. Each file is parsed</span>
+<span class="sd">        and per-file-validated into a temporary candidate registry; the whole</span>
+<span class="sd">        candidate is cross-checked; session state (self.graphSchemas) is</span>
+<span class="sd">        replaced only once every check passes, so a failure anywhere leaves the</span>
+<span class="sd">        existing registry untouched (no partial load).</span>
+<span class="sd">        @ In, schemaFiles, dict, mapping {schemaName: tomlFilename}</span>
+<span class="sd">        @ In, crossCheck, bool, run whole-set cross-schema integrity (duplicate</span>
+<span class="sd">            nodes/relation-triples and endpoint resolution) on the candidate</span>
+<span class="sd">            before committing. Pass False for a known-partial batch whose</span>
+<span class="sd">            endpoints resolve in schemas loaded elsewhere (default True).</span>
+<span class="sd">        @ In, replace, bool, build the candidate from an empty registry rather</span>
+<span class="sd">            than layering on the committed set, so re-loading the same set is</span>
+<span class="sd">            idempotent instead of failing on existing names (default False).</span>
+<span class="sd">        @ Out, None</span>
+<span class="sd">        """</span>
+        <span class="n">candidate</span> <span class="o">=</span> <span class="p">{}</span> <span class="k">if</span> <span class="n">replace</span> <span class="k">else</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">schemaFiles</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">candidate</span><span class="p">:</span>
+                <span class="n">message</span> <span class="o">=</span> <span class="s1">'Schema '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' is already defined in the exisiting schemas'</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+            <span class="n">candidate</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_loadAndValidateSchemaFile</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">crossCheck</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_crossSchemasCheck</span><span class="p">(</span><span class="n">candidate</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span> <span class="o">=</span> <span class="n">candidate</span></div>
+
+
+<div class="viewcode-block" id="KG.importGraphSchema">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.importGraphSchema">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">importGraphSchema</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graphSchemaName</span><span class="p">,</span> <span class="n">tomlFilename</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Method that imports new schema contained in a .toml file</span>
+<span class="sd">        @ In, graphSchemaName, string, name of the schema to be imported</span>
+<span class="sd">        @ In, tomlFilename, string, .toml file contained the new schema</span>
+<span class="sd">        @ Out, None</span>
+<span class="sd">        """</span>
+        <span class="c1"># Single imports do not force endpoint resolution: a schema may</span>
+        <span class="c1"># legitimately reference nodes defined in another not-yet-imported</span>
+        <span class="c1"># schema (e.g. fmea references degradation_mechanism in causal, while</span>
+        <span class="c1"># causal references failure_mode in fmea). Whole-set integrity is a</span>
+        <span class="c1"># property of the complete set; run importGraphSchemas(crossCheck=True)</span>
+        <span class="c1"># or loadPredefinedGraphSchemas once every participating schema is in.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">importGraphSchemas</span><span class="p">({</span><span class="n">graphSchemaName</span><span class="p">:</span> <span class="n">tomlFilename</span><span class="p">},</span> <span class="n">crossCheck</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="KG.loadPredefinedGraphSchemas">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.loadPredefinedGraphSchemas">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">loadPredefinedGraphSchemas</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Method that loads the full curated set of predefined DACKAR schemas and</span>
+<span class="sd">        validates cross-schema integrity once the whole set is in memory. The</span>
+<span class="sd">        load is atomic (session state is replaced only after the whole set</span>
+<span class="sd">        validates) and idempotent (a repeat load rebuilds the same set rather</span>
+<span class="sd">        than failing on existing names).</span>
+<span class="sd">        @ In, None</span>
+<span class="sd">        @ Out, None</span>
+<span class="sd">        """</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">importGraphSchemas</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">predefinedGraphSchemas</span><span class="p">,</span> <span class="n">crossCheck</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="KG.removeGraphSchema">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.removeGraphSchema">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">removeGraphSchema</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graphSchemaName</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Method that removes a single schema from the session registry and</span>
+<span class="sd">        revalidates the cross-schema references among the schemas that remain,</span>
+<span class="sd">        so the registry is never left with a relation pointing at a node label</span>
+<span class="sd">        the removal just deleted. The removal is atomic and symmetric with the</span>
+<span class="sd">        import path: session state (self.graphSchemas) is replaced only after</span>
+<span class="sd">        the remaining set validates, so a removal that would strand a reference</span>
+<span class="sd">        raises and leaves the existing registry untouched.</span>
+<span class="sd">        @ In, graphSchemaName, string, name of the schema to remove</span>
+<span class="sd">        @ Out, None</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">graphSchemaName</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
+            <span class="n">message</span> <span class="o">=</span> <span class="s1">'Schema '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">graphSchemaName</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' is not defined in the existing schemas'</span>
             <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
 
-        <span class="c1"># check nodes are not already defined</span>
-        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">configData</span><span class="p">[</span><span class="s1">'node'</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-            <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">schema</span><span class="p">[</span><span class="s1">'node'</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-                    <span class="n">message</span> <span class="o">=</span> <span class="s1">'Node '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' defined in the new schema is already defined in the exisiting schema '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
-                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
-        <span class="c1"># check relations are not already defined</span>
-        <span class="k">for</span> <span class="n">relation</span> <span class="ow">in</span> <span class="n">configData</span><span class="p">[</span><span class="s1">'relation'</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-            <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">relation</span> <span class="ow">in</span> <span class="n">schema</span><span class="p">[</span><span class="s1">'relation'</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-                    <span class="n">message</span> <span class="o">=</span> <span class="s1">'Relation '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' defined in the new schema is already defined in the exisiting schema '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
-                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+        <span class="n">candidate</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">)</span>
+        <span class="k">del</span> <span class="n">candidate</span><span class="p">[</span><span class="n">graphSchemaName</span><span class="p">]</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">_crossSchemasCheck</span><span class="p">()</span>
+        <span class="c1"># A relation in another schema may have resolved only because the</span>
+        <span class="c1"># removed schema supplied its endpoint node label; revalidate the whole</span>
+        <span class="c1"># remaining set and reject the removal if it would strand such a</span>
+        <span class="c1"># reference, matching the whole-set integrity a full load enforces.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_crossSchemasCheck</span><span class="p">(</span><span class="n">candidate</span><span class="p">)</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">graphSchemaName</span><span class="p">]</span> <span class="o">=</span> <span class="n">configData</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span> <span class="o">=</span> <span class="n">candidate</span></div>
 
 
 <div class="viewcode-block" id="KG._checkSchemaDataTypes">
@@ -301,10 +413,17 @@
 <span class="sd">        @ In, schema, dict, schema parsed by tomllib from .toml file</span>
 <span class="sd">        @ Out, None</span>
 <span class="sd">        """</span>
-        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">schema</span><span class="p">[</span><span class="s1">'node'</span><span class="p">]:</span>
-            <span class="k">for</span> <span class="n">prop</span> <span class="ow">in</span> <span class="n">schema</span><span class="p">[</span><span class="s1">'node'</span><span class="p">][</span><span class="n">node</span><span class="p">][</span><span class="s1">'node_properties'</span><span class="p">]:</span>
+        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">schema</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'node'</span><span class="p">,</span> <span class="p">{}):</span>
+            <span class="k">for</span> <span class="n">prop</span> <span class="ow">in</span> <span class="n">schema</span><span class="p">[</span><span class="s1">'node'</span><span class="p">][</span><span class="n">node</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'node_properties'</span><span class="p">,</span> <span class="p">[]):</span>
                 <span class="k">if</span> <span class="n">prop</span><span class="p">[</span><span class="s1">'type'</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">datatypes</span><span class="p">:</span>
                     <span class="n">message</span> <span class="o">=</span> <span class="s1">'Node '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' - Property '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">prop</span><span class="p">[</span><span class="s1">'name'</span><span class="p">])</span> <span class="o">+</span> <span class="s1">' data type '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">prop</span><span class="p">[</span><span class="s1">'type'</span><span class="p">])</span> <span class="o">+</span> <span class="s1">' is not allowed'</span>
+                    <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">rel</span> <span class="ow">in</span> <span class="n">schema</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'relation'</span><span class="p">,</span> <span class="p">{}):</span>
+            <span class="k">for</span> <span class="n">prop</span> <span class="ow">in</span> <span class="n">schema</span><span class="p">[</span><span class="s1">'relation'</span><span class="p">][</span><span class="n">rel</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'relation_properties'</span><span class="p">,</span> <span class="p">[]):</span>
+                <span class="k">if</span> <span class="n">prop</span><span class="p">[</span><span class="s1">'type'</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">datatypes</span><span class="p">:</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s1">'Relation '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' - Property '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">prop</span><span class="p">[</span><span class="s1">'name'</span><span class="p">])</span> <span class="o">+</span> <span class="s1">' data type '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">prop</span><span class="p">[</span><span class="s1">'type'</span><span class="p">])</span> <span class="o">+</span> <span class="s1">' is not allowed'</span>
                     <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
                     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span></div>
 
@@ -320,9 +439,12 @@
         <span class="n">propdf</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">nodeLabel</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">'node'</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-                <span class="n">nodeProperties</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">'node'</span><span class="p">][</span><span class="n">nodeLabel</span><span class="p">][</span><span class="s1">'node_properties'</span><span class="p">]</span>
-                <span class="n">propdf</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">nodeProperties</span><span class="p">)</span>
-                <span class="k">return</span> <span class="n">propdf</span>
+                <span class="n">nodeProperties</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">'node'</span><span class="p">][</span><span class="n">nodeLabel</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'node_properties'</span><span class="p">,</span> <span class="p">[])</span>
+                <span class="c1"># A node that declares no properties yields an empty frame that</span>
+                <span class="c1"># still carries the columns callers index ('name', 'optional'),</span>
+                <span class="c1"># so a propertyless-but-valid label does not KeyError downstream.</span>
+                <span class="n">columns</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">nodeProperties</span> <span class="k">else</span> <span class="p">[</span><span class="s1">'name'</span><span class="p">,</span> <span class="s1">'type'</span><span class="p">,</span> <span class="s1">'optional'</span><span class="p">]</span>
+                <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">nodeProperties</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="n">columns</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="n">propdf</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">message</span> <span class="o">=</span> <span class="s1">'Node '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">nodeLabel</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' does not have any property'</span>
@@ -341,9 +463,12 @@
         <span class="n">propdf</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">relation</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">'relation'</span><span class="p">]:</span>
-                <span class="n">relationProperties</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">'relation'</span><span class="p">][</span><span class="n">relation</span><span class="p">][</span><span class="s1">'relation_properties'</span><span class="p">]</span>
-                <span class="n">propdf</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">relationProperties</span><span class="p">)</span>
-                <span class="k">return</span> <span class="n">propdf</span>
+                <span class="n">relationProperties</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">'relation'</span><span class="p">][</span><span class="n">relation</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'relation_properties'</span><span class="p">,</span> <span class="p">[])</span>
+                <span class="c1"># Many curated relations omit relation_properties; an empty frame</span>
+                <span class="c1"># that still carries the columns callers index ('name', 'optional')</span>
+                <span class="c1"># keeps a propertyless-but-valid relation from raising KeyError.</span>
+                <span class="n">columns</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">relationProperties</span> <span class="k">else</span> <span class="p">[</span><span class="s1">'name'</span><span class="p">,</span> <span class="s1">'type'</span><span class="p">,</span> <span class="s1">'optional'</span><span class="p">]</span>
+                <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">relationProperties</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="n">columns</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="n">propdf</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">message</span> <span class="o">=</span> <span class="s1">'Relation '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">relation</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' does not have any property'</span>
@@ -512,8 +637,12 @@
                 <span class="k">for</span> <span class="n">prop</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">[</span><span class="s1">'nodes'</span><span class="p">][</span><span class="n">node</span><span class="p">]:</span>
                     <span class="n">allowedDatatype</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_returnNodePropertyDatatype</span><span class="p">(</span><span class="n">node</span><span class="p">,</span><span class="n">prop</span><span class="p">)</span>
                     <span class="n">dfDatatype</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">'nodes'</span><span class="p">][</span><span class="n">node</span><span class="p">][</span><span class="n">prop</span><span class="p">]]</span>
-                    <span class="k">if</span> <span class="n">allowedDatatype</span> <span class="o">!=</span> <span class="n">infer_dtype</span><span class="p">(</span><span class="n">dfDatatype</span><span class="p">):</span>
-                        <span class="n">message</span> <span class="o">=</span> <span class="s1">'Node: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="o">+</span> <span class="s1">'- Property: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">prop</span><span class="p">)</span> <span class="o">+</span> <span class="s1">'. Dataframe datatype ('</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">dfDatatype</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="nb">type</span><span class="p">)))</span> <span class="o">+</span> <span class="s1">') does not match datatype defined in schema ('</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">allowedDatatype</span><span class="p">)</span> <span class="o">+</span> <span class="s1">')'</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">isCompatibleDtype</span><span class="p">(</span><span class="n">allowedDatatype</span><span class="p">,</span> <span class="n">infer_dtype</span><span class="p">(</span><span class="n">dfDatatype</span><span class="p">)):</span>
+                        <span class="n">message</span> <span class="o">=</span> <span class="s1">'Node: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="o">+</span> <span class="s1">'- Property: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">prop</span><span class="p">)</span> <span class="o">+</span> <span class="s1">'. Dataframe datatype ('</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">infer_dtype</span><span class="p">(</span><span class="n">dfDatatype</span><span class="p">))</span> <span class="o">+</span> <span class="s1">') does not match datatype defined in schema ('</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">allowedDatatype</span><span class="p">)</span> <span class="o">+</span> <span class="s1">')'</span>
+                        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+                    <span class="n">ok</span><span class="p">,</span> <span class="n">bad</span> <span class="o">=</span> <span class="n">validateValueSemantics</span><span class="p">(</span><span class="n">allowedDatatype</span><span class="p">,</span> <span class="n">dfDatatype</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_returnPropertyEnumValues</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">prop</span><span class="p">))</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">ok</span><span class="p">:</span>
+                        <span class="n">message</span> <span class="o">=</span> <span class="s1">'Node: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="o">+</span> <span class="s1">'- Property: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">prop</span><span class="p">)</span> <span class="o">+</span> <span class="s1">'. Value '</span> <span class="o">+</span> <span class="nb">repr</span><span class="p">(</span><span class="n">bad</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' does not satisfy schema type '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">allowedDatatype</span><span class="p">)</span>
                         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
 
         <span class="c1"># Check relations data types</span>
@@ -522,8 +651,12 @@
                 <span class="k">for</span> <span class="n">prop</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">[</span><span class="s1">'relations'</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">'properties'</span><span class="p">]:</span>
                     <span class="n">allowedDatatype</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_returnRelationPropertyDatatype</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span><span class="n">prop</span><span class="p">)</span>
                     <span class="n">dfDatatype</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">'relations'</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">'properties'</span><span class="p">][</span><span class="n">prop</span><span class="p">]]</span>
-                    <span class="k">if</span> <span class="n">allowedDatatype</span> <span class="o">!=</span> <span class="n">infer_dtype</span><span class="p">(</span><span class="n">dfDatatype</span><span class="p">):</span>
-                        <span class="n">message</span> <span class="o">=</span> <span class="s1">'Relation: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="o">+</span> <span class="s1">'- Property: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">prop</span><span class="p">)</span> <span class="o">+</span> <span class="s1">'. Dataframe datatype ('</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">dfDatatype</span><span class="p">)</span> <span class="o">+</span> <span class="s1">') does not match datatype defined in schema ('</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">dfDatatype</span><span class="p">)</span> <span class="o">+</span> <span class="s1">')'</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">isCompatibleDtype</span><span class="p">(</span><span class="n">allowedDatatype</span><span class="p">,</span> <span class="n">infer_dtype</span><span class="p">(</span><span class="n">dfDatatype</span><span class="p">)):</span>
+                        <span class="n">message</span> <span class="o">=</span> <span class="s1">'Relation: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="o">+</span> <span class="s1">'- Property: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">prop</span><span class="p">)</span> <span class="o">+</span> <span class="s1">'. Dataframe datatype ('</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">infer_dtype</span><span class="p">(</span><span class="n">dfDatatype</span><span class="p">))</span> <span class="o">+</span> <span class="s1">') does not match datatype defined in schema ('</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">allowedDatatype</span><span class="p">)</span> <span class="o">+</span> <span class="s1">')'</span>
+                        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+                    <span class="n">ok</span><span class="p">,</span> <span class="n">bad</span> <span class="o">=</span> <span class="n">validateValueSemantics</span><span class="p">(</span><span class="n">allowedDatatype</span><span class="p">,</span> <span class="n">dfDatatype</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_returnPropertyEnumValues</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">prop</span><span class="p">,</span> <span class="n">isRelation</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">ok</span><span class="p">:</span>
+                        <span class="n">message</span> <span class="o">=</span> <span class="s1">'Relation: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="o">+</span> <span class="s1">'- Property: '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">prop</span><span class="p">)</span> <span class="o">+</span> <span class="s1">'. Value '</span> <span class="o">+</span> <span class="nb">repr</span><span class="p">(</span><span class="n">bad</span><span class="p">)</span> <span class="o">+</span> <span class="s1">' does not satisfy schema type '</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">allowedDatatype</span><span class="p">)</span>
                         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span></div>
 
 
@@ -567,12 +700,43 @@
                             <span class="k">return</span> <span class="n">allowedType</span>
         <span class="k">if</span> <span class="n">allowedType</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="ne">ValueError</span><span class="p">(</span><span class="s1">'_returnRelationPropertyDatatype error'</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="KG._returnPropertyEnumValues">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG._returnPropertyEnumValues">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_returnPropertyEnumValues</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">labelID</span><span class="p">,</span> <span class="n">propID</span><span class="p">,</span> <span class="n">isRelation</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Method that returns the declared enum_values of a node/relation property,</span>
+<span class="sd">        used for enum-membership validation. Returns None when the property</span>
+<span class="sd">        declares none (membership then cannot be checked).</span>
+<span class="sd">        @ In, labelID, string, node label or relation name</span>
+<span class="sd">        @ In, propID, string, property name</span>
+<span class="sd">        @ In, isRelation, bool, look up a relation property when True, else a node property</span>
+<span class="sd">        @ Out, enumValues, list|None, declared allowed values, or None if absent</span>
+<span class="sd">        """</span>
+        <span class="n">section</span> <span class="o">=</span> <span class="s1">'relation'</span> <span class="k">if</span> <span class="n">isRelation</span> <span class="k">else</span> <span class="s1">'node'</span>
+        <span class="n">propsKey</span> <span class="o">=</span> <span class="s1">'relation_properties'</span> <span class="k">if</span> <span class="n">isRelation</span> <span class="k">else</span> <span class="s1">'node_properties'</span>
+        <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">labelID</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">section</span><span class="p">,</span> <span class="p">{}):</span>
+                <span class="k">for</span> <span class="n">prop</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="n">section</span><span class="p">][</span><span class="n">labelID</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">propsKey</span><span class="p">,</span> <span class="p">[]):</span>
+                    <span class="k">if</span> <span class="n">prop</span><span class="p">[</span><span class="s1">'name'</span><span class="p">]</span> <span class="o">==</span> <span class="n">propID</span><span class="p">:</span>
+                        <span class="k">return</span> <span class="n">prop</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'enum_values'</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="KG._createIteractivePlot">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG._createIteractivePlot">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_createIteractivePlot</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">output_file</span><span class="o">=</span><span class="s2">"knowledge_graph_schema_interactive.html"</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Method that renders the currently loaded schemas as an interactive HTML graph.</span>
+<span class="sd">        @ In, output_file, string, path of the HTML file to write</span>
+<span class="sd">        @ Out, None</span>
+<span class="sd">        """</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">dackar.knowledge_graph.visualize_schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">createInteractiveFile</span>
+        <span class="n">schemaList</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+        <span class="n">createInteractiveFile</span><span class="p">(</span><span class="n">schemaList</span><span class="p">,</span> <span class="n">output_file</span><span class="o">=</span><span class="n">output_file</span><span class="p">,</span> <span class="n">raise_on_collision</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
 </div>
 
-
-    <span class="c1">#def _createIteractivePlot(self):</span>
-    <span class="c1">#    schemaList = list(self.graphSchemas.values())</span>
-    <span class="c1">#    createIteractiveFile(schemaList)</span>
 
 
 <div class="viewcode-block" id="stringToDatetimeConverterFlexible">

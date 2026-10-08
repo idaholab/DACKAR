@@ -1,0 +1,119 @@
+src.dackar.knowledge_graph.app
+==============================
+
+.. py:module:: src.dackar.knowledge_graph.app
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.knowledge_graph.app.cwd
+   src.dackar.knowledge_graph.app.frameworkDir
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.knowledge_graph.app._session_dir
+   src.dackar.knowledge_graph.app._is_contained
+   src.dackar.knowledge_graph.app._safe_remove
+   src.dackar.knowledge_graph.app.initialize_kg_from_json
+   src.dackar.knowledge_graph.app.main
+
+
+Module Contents
+---------------
+
+.. py:data:: cwd
+
+.. py:data:: frameworkDir
+   :value: b'.'
+
+
+.. py:function:: _session_dir()
+
+   Return this Streamlit session's private scratch directory.
+
+   Streamlit reruns the whole script on every interaction but preserves
+   st.session_state across reruns, so a directory recorded there is stable for
+   the life of the browser session and isolated from other concurrent
+   sessions. All files the app writes (uploaded TOML schemas, generated
+   construction schemas, the interactive-graph HTML) live here, so no
+   client-controlled name can escape to a process-wide or shared path.
+
+   @ In, None
+   @ Out, path, string, absolute path of the per-session temporary directory
+
+
+.. py:function:: _is_contained(baseDir, path)
+
+   Return True if *path* resolves to a location inside *baseDir*.
+
+   Resolves symlinks and ``..`` segments on both sides so a traversal or
+   absolute path cannot masquerade as a child of baseDir.
+
+   @ In, baseDir, string, directory that path must be contained in
+   @ In, path, string, candidate file path
+   @ Out, contained, bool, True if path is baseDir or lies beneath it
+
+
+.. py:function:: _safe_remove(baseDir, path)
+
+   Delete *path* only if it is contained in *baseDir* (no traversal).
+
+   @ In, baseDir, string, directory the deletion is confined to
+   @ In, path, string, file to delete
+   @ Out, None
+
+
+.. py:function:: initialize_kg_from_json(json_file)
+
+   Build a KG instance from an uploaded initialization-parameters JSON file.
+
+   The uploaded JSON must be an object with five string keys describing the
+   Neo4j target and the schema paths::
+
+       {
+         "config_file_path":   "<path to neo4j.conf, used when rewriting it>",
+         "import_folder_path": "<Neo4j import folder, or null to skip conf rewrite>",
+         "uri":                "bolt://host:7687",
+         "user":               "neo4j",
+         "pwd":                "<password>"
+       }
+
+   Side effects: the returned KG opens a live Neo4j driver with the supplied
+   credentials and loads the entity-library spreadsheet, so this consumes
+   credentials and reads from the configured paths. Nothing is written to disk
+   here.
+
+   @ In, json_file, file-like, uploaded JSON file handle (or None)
+   @ Out, kg, KG, initialized KG instance, or None if no file was provided
+
+
+.. py:function:: main()
+
+   Render the Streamlit KG-construction interface.
+
+   Drives the full interactive workflow: initialize a KG from an uploaded
+   parameters JSON file, import user-provided or predefined graph schemas,
+   inspect the loaded schema set as an interactive graph, manage construction
+   schemas, and ingest a data file through the generic workflow.
+
+   Filesystem side effects: every file the app persists (uploaded ``.toml``
+   schemas, uploaded construction-schema ``.json`` files, and the generated
+   interactive-graph HTML) is written under a per-session temporary directory
+   (see :func:`_session_dir`), never a process-wide or client-named path, and
+   files are deleted only after a containment check.
+
+   Database side effects: importing schemas mutates the in-memory KG registry;
+   ``Import Data`` runs ``genericWorkflow`` which writes nodes and relations to
+   the Neo4j instance configured at initialization.
+
+   @ In, None
+   @ Out, None
+
+
