@@ -13,8 +13,8 @@ Check Markdown doc anchors against the DACKAR RCA Python tree.
  Placeholder text like <path> in the doc (not a real file) is ignored.
 
 Usage (DACKAR repo root):
-  python src/dackar/RCA/diagrams/april_25/check_doc_code_sync.py
-  python src/dackar/RCA/diagrams/april_25/check_doc_code_sync.py --stale
+  python src/dackar/RCA/devNotes/april_25/check_doc_code_sync.py
+  python src/dackar/RCA/devNotes/april_25/check_doc_code_sync.py --stale
   (from this directory): python check_doc_code_sync.py
 """
 
@@ -375,7 +375,7 @@ def _default_markdown_path(script_path: Path, rca_root: Path) -> Path:
     colocated = script_path.parent / "rca_workflow_reference_guide_april_25.md"
     if colocated.is_file():
         return colocated
-    return rca_root / "diagrams" / "april_25" / "rca_workflow_reference_guide_april_25.md"
+    return rca_root / "devNotes" / "april_25" / "rca_workflow_reference_guide_april_25.md"
 
 
 def main() -> int:

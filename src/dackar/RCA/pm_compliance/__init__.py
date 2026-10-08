@@ -5,7 +5,7 @@ The artifact matches ``RCA/schemas/pm_compliance.json`` and feeds Stage D govern
 (``causality_engine_v32`` ``checks`` array) and analyst-facing summaries.
 
 Phase 1: export-row ingestion and deterministic verification. See
-``diagrams/april_20/PM_Compliance_Module_Architecture.md`` for design notes and
+``devNotes/april_20/PM_Compliance_Module_Architecture.md`` for design notes and
 integration points (orchestrator wiring to follow).
 """
 

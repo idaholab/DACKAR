@@ -12,60 +12,84 @@ synthesizes a validated, schema-conformant RCA artifact.
 
    A complete, auto-generated API reference for every ``dackar.RCA`` module is
    produced by ``autoapi`` (see the *API Reference* section of the sidebar).
-   This page is a narrative overview of the architecture and the intended
-   entry points.
+   This page is a narrative overview; the full, code-grounded architecture —
+   the exact stage order, the collaborator protocols and their implementations,
+   the artifact/schema model and the configuration knobs — is maintained in
+   ``src/dackar/RCA/ARCHITECTURE.md``.
 
 Architecture overview
 ======================
 
-The pipeline is organized as a sequence of stages, each backed by a dedicated
-package under ``src/dackar/RCA``:
+A run is driven end to end by one object, ``RCAReasoningOrchestrator``
+(``orchestrators/rca_reasoning_orchestrator.py``), which calls a set of injected
+collaborators in a fixed order and validates/persists each artifact as it goes.
+The main packages under ``src/dackar/RCA``:
 
 .. list-table::
    :header-rows: 1
-   :widths: 22 78
+   :widths: 26 74
 
    * - Package
      - Responsibility
-   * - ``schemas``
-     - JSON schemas for the RCA card / artifact and their validators.
-   * - ``doc_parsers`` / ``doc_extraction``
-     - Parse source documents (PDF, DOCX, narratives) into normalized text.
-   * - ``ner`` / ``causal``
-     - Named-entity recognition and causal-statement extraction over the
-       normalized text (built on the ``dackar.pipelines`` spaCy components).
-   * - ``kg``
-     - Knowledge-graph context building and narrowing around the event.
-   * - ``signal_evidence`` / ``storage``
-     - Signal/evidence DAG construction and the (Chroma-backed) evidence store.
-   * - ``cross_pattern``, ``log_pattern_recognition``, ``cmms_integration``,
-       ``cap_integration``, ``equipment_similarity``, ``pm_compliance``
-     - Integration modules that enrich candidates with cross-event patterns,
-       log signatures, CMMS/CAP context, similar-equipment history and
-       preventive-maintenance compliance.
    * - ``orchestrators``
-     - The rule-based causality engine and the Stage A–G reasoning
-       orchestrator that drives the end-to-end run.
-   * - ``synthesis`` / ``validation``
-     - Synthesize the final RCA narrative and validate it against the schemas.
+     - The reasoning orchestrator that drives the end-to-end run, the rule-based
+       causality engines, and the knowledge-graph context builder
+       (``kg_context_builder.py``).
+   * - ``schemas``
+     - The Draft-7 JSON schemas, one per artifact type.
+   * - ``validation``
+     - Schema and cross-artifact semantic validation of every artifact.
+   * - ``synthesis``
+     - Synthesize the final RCA card (LLM-backed, with a deterministic fallback).
+   * - ``signal_evidence`` / ``storage``
+     - Signal-evidence construction and the (Chroma-backed) evidence store.
+   * - ``ner`` / ``doc_extraction`` / ``doc_parsers``
+     - Entity and causal-condition extraction, and document parsing. Causal
+       extraction lives in ``ner/causal_condition_adapter.py``; the top-level
+       ``dackar.causal`` package provides the spaCy causal components.
+   * - ``pm_compliance``
+     - Preventive-maintenance compliance artifact (feeds Stage D governance).
+   * - ``cmms_integration``, ``cap_integration``, ``cross_pattern``,
+       ``log_pattern_recognition``, ``equipment_similarity``, ``adapters``
+     - Optional, pluggable integration modules. Each is gated on an injected
+       adapter and degrades gracefully (its stage is skipped) when absent.
    * - ``viz``
-     - Visualization helpers for causal graphs and evidence.
+     - A standalone Streamlit viewer (``viz/app.py``) that *loads and displays*
+       artifact JSON produced by a run. It is not a Python package and does not
+       call the orchestrator.
 
-Reasoning orchestrator (Stage A–G)
-==================================
+.. note::
 
-``orchestrators/rca_reasoning_orchestrator.py`` implements the end-to-end
-orchestration pattern:
+   There is no ``kg`` package and no ``causal`` package under
+   ``src/dackar/RCA``. KG-context building is in ``orchestrators`` and causal
+   extraction is in ``ner`` plus the top-level ``dackar.causal`` package.
 
-- **A. Input validation + run context** — validate inputs and establish the run.
-- **B. KG narrowing / context building** — restrict the knowledge graph to the
-  event neighborhood.
-- **C. Causal candidate generation** — generate candidate causes.
-- **D. Evidence retrieval** — gather supporting/refuting evidence.
-- **E. Optional Ishikawa evaluation** — structured cause-category evaluation.
-- **F. RCA synthesis** — produce the RCA narrative/artifact.
-- **G. Review / persistence hooks + run manifest** — persist results and emit a
-  run manifest.
+Reasoning orchestrator
+======================
+
+``orchestrators/rca_reasoning_orchestrator.py`` runs the pipeline in a fixed
+sequence through ``RCAReasoningOrchestrator.run()``:
+
+- **Run context** — validate inputs, build input guards, establish the run.
+- **KG context** — build (or reuse) the event-neighborhood knowledge-graph
+  context, with optional live-CMMS augmentation.
+- **Signal evidence** then **TSKR temporal patterns** — build the signal-evidence
+  view and score temporal patterns.
+- **Causality candidates** — the rule-based engine generates and ranks candidate
+  causes over a 12-category (A–L) metamodel, then re-scores them against the
+  retrieved evidence.
+- **Evidence bundle** — retrieve supporting/refuting evidence and apply
+  supersession.
+- **Optional stages** — auto re-entry, Ishikawa evaluation, barrier analysis,
+  similar-event / cross-pattern linkage, and epistemics digests.
+- **Synthesis** — produce the ``rca_card``, then output validation.
+- **Archive and manifest** — archive to Chroma (optional) and finalize the run
+  manifest.
+
+The code labels progress two ways that are easy to confuse: a lettered
+``stage_health`` map (``stage_b_kg_context`` … ``stage_g_structuring``) and a
+numbered analyst-checkpoint list (``0`` … ``6``). See ``ARCHITECTURE.md`` §3 for
+the exact order, methods and line anchors.
 
 Fixture-only runs (no live Neo4j, Chroma or LLM required) are supported through
 the shared helpers used by the test suite, which makes the pipeline
@@ -87,7 +111,10 @@ Run them from the repository root (``pytest.ini`` sets ``pythonpath = src``)::
 Design documentation
 =====================
 
-The detailed architecture assessments, causal-soundness reviews and design
-notes that accompany the implementation are kept alongside the code under
-``src/dackar/RCA/diagrams`` (organized by date). They document the rationale
-behind the causality scoring, epistemics handling and the PM-compliance module.
+The canonical, code-grounded architecture is ``src/dackar/RCA/ARCHITECTURE.md``.
+
+The dated working notes that accompanied the implementation — architecture
+assessments, causal-soundness reviews and the PM-compliance write-up — are kept
+alongside the code under ``src/dackar/RCA/devNotes`` (organized by date). They
+are a historical record and are not maintained in lockstep with the code; where
+they disagree with ``ARCHITECTURE.md`` or the source, the code wins.
