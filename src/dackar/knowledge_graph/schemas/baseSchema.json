@@ -3,14 +3,74 @@
   "title": "Knowledge Graph TOML Schema",
   "description": "Schema for defining nodes and relations in a knowledge graph using TOML format.",
   "type": "object",
+  "definitions": {
+    "property": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the property."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "string",
+            "integer",
+            "float",
+            "floating",
+            "boolean",
+            "datetime",
+            "enum",
+            "array",
+            "json_string"
+          ],
+          "description": "Data type of the property."
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "Indicates whether the property is optional."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the property."
+        },
+        "enum_values": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Allowed values when type is enum."
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "optional"
+      ],
+      "if": {
+        "properties": {
+          "type": {
+            "const": "enum"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "enum_values"
+        ]
+      }
+    }
+  },
   "properties": {
     "title": {
       "type": "string",
       "description": "Title of the schema document."
     },
     "version": {
-      "type": "number",
-      "description": "Version number of the schema."
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$",
+      "description": "Schema version (e.g., 1.0 or 1.0.0)."
     },
     "node": {
       "type": "object",
@@ -22,47 +82,20 @@
             "type": "string",
             "description": "Textual description of the node label."
           },
+          "primary_key": {
+            "type": "string",
+            "description": "Property used as the MERGE key during ingestion."
+          },
           "node_properties": {
             "type": "array",
             "description": "List of properties associated with this node label.",
             "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "description": "Name of the property."
-                },
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "string",
-                    "integer",
-                    "floating",
-                    "boolean",
-                    "datetime"
-                  ],
-                  "description": "Data type of the property. Must be one of: string, integer, floating, boolean, datetime."
-                },
-                "optional": {
-                  "type": "boolean",
-                  "description": "Indicates whether the property is optional."
-                },
-                "description": {
-                  "type": "string",
-                  "description": "Description of the property."
-                }
-              },
-              "required": [
-                "name",
-                "type",
-                "optional"
-              ]
+              "$ref": "#/definitions/property"
             }
           }
         },
         "required": [
-          "node_description",
-          "node_properties"
+          "node_description"
         ]
       }
     },
@@ -88,45 +121,14 @@
             "type": "array",
             "description": "List of properties associated with this relation.",
             "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "description": "Name of the relation property."
-                },
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "string",
-                    "integer",
-                    "floating",
-                    "boolean",
-                    "datetime"
-                  ],
-                  "description": "Data type of the relation property. Must be one of: string, integer, floating, boolean, datetime."
-                },
-                "optional": {
-                  "type": "boolean",
-                  "description": "Indicates whether the relation property is optional."
-                },
-                "description": {
-                  "type": "string",
-                  "description": "Description of the relation property."
-                }
-              },
-              "required": [
-                "name",
-                "type",
-                "optional"
-              ]
+              "$ref": "#/definitions/property"
             }
           }
         },
         "required": [
           "relation_description",
           "from_entity",
-          "to_entity",
-          "relation_properties"
+          "to_entity"
         ]
       }
     }
@@ -134,7 +136,6 @@
   "required": [
     "title",
     "version",
-    "node",
-    "relation"
+    "node"
   ]
 }

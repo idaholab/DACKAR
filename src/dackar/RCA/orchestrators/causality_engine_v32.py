@@ -29,12 +29,13 @@ argument of ``RCAReasoningOrchestrator`` for production runs, and
 
 from __future__ import annotations
 
+import copy
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..ner.entity_normalizer import EntityNormalizer
-from dackar.RCA._timeutils import parse_dt, utcnow_iso
+from .._timeutils import parse_dt, utcnow_iso
 
 JsonDict = Dict[str, Any]
 
@@ -1087,7 +1088,12 @@ class RuleBasedCausalityEngineV32:
             ``schemas/causality_candidates.json``.
         """
         payload = dict(causality_candidates)
-        candidates = [dict(c) for c in (payload.get("candidates") or [])]
+        # Deep-copy each candidate: refinement mutates nested scores in place
+        # (e.g. scores["evidence"]), so a shallow dict(c) would share the scores
+        # dict with the caller and silently mutate the input, breaking the
+        # "input is not mutated" contract above and corrupting any re-use of the
+        # same candidates payload across calls.
+        candidates = [copy.deepcopy(c) for c in (payload.get("candidates") or [])]
         summary_lookup = self._candidate_summary_lookup(evidence_bundle)
         signal_ev_index = (signal_evidence or {}).get("per_candidate_chain_score") or {}
         has_external_oe = self._has_external_oe_signal(summary_lookup)
@@ -2282,23 +2288,26 @@ class RuleBasedCausalityEngineV32:
                 patched_summary: JsonDict = {"source_families": patched_families}
                 new_factor, _ = RuleBasedCausalityEngineV32._coverage_quality_profile(patched_summary)
 
-                # Upper-bound score estimate: rescale raw by new factor
+                # Upper-bound score estimate: rescale the CURRENT composite score
+                # by the ratio of the improved coverage factor to the current one.
+                # The current score already carries every independent quality
+                # penalty (quality_multiplier etc.); recomputing as
+                # composite_raw * new_factor would silently drop those penalties
+                # and overstate the achievable score.
                 if current_factor > 0:
-                    estimated = min(1.0, raw_score * new_factor)
+                    estimated = min(1.0, current_score * (new_factor / current_factor))
                 else:
                     estimated = min(1.0, raw_score * new_factor)
                 delta = round(estimated - current_score, 6)
 
-                # Would it change ranking vs the next candidate?
+                # Would restoring this source lift the candidate above the one
+                # ranked immediately above it?  The top candidate has nobody
+                # above it; every lower-ranked candidate — including the last —
+                # must be evaluated (the old `rank_idx < len` guard skipped it).
                 would_change = False
-                if rank_idx < len(top_candidates):
-                    next_score = float(top_candidates[rank_idx].get("composite_score", 0.0) or 0.0)
-                    # Current top candidate vs second — check if order might flip
-                    if rank_idx == 1 and estimated > next_score + 0.001:
-                        would_change = False  # already ranked first, stays first
-                    elif rank_idx > 1:
-                        prev_score = float(top_candidates[rank_idx - 2].get("composite_score", 0.0) or 0.0)
-                        would_change = estimated > prev_score
+                if rank_idx > 1:
+                    prev_score = float(top_candidates[rank_idx - 2].get("composite_score", 0.0) or 0.0)
+                    would_change = estimated > prev_score + 0.001
                 if would_change:
                     any_change = True
 

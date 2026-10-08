@@ -9,9 +9,17 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
+from jsonschema import validate as _js_validate
+
 from dackar.knowledge_graph.py2neo import Py2Neo, _safe_token
+from dackar.knowledge_graph.schema_types import ALLOWED_SCHEMA_TYPES
 
 LOGGER = logging.getLogger(__name__)
+
+# Location of the meta-schema that governs every per-domain TOML schema. Kept
+# beside this module (the same file KG.importGraphSchema validates against) so
+# production ingestion and the interactive KG class share one contract.
+_BASE_SCHEMA_PATH = Path(__file__).resolve().parent / "schemas" / "baseSchema.json"
 
 
 # ---------------------------------------------------------------------------
@@ -31,20 +39,102 @@ def load_toml_schema(path: Union[str, Path]) -> Dict[str, Any]:
         return tomllib.load(handle)
 
 
+def _load_base_schema() -> Dict[str, Any]:
+    """Load and return the knowledge-graph meta-schema (``baseSchema.json``)."""
+    with open(_BASE_SCHEMA_PATH, "r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def validate_schema_document(schema: Dict[str, Any], source: str = "<schema>") -> None:
+    """Validate a single parsed TOML schema the way ``KG.importGraphSchema`` does.
+
+    Runs the per-file checks that the interactive :class:`KG` loader applies on
+    import, so malformed *production* schemas fail at load time instead of much
+    later during DDL generation, graph building, or the batch MERGE:
+
+    1. Structural validation against the meta-schema ``baseSchema.json``.
+    2. Property data types restricted to :data:`ALLOWED_SCHEMA_TYPES`.
+    3. Each node's effective primary key (an explicit ``primary_key`` or the
+       ``"id"`` default) must name a property that is declared on that node and
+       is **non-optional** — otherwise the batch MERGE would later key on a null
+       value.
+
+    Cross-schema integrity (endpoint resolution, duplicate node labels /
+    relation triples) is intentionally **not** checked here: it is a whole-set
+    property, and partial sets (e.g. the FMEA CLI loading only ``fmeaSchema`` +
+    ``mbseSchema``) legitimately reference node labels defined in sibling
+    schemas. :func:`load_and_merge_schemas` enforces the whole-set duplicate
+    checks after merging.
+
+    Args:
+        schema: A single parsed TOML schema document.
+        source: Human-readable origin (path) used in error messages.
+
+    Raises:
+        jsonschema.ValidationError: If the document violates ``baseSchema.json``.
+        ValueError: If a property uses a disallowed type, or a node's effective
+            primary key is missing or optional.
+    """
+    _js_validate(instance=schema, schema=_load_base_schema())
+
+    for label, spec in (schema.get("node") or {}).items():
+        props = _schema_props(spec)
+        for prop in props:
+            if prop["type"] not in ALLOWED_SCHEMA_TYPES:
+                raise ValueError(
+                    f"{source}: node {label!r} property {prop['name']!r} uses "
+                    f"disallowed type {prop['type']!r}"
+                )
+        pk = _node_primary_key(spec)
+        by_name = {prop["name"]: prop for prop in props}
+        if pk not in by_name:
+            raise ValueError(
+                f"{source}: node {label!r} primary key {pk!r} is not a declared property"
+            )
+        if by_name[pk].get("optional", True) is not False:
+            raise ValueError(
+                f"{source}: node {label!r} primary key {pk!r} must be non-optional"
+            )
+
+    for name, spec in (schema.get("relation") or {}).items():
+        for prop in spec.get("relation_properties") or []:
+            if prop["type"] not in ALLOWED_SCHEMA_TYPES:
+                raise ValueError(
+                    f"{source}: relation {name!r} property {prop['name']!r} uses "
+                    f"disallowed type {prop['type']!r}"
+                )
+
+
 def load_and_merge_schemas(schema_paths: Union[str, Path, Iterable[Union[str, Path]]]) -> Dict[str, Any]:
     """Load one or more TOML schema files and merge them into a single schema dict.
 
-    The merged dict has top-level keys ``"node"`` and ``"relation"``.  Duplicate
-    keys across files raise an error to prevent silent overwrites.
+    The merged dict has top-level keys ``"node"`` and ``"relation"``. A node
+    label may be defined only once across the merged files, so a duplicate node
+    key raises. Relation identity, however, is the
+    ``(name, from_entity, to_entity)`` triple (matching
+    :meth:`KG._crossSchemasCheck`): a generic verb such as ``caused_by`` or
+    ``recommends_action`` may be reused across schemas as long as it connects a
+    different pair of node labels. Each relation name therefore maps to a
+    **list** of its spec dicts, preserving every distinct endpoint pair; only an
+    exact-duplicate triple raises.
+
+    Each file is validated by :func:`validate_schema_document` as it is loaded
+    (structure against ``baseSchema.json``, allowed property types, and the
+    primary-key semantic check), so a malformed production schema fails here
+    rather than silently later during DDL/build/write.
 
     Args:
         schema_paths: A single path or an iterable of paths to ``.toml`` files.
 
     Returns:
-        A merged schema dict with ``{"node": {...}, "relation": {...}}``.
+        A merged schema dict ``{"node": {label: spec}, "relation": {name: [spec, ...]}}``.
 
     Raises:
-        ValueError: If the same node or relation key appears in more than one file.
+        jsonschema.ValidationError: If a file violates ``baseSchema.json``.
+        ValueError: If a file uses a disallowed property type or an invalid
+            primary key (see :func:`validate_schema_document`), or if the same
+            node label, or the same relation ``(name, from_entity, to_entity)``
+            triple, appears more than once across the merged files.
     """
     if isinstance(schema_paths, (str, Path)):
         paths = [Path(schema_paths)]
@@ -52,13 +142,20 @@ def load_and_merge_schemas(schema_paths: Union[str, Path, Iterable[Union[str, Pa
         paths = [Path(p) for p in schema_paths]
 
     merged: Dict[str, Any] = {"node": {}, "relation": {}}
+    seen_relation_triples: set = set()
     for path in paths:
         schema = load_toml_schema(path)
-        for section in ("node", "relation"):
-            for key, value in (schema.get(section) or {}).items():
-                if key in merged[section]:
-                    raise ValueError(f"Duplicate schema key {section}.{key} in {path}")
-                merged[section][key] = value
+        validate_schema_document(schema, source=str(path))
+        for key, value in (schema.get("node") or {}).items():
+            if key in merged["node"]:
+                raise ValueError(f"Duplicate schema key node.{key} in {path}")
+            merged["node"][key] = value
+        for name, spec in (schema.get("relation") or {}).items():
+            triple = (name, spec.get("from_entity"), spec.get("to_entity"))
+            if triple in seen_relation_triples:
+                raise ValueError(f"Duplicate relation definition {triple} in {path}")
+            seen_relation_triples.add(triple)
+            merged["relation"].setdefault(name, []).append(spec)
     return merged
 
 
@@ -80,9 +177,11 @@ def _schema_props(spec: Dict[str, Any]) -> List[Dict[str, Any]]:
 def _node_primary_key(spec: Dict[str, Any]) -> str:
     """Determine the primary key property name for a node spec.
 
-    Selects the first non-optional property; falls back to ``"id"`` if present
-    in the property list, then to the first listed property name, and finally
-    to the hard-coded default ``"id"``.
+    Honours an explicit ``primary_key`` declaration on the node spec first
+    (the meta-schema's MERGE-key contract). Otherwise selects the first
+    non-optional property; falls back to ``"id"`` if present in the property
+    list, then to the first listed property name, and finally to the
+    hard-coded default ``"id"``.
 
     Args:
         spec: A single node entry from the merged schema.
@@ -90,6 +189,9 @@ def _node_primary_key(spec: Dict[str, Any]) -> str:
     Returns:
         The property name to use as the primary key.
     """
+    declared = spec.get("primary_key")
+    if declared:
+        return declared
     props = _schema_props(spec)
     for prop in props:
         if not prop.get("optional", True):
@@ -183,25 +285,37 @@ def resolve_node_label_strict(schema: Dict[str, Any], *candidates: str) -> str:
     )
 
 
-def relation_endpoint_map(schema: Dict[str, Any]) -> Dict[str, Tuple[str, str]]:
-    """Build a lookup from relation type name to its (from_entity, to_entity) pair.
+def relation_endpoint_map(schema: Dict[str, Any]) -> Dict[str, List[Tuple[str, str]]]:
+    """Build a lookup from relation type name to its declared endpoint pairs.
 
-    Only relations that declare both ``from_entity`` and ``to_entity`` in the
-    schema are included.
+    A relation name may be reused across schemas for different endpoint pairs
+    (relation identity is the ``(name, from_entity, to_entity)`` triple), so each
+    name maps to a **list** of ``(from_entity, to_entity)`` tuples, one per
+    declared definition. Only definitions that declare both ``from_entity`` and
+    ``to_entity`` are included; exact-duplicate pairs are collapsed.
+
+    Accepts both the list-valued ``"relation"`` section produced by
+    :func:`load_and_merge_schemas` and a single-schema dict whose relation values
+    are plain spec dicts.
 
     Args:
         schema: Merged schema dict (must contain a ``"relation"`` key).
 
     Returns:
-        Dict mapping each relation name to a ``(source_entity, target_entity)``
-        tuple of entity type strings.
+        Dict mapping each relation name to a list of ``(source_entity,
+        target_entity)`` tuples of entity type strings.
     """
-    out: Dict[str, Tuple[str, str]] = {}
-    for name, spec in (schema.get("relation") or {}).items():
-        from_entity = spec.get("from_entity")
-        to_entity = spec.get("to_entity")
-        if from_entity and to_entity:
-            out[name] = (from_entity, to_entity)
+    out: Dict[str, List[Tuple[str, str]]] = {}
+    for name, value in (schema.get("relation") or {}).items():
+        specs = value if isinstance(value, list) else [value]
+        for spec in specs:
+            from_entity = spec.get("from_entity")
+            to_entity = spec.get("to_entity")
+            if from_entity and to_entity:
+                pair = (from_entity, to_entity)
+                pairs = out.setdefault(name, [])
+                if pair not in pairs:
+                    pairs.append(pair)
     return out
 
 
@@ -268,9 +382,11 @@ def sanitize_props(props: Dict[str, Any]) -> Dict[str, Any]:
 def generate_ddl_from_schema(schema: Dict[str, Any]) -> List[str]:
     """Generate Neo4j DDL statements (constraints and indexes) from a merged schema.
 
-    For every node label a ``UNIQUE`` constraint on ``id`` is created.
-    Additionally, a ``CREATE INDEX`` statement is emitted for each property
-    that carries ``"indexed": true`` in its spec.
+    For every node label a ``UNIQUE`` constraint is created on that label's
+    primary-key property (as resolved by :func:`_node_primary_key`), so an
+    explicit ``primary_key`` such as ``document_id`` is enforced rather than a
+    hard-coded ``id``. Additionally, a ``CREATE INDEX`` statement is emitted for
+    each property that carries ``"indexed": true`` in its spec.
 
     Args:
         schema: Merged schema dict as returned by :func:`load_and_merge_schemas`.
@@ -287,7 +403,10 @@ def generate_ddl_from_schema(schema: Dict[str, Any]) -> List[str]:
         # Validate + backtick-quote interpolated identifiers to guard against
         # Cypher injection through schema-supplied labels / property names.
         safe_label = _safe_token(label, "label")
-        ddl.append(f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:`{safe_label}`) REQUIRE n.id IS UNIQUE")
+        safe_pk = _safe_token(_node_primary_key(spec), "primary key")
+        ddl.append(
+            f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:`{safe_label}`) REQUIRE n.`{safe_pk}` IS UNIQUE"
+        )
         for prop in _schema_props(spec):
             if prop.get("indexed"):
                 safe_prop = _safe_token(prop["name"], "property name")
@@ -338,6 +457,7 @@ class GraphBatch:
         self.nodes: Dict[str, Dict[str, Any]] = {}
         self.edges: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
         self.relation_map = relation_endpoint_map(self.schema)
+        self.primary_key_map = build_primary_key_map(self.schema)
 
     def add_node(self, node_id: str, label: str, attrs: Optional[Dict[str, Any]] = None) -> str:
         """Add or merge a node into the batch.
@@ -352,9 +472,21 @@ class GraphBatch:
 
         Returns:
             The *node_id* string, for convenience when chaining calls.
+
+        Notes:
+            *node_id* is the one canonical identity for the node: it is both the
+            ``id`` property and the value the edge builder stores as the edge
+            endpoint. When the label's schema declares a natural primary key
+            (e.g. ``document_id``), that property is populated with the same
+            *node_id* so the MERGE key the ingestion batch uses lines up with
+            the edge-endpoint match and Neo4j never merges on a null key. For
+            the default ``id`` key this is a no-op.
         """
         attrs = deepcopy(attrs or {})
         attrs["id"] = node_id
+        pk = self.primary_key_map.get(label, "id")
+        if pk != "id":
+            attrs[pk] = node_id
         clean = sanitize_props(attrs)
         if node_id in self.nodes:
             self.nodes[node_id]["attrs"].update(clean)
@@ -395,14 +527,14 @@ class GraphBatch:
 
         src_label = self.nodes[src]["label"]
         dst_label = self.nodes[dst]["label"]
-        spec = self.relation_map.get(rel_type)
-        if spec:
+        pairs = self.relation_map.get(rel_type)
+        if pairs:
             _rel_resolve = resolve_node_label_strict if self.schema.get("node") else resolve_node_label
-            exp_src = _rel_resolve(self.schema, spec[0])
-            exp_dst = _rel_resolve(self.schema, spec[1])
-            if src_label != exp_src or dst_label != exp_dst:
+            expected = [(_rel_resolve(self.schema, p[0]), _rel_resolve(self.schema, p[1])) for p in pairs]
+            if (src_label, dst_label) not in expected:
+                allowed = ", ".join(f"({s} -> {d})" for s, d in expected)
                 raise ValueError(
-                    f"Relation {rel_type} expects ({exp_src} -> {exp_dst}), got ({src_label} -> {dst_label})"
+                    f"Relation {rel_type} expects {allowed}, got ({src_label} -> {dst_label})"
                 )
         elif not allow_untyped:
             raise ValueError(f"Relation {rel_type} is not declared in the TOML schema")
@@ -526,13 +658,14 @@ def _safe_ptr_entity_rel(
     dst_label = g.nodes[dst]["label"]
 
     def _relation_matches(rel_name: str) -> bool:
-        spec = g.relation_map.get(rel_name)
-        if not spec:
+        pairs = g.relation_map.get(rel_name)
+        if not pairs:
             return False
         _r = resolve_node_label_strict if g.schema.get("node") else resolve_node_label
-        exp_src = _r(g.schema, spec[0])
-        exp_dst = _r(g.schema, spec[1])
-        return src_label == exp_src and dst_label == exp_dst
+        for p in pairs:
+            if src_label == _r(g.schema, p[0]) and dst_label == _r(g.schema, p[1]):
+                return True
+        return False
 
     # Only use typed relations if they truly match PTR -> entity endpoints.
     for rel_name in ("targets_entity", "references_entity", "mentions"):
@@ -566,13 +699,14 @@ def _safe_ptr_failure_mode_rel(
     dst_label = g.nodes[dst]["label"]
 
     def _relation_matches(rel_name: str) -> bool:
-        spec = g.relation_map.get(rel_name)
-        if not spec:
+        pairs = g.relation_map.get(rel_name)
+        if not pairs:
             return False
         _r = resolve_node_label_strict if g.schema.get("node") else resolve_node_label
-        exp_src = _r(g.schema, spec[0])
-        exp_dst = _r(g.schema, spec[1])
-        return src_label == exp_src and dst_label == exp_dst
+        for p in pairs:
+            if src_label == _r(g.schema, p[0]) and dst_label == _r(g.schema, p[1]):
+                return True
+        return False
 
     for rel_name in ("supports_hypothesis", "references_failure_mode", "caused_by"):
         if _relation_matches(rel_name):
@@ -1051,11 +1185,29 @@ def build_graph_from_workflow_artifacts(
 # Ingest
 # ---------------------------------------------------------------------------
 
+def build_primary_key_map(schema: Dict[str, Any]) -> Dict[str, str]:
+    """Build a ``{node_label: primary_key}`` map from a (merged) TOML schema.
+
+    Resolves each node's merge key via :func:`_node_primary_key`, so an
+    explicit ``primary_key`` declaration is honoured and ``"id"`` is used as
+    the default. Suitable for passing as the ``primary_keys`` argument to
+    :meth:`Py2Neo.upsert_nodes_batch` / :meth:`Py2Neo.upsert_edges_batch`.
+
+    Args:
+        schema: A schema dict (or merged schema) with a ``"node"`` mapping.
+
+    Returns:
+        Mapping of node label to the property name used as its MERGE key.
+    """
+    return {label: _node_primary_key(spec) for label, spec in schema.get("node", {}).items()}
+
+
 def ingest_graph_toml(
     client: Py2Neo,
     nodes: List[Dict[str, Any]],
     edges: List[Dict[str, Any]],
     database: Optional[str] = None,
+    primary_keys: Optional[Dict[str, str]] = None,
 ) -> None:
     """Bulk-upsert a node list and edge list into Neo4j.
 
@@ -1068,8 +1220,10 @@ def ingest_graph_toml(
         nodes: List of node dicts as returned by :func:`build_graph_from_workflow_artifacts`.
         edges: List of edge dicts as returned by :func:`build_graph_from_workflow_artifacts`.
         database: Target database name; uses the driver default when ``None``.
+        primary_keys: Optional ``{label: key_name}`` merge-key map (e.g. from
+            :func:`build_primary_key_map`); defaults to ``"id"`` per label.
     """
     if nodes:
-        client.upsert_nodes_batch(nodes, db=database)
+        client.upsert_nodes_batch(nodes, db=database, primary_keys=primary_keys)
     if edges:
-        client.upsert_edges_batch(edges, db=database)
+        client.upsert_edges_batch(edges, db=database, primary_keys=primary_keys)

@@ -332,44 +332,54 @@ class Py2Neo:
         # result = [record.values() for record in result]
         return result
 
-    def upsert_nodes_batch(self, nodes, db=None):
+    def upsert_nodes_batch(self, nodes, db=None, primary_keys=None):
         """Batch-upsert a collection of nodes, grouped by label.
 
-        Nodes are merged on their ``id`` attribute so that repeated calls are
-        idempotent. Each dict in *nodes* must have ``"label"`` and ``"attrs"``
-        keys; ``attrs`` must contain ``"id"``. Used by the schema-governed KG
+        Nodes are merged on their primary-key attribute so that repeated calls
+        are idempotent. The merge key for each label is taken from
+        *primary_keys* (a ``{label: key_name}`` mapping, typically derived from
+        the TOML schema's ``primary_key`` fields) and defaults to ``"id"`` when
+        the label is absent, preserving backward-compatible behaviour. Each
+        dict in *nodes* must have ``"label"`` and ``"attrs"`` keys; ``attrs``
+        must contain the merge-key property. Used by the schema-governed KG
         batch-ingestion workflows.
 
         Args:
             nodes (Sequence[dict]): sequence of ``{"label": str, "attrs": dict}`` dicts.
             db (str, optional): target database name; uses the driver default when None. Defaults to None.
+            primary_keys (dict, optional): ``{label: key_name}`` merge-key map. Defaults to ``"id"`` per label.
         """
+        primary_keys = primary_keys or {}
         grouped = {}
         for node in nodes:
             label = _safe_token(node["label"], "label")
             grouped.setdefault(label, []).append(node["attrs"])
 
         for label, rows in grouped.items():
+            pk = _safe_token(primary_keys.get(label, "id"), "primary key")
             query = (
                 f"UNWIND $rows AS row "
-                f"MERGE (n:`{label}` {{id: row.id}}) "
+                f"MERGE (n:`{label}` {{`{pk}`: row.`{pk}`}}) "
                 f"SET n += row"
             )
             self.write(query, {"rows": rows}, db=db)
 
-    def upsert_edges_batch(self, edges, db=None):
+    def upsert_edges_batch(self, edges, db=None, primary_keys=None):
         """Batch-upsert a collection of relationships, grouped by endpoint labels and type.
 
         Each dict in *edges* must contain ``"from_label"``, ``"to_label"``,
         ``"type"``, ``"from"`` (source node id), ``"to"`` (target node id),
         and an optional ``"attrs"`` dict for relationship properties. Endpoints
-        are matched on their ``id`` attribute. Used by the schema-governed KG
-        batch-ingestion workflows.
+        are matched on their primary-key attribute, taken from *primary_keys*
+        (a ``{label: key_name}`` mapping) and defaulting to ``"id"`` per label.
+        Used by the schema-governed KG batch-ingestion workflows.
 
         Args:
             edges (Sequence[dict]): sequence of edge descriptor dicts.
             db (str, optional): target database name; uses the driver default when None. Defaults to None.
+            primary_keys (dict, optional): ``{label: key_name}`` merge-key map. Defaults to ``"id"`` per label.
         """
+        primary_keys = primary_keys or {}
         grouped = {}
         for edge in edges:
             key = (
@@ -380,10 +390,12 @@ class Py2Neo:
             grouped.setdefault(key, []).append(edge)
 
         for (src_label, dst_label, rel_type), rows in grouped.items():
+            src_pk = _safe_token(primary_keys.get(src_label, "id"), "primary key")
+            dst_pk = _safe_token(primary_keys.get(dst_label, "id"), "primary key")
             query = (
                 "UNWIND $rows AS row "
-                f"MATCH (a:`{src_label}` {{id: row.from_id}}) "
-                f"MATCH (b:`{dst_label}` {{id: row.to_id}}) "
+                f"MATCH (a:`{src_label}` {{`{src_pk}`: row.from_id}}) "
+                f"MATCH (b:`{dst_label}` {{`{dst_pk}`: row.to_id}}) "
                 f"MERGE (a)-[r:`{rel_type}`]->(b) "
                 "SET r += row.attrs"
             )
