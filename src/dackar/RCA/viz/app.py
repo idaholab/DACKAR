@@ -28,8 +28,18 @@ from typing import Any, Dict, Optional
 
 import streamlit as st
 
-from loader import list_bundle_keys, load_artifacts, load_pre_refine_causality
-from panels import candidates, evidence, extra_artifacts, kg_context, pipeline_nav, rca_card, telemetry, validation
+from loader import list_bundle_keys, load_artifacts, load_pre_refine_causality, merge_bundles
+from panels import (
+    candidates,
+    evidence,
+    extra_artifacts,
+    kg_context,
+    method_outputs,
+    pipeline_nav,
+    rca_card,
+    telemetry,
+    validation,
+)
 
 JsonDict = Dict[str, Any]
 
@@ -39,6 +49,7 @@ TAB_NAMES = [
     "Telemetry & Temporal",
     "Candidates",
     "Evidence",
+    "Method Outputs",
     "Ishikawa & CMMS",
     "RCA Card",
 ]
@@ -68,10 +79,12 @@ def _pipeline_status(art: JsonDict) -> list[tuple[str, str]]:
 
     checks.append(("Inputs / run_context", ok("run_context")))
     checks.append(("KG context", ok("kg_context")))
+    checks.append(("Signal evidence", ok("signal_evidence")))
     checks.append(("TSKR patterns", ok("tskr_patterns")))
     checks.append(("Causality candidates", ok("causality_candidates")))
     checks.append(("Pre-refine candidates (Phase 5)", ok("causality_candidates_pre_refine")))
     checks.append(("Evidence bundle", ok("evidence_bundle")))
+    checks.append(("Barrier analysis (optional)", ok("barrier_analysis")))
     checks.append(("RCA card", ok("rca_card")))
     checks.append(("Ishikawa matrix (optional)", ok("ishikawa_matrix")))
     checks.append(("CMMS context (optional)", ok("cmms_context")))
@@ -98,6 +111,18 @@ def main() -> None:
             value="",
             help="Overrides bundle `causality_candidates_pre_refine` when set (see RCA_VIZ_ARCHITECTURE.md §12).",
         )
+        supplemental_path = st.text_input(
+            "Optional: supplemental inputs/outputs path",
+            value="",
+            help=(
+                "A second full_result.json or fixtures/run directory whose "
+                "artifacts fill in keys the primary lacks (the primary always "
+                "wins on shared keys). Use it to pair a post-run bundle with "
+                "its raw inputs — e.g. the fixtures folder that supplies "
+                "`event` / `telemetry_summary` — so one view shows both the "
+                "data provided as input and the data every method produced."
+            ),
+        )
         load_btn = st.button("Load / reload", type="primary")
 
     if not input_path.strip():
@@ -109,7 +134,11 @@ def main() -> None:
 
     if load_btn or "artifacts" not in st.session_state:
         try:
-            st.session_state["artifacts"] = load_artifacts(input_path.strip())
+            bundle = load_artifacts(input_path.strip())
+            if supplemental_path.strip():
+                supplement = load_artifacts(supplemental_path.strip())
+                bundle = merge_bundles(bundle, supplement)
+            st.session_state["artifacts"] = bundle
             st.session_state["primary_path"] = input_path.strip()
             st.session_state["load_error"] = None
             if load_btn:
@@ -179,6 +208,14 @@ def main() -> None:
         candidates.render_candidates_panel(art.get("causality_candidates"), pre_refine)
     elif nav == "Evidence":
         evidence.render_evidence_panel(art.get("evidence_bundle"), art.get("causality_candidates"))
+    elif nav == "Method Outputs":
+        method_outputs.render_method_outputs_panel(
+            art.get("signal_evidence"),
+            art.get("barrier_analysis"),
+            art.get("reentry_execution"),
+            art.get("scoring_evolution"),
+            art.get("cross_pattern_evidence"),
+        )
     elif nav == "Ishikawa & CMMS":
         extra_artifacts.render_extra_artifacts_panel(
             art.get("ishikawa_matrix"),

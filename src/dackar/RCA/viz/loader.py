@@ -15,7 +15,11 @@ from typing import Any, Dict, List, Literal, Optional
 
 JsonDict = Dict[str, Any]
 
-# basename on disk -> key in the unified ArtifactBundle
+# Alias layer for load_from_fixtures_dir: basename on disk -> bundle key, used
+# only when a file's name differs from the key we want. Files not listed here
+# are keyed by their filename stem, so new artifacts appear without editing this
+# map. (Every current entry is stem==key and therefore redundant, kept as
+# documentation of the expected fixture set.)
 _FIXTURE_FILE_MAP: Dict[str, str] = {
     "event.json": "event",
     "telemetry_summary.json": "telemetry_summary",
@@ -80,18 +84,24 @@ def load_from_full_result(path: str) -> JsonDict:
 
 def load_from_fixtures_dir(directory: str) -> JsonDict:
     """
-    Merge individual fixture files into one bundle.
-    Missing files are omitted (key absent); never raises for missing optional files.
+    Merge every ``*.json`` in a directory into one bundle, keyed by filename.
+
+    The directory may be a hand-built fixtures folder or a real orchestrator run
+    folder (``ArtifactStore`` writes one ``<artifact_name>.json`` per artifact),
+    so scanning the directory surfaces whatever artifacts are actually present
+    rather than a fixed allow-list. ``_FIXTURE_FILE_MAP`` is consulted as an
+    alias layer: a basename it names maps to that key, otherwise the filename
+    stem is the key. Missing files are simply absent; never raises for them.
     """
     root = Path(directory)
     if not root.is_dir():
         raise NotADirectoryError(directory)
 
     bundle: JsonDict = {}
-    for name, key in _FIXTURE_FILE_MAP.items():
-        fp = root / name
+    for fp in sorted(root.glob("*.json")):
         if not fp.is_file():
             continue
+        key = _FIXTURE_FILE_MAP.get(fp.name, fp.stem)
         try:
             payload = _read_json(fp)
         except (json.JSONDecodeError, OSError) as exc:
@@ -108,6 +118,23 @@ def load_from_fixtures_dir(directory: str) -> JsonDict:
                     return nested
 
     return bundle
+
+
+def merge_bundles(primary: JsonDict, supplemental: JsonDict) -> JsonDict:
+    """
+    Return *primary* with any keys it lacks filled in from *supplemental*.
+
+    Primary wins on every shared key, so a complete run bundle is never
+    overwritten; the supplement only contributes artifacts the primary is
+    missing (e.g. the raw ``event`` / ``telemetry_summary`` inputs that a
+    ``v32_full_result.json`` does not carry, or the generated artifacts a
+    hand-built fixtures folder lacks). This lets one view combine the data
+    provided as input with the data produced by every pipeline stage.
+    """
+    merged = dict(primary)
+    for key, value in supplemental.items():
+        merged.setdefault(key, value)
+    return merged
 
 
 def load_artifacts(path: str) -> JsonDict:

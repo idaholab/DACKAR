@@ -59,6 +59,11 @@ def pipeline_stage_rows(art: JsonDict) -> List[Tuple[str, str, str]]:
         _stage_icon(True, _present(art, "kg_context")),
     )
     add(
+        "Signal evidence",
+        "Method Outputs",
+        _stage_icon(True, _present(art, "signal_evidence")),
+    )
+    add(
         "TSKR patterns",
         "Telemetry & Temporal",
         _stage_icon(True, _present(art, "tskr_patterns")),
@@ -92,6 +97,11 @@ def pipeline_stage_rows(art: JsonDict) -> List[Tuple[str, str, str]]:
             "Ishikawa & CMMS",
             "⚪",
         )
+    add(
+        "Barrier analysis (optional)",
+        "Method Outputs",
+        _stage_icon(False, _present(art, "barrier_analysis")),
+    )
     add(
         "RCA synthesize",
         "RCA Card",

@@ -182,7 +182,10 @@ def build_timeline_figure(
                     "start": ts,
                     "end": end_ts,
                     "pattern": str(a.get("pattern") or "unknown"),
-                    "severity": str(a.get("severity") or ""),
+                    # Canonical input anomalies carry `severity_score`; builder
+                    # output carries `severity`. Accept either so the hover is
+                    # populated in both input modes.
+                    "severity": str(a.get("severity_score", a.get("severity")) or ""),
                     "anomaly_id": str(a.get("anomaly_id") or ""),
                 }
             )

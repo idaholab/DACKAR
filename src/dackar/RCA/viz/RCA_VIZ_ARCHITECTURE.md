@@ -31,7 +31,7 @@ The full result JSON already contains all artifacts as nested keys (`run_context
 
 ## 3. Panels (Tabs)
 
-Seven sections, selected via horizontal **`st.radio`** (same UX as tabs). Validation / KG / Telemetry are usable with partial fixtures; others depend on the loaded bundle.
+Eight sections, selected via horizontal **`st.radio`** (same UX as tabs). Validation / KG / Telemetry are usable with partial fixtures; others depend on the loaded bundle.
 
 | Section | Data sources | Available in fixture mode? |
 |--------|-------------|---------------------------|
@@ -40,8 +40,11 @@ Seven sections, selected via horizontal **`st.radio`** (same UX as tabs). Valida
 | **Telemetry & Temporal** | `telemetry_summary`, `tskr_patterns`, optional **`kg_context`** (FMEA latency strip) | Partial (telemetry only) |
 | **Candidates** | `causality_candidates` (post-refine); optional **`causality_candidates_pre_refine`** on bundle or sidebar path for delta | Yes; **delta** uses embedded pre-refine when the orchestrator persisted it (Phase 5) or the optional sidebar JSON |
 | **Evidence** | `evidence_bundle`, `causality_candidates` | Yes (fixtures) |
+| **Method Outputs** | `signal_evidence`, `barrier_analysis`, `reentry_execution`, `scoring_evolution`, `cross_pattern_evidence` | Run result only (these are generated artifacts, absent from input-only fixtures) |
 | **Ishikawa & CMMS** | `ishikawa_matrix`, `cmms_context` | Partial (often null) |
 | **RCA Card** | `rca_card` | No (run result only) |
+
+**Input modes and completeness.** A fixtures/run **directory** is loaded by scanning every `*.json` (keyed by filename stem; `_FIXTURE_FILE_MAP` is an alias layer for names that differ from the key), so pointing at a real orchestrator run folder surfaces every persisted artifact automatically. A single `full_result.json` carries the generated artifacts but not the raw inputs (`event`, `telemetry_summary`, `operational_context` are never persisted); a hand-built fixtures folder carries the inputs but not the generated artifacts. The sidebar **supplemental path** merges a second directory/file into the primary (primary wins on shared keys) so one view can show both the input data and the data every method produced.
 
 ---
 
@@ -471,6 +474,7 @@ Nested fixture sets (e.g. `test_case_1/fixtures/case_001_bearing_wear/`) are sup
 | Telemetry | “No `telemetry_summary`.” |
 | Candidates | “No `causality_candidates`.” / banner if no pre-refine file for delta |
 | Evidence | “No `evidence_bundle`.” |
+| Method Outputs | per sub-section: “No `signal_evidence` / `barrier_analysis` / `reentry_execution` …” |
 | RCA Card | “No `rca_card` (fixture-only load).” |
 | Ishikawa & CMMS | “No `ishikawa_matrix` / `cmms_context`.” |
 
@@ -480,9 +484,9 @@ Nested fixture sets (e.g. `test_case_1/fixtures/case_001_bearing_wear/`) are sup
 
 **Implemented** in the **sidebar** (`panels/pipeline_nav.py`): linear stages aligned with `RCAReasoningOrchestrator.run()`:
 
-`Inputs` → `KG context` → `TSKR` → `Candidates (generate)` → `Evidence` → `Candidates (refine)` → `Ishikawa (optional)` → `RCA card` → `Manifest`
+`Inputs` → `KG context` → `Signal evidence` → `TSKR` → `Candidates (generate)` → `Evidence` → `Candidates (refine)` → `Ishikawa (optional)` → `Barrier analysis (optional)` → `RCA card` → `Manifest`
 
-For each stage: ✅ / ⚠️ / ❌ / ⚪ (Ishikawa disabled in run config) as described in code. **Clicking a stage** sets `st.session_state.rca_viz_tab_radio` to the matching section (Validation, KG Context, Telemetry & Temporal, Candidates, Evidence, Ishikawa & CMMS, RCA Card).
+For each stage: ✅ / ⚠️ / ❌ / ⚪ (Ishikawa disabled in run config) as described in code. **Clicking a stage** sets `st.session_state.rca_viz_tab_radio` to the matching section (Validation, KG Context, Telemetry & Temporal, Candidates, Evidence, Method Outputs, Ishikawa & CMMS, RCA Card).
 
 ```mermaid
 flowchart TD
