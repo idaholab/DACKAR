@@ -64,6 +64,7 @@ try:
         GraphBatch,
         _prefix,
         apply_schema_constraints,
+        build_primary_key_map,
         ingest_graph_toml,
         load_and_merge_schemas,
     )
@@ -73,6 +74,7 @@ except ModuleNotFoundError:  # pragma: no cover - bare-script fallback
         GraphBatch,
         _prefix,
         apply_schema_constraints,
+        build_primary_key_map,
         ingest_graph_toml,
         load_and_merge_schemas,
     )
@@ -421,7 +423,8 @@ def ingest_fmea_to_neo4j(
         database=database,
     )
     LOGGER.info("Built FMEA graph: %d nodes, %d edges", len(nodes), len(edges))
-    ingest_graph_toml(client, nodes, edges, database=database)
+    primary_keys = build_primary_key_map(load_and_merge_schemas(schema_paths))
+    ingest_graph_toml(client, nodes, edges, database=database, primary_keys=primary_keys)
     return len(nodes), len(edges)
 
 

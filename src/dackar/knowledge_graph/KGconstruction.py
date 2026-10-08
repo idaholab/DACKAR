@@ -17,6 +17,8 @@ from datetime import datetime
 from dateutil.parser import parse
 from pandas.api.types import infer_dtype
 
+from dackar.knowledge_graph.schema_types import ALLOWED_SCHEMA_TYPES, isCompatibleDtype, validateValueSemantics
+
 import logging
 
 currentDir = os.path.dirname(__file__)
@@ -46,7 +48,12 @@ class KG:
         if importFolderPath is not None:
             set_neo4j_import_folder(configFilePath, importFolderPath)
 
-        self.datatypes = ['string', 'integer', 'floating', 'boolean', 'datetime']
+        # Allowed property data types. Sourced from schema_types so the
+        # allowlist, the baseSchema.json type enum, and the dataframe dtype
+        # compatibility map share a single definition. 'floating' is retained
+        # as an alias of 'float'; 'array'/'json_string' support the document
+        # / RAG schema.
+        self.datatypes = list(ALLOWED_SCHEMA_TYPES)
 
         # Create python to neo4j driver
         self.py2neo = Py2Neo(uri=uri, user=user, pwd=pwd)
@@ -62,13 +69,36 @@ class KG:
         with open(baseSchemaLocation, "r") as f:
             self.baseSchema = json.load(f)
 
-        # set of predefined schemas available in DACKAR generated for the RIAM project
-        self.predefinedGraphSchemas = {'conditionReportSchema'  : os.path.join(currentDir,'schemas','conditionReportSchema.toml'),
-                                       'mbseSchema'             : os.path.join(currentDir,'schemas','mbseSchema.toml'),
-                                       'monitoringSystemSchema' : os.path.join(currentDir,'schemas','monitoringSystemSchema.toml'),
-                                       'nuclearEntitySchema'    : os.path.join(currentDir,'schemas','nuclearEntitySchema.toml'),
-                                       'numericPerformanceSchema': os.path.join(currentDir,'schemas','numericPerformanceSchema.toml'),
-                                       'causalSchema'           : os.path.join(currentDir,'schemas','causalSchema.toml')}
+        # Curated set of predefined schemas available in DACKAR. Deprecated
+        # schemas (customMbseSchema, reqTechspecSchema) are intentionally
+        # excluded; their node definitions are superseded by mbseSchema.toml.
+        def _schemaPath(name):
+            return os.path.join(currentDir, 'schemas', name + '.toml')
+
+        self.predefinedGraphSchemas = {
+            name: _schemaPath(name)
+            for name in [
+                'nuclearEntitySchema',
+                'mbseSchema',
+                'documentSchema',
+                'conditionReportSchema',
+                'fmeaSchema',
+                'causalSchema',
+                'safetyRiskSchema',
+                'rootCauseAnalysisSchema',
+                'hazopSchema',
+                'stpaSchema',
+                'workOrderSchema',
+                'outageSchema',
+                'equipmentOperationSchema',
+                'monitoringSystemSchema',
+                'numericPerformanceSchema',
+                'supplyChainSchema',
+                'systemSimulationSchema',
+                'temporalRelationSchema',
+                'regulatorySchema',
+            ]
+        }
 
     def resetGraph(self):
         """
@@ -78,17 +108,21 @@ class KG:
         """
         self.py2neo.reset()
 
-    def _crossSchemasCheck(self):
+    def _crossSchemasCheck(self, graphSchemas=None):
         """
         Method designed to perform a series of checks across the defined schemas
-        @ In, None
+        @ In, graphSchemas, dict, optional registry of schemas to check; defaults
+            to the committed session registry (self.graphSchemas)
         @ Out, None
         """
+        if graphSchemas is None:
+            graphSchemas = self.graphSchemas
+
         self.nodeList = []
         self.relationList = []
 
-        for schema in self.graphSchemas:
-            for node in self.graphSchemas[schema]['node']:
+        for schema in graphSchemas:
+            for node in graphSchemas[schema].get('node', {}):
                 # check that the node is not duplicated
                 if node in self.nodeList:
                     message = 'Schema ' + str(schema) + ' - Node ' + str(node) + ' has been defined twice'
@@ -96,18 +130,22 @@ class KG:
                 else:
                     self.nodeList.append(node)
 
-        for schema in self.graphSchemas:
-            for rel in self.graphSchemas[schema]['relation']:
-                # check that the relation is not duplicated
-                if rel in self.relationList:
-                    message = 'Duplicate relation definition encountered: ' + str(rel) + ' in schema: ' + str(schema)
+        for schema in graphSchemas:
+            for rel in graphSchemas[schema].get('relation', {}):
+                # check that the defined relations link nodes that have been defined
+                origin = graphSchemas[schema]['relation'][rel]['from_entity']
+                destin = graphSchemas[schema]['relation'][rel]['to_entity']
+
+                # A relation is keyed by the (name, from_entity, to_entity)
+                # triple, so the same generic verb (e.g. caused_by,
+                # targets_element) may be reused across schemas as long as it
+                # connects a different pair of node labels.
+                relationKey = (rel, origin, destin)
+                if relationKey in self.relationList:
+                    message = 'Duplicate relation definition encountered: ' + str(relationKey) + ' in schema: ' + str(schema)
                     raise ValueError(message)
                 else:
-                    self.relationList.append(rel)
-
-                # check that the defined relations link nodes that have been defined
-                origin = self.graphSchemas[schema]['relation'][rel]['from_entity']
-                destin = self.graphSchemas[schema]['relation'][rel]['to_entity']
+                    self.relationList.append(relationKey)
 
                 if origin not in self.nodeList:
                     message = 'Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(origin) + ' is not defined'
@@ -125,17 +163,16 @@ class KG:
         try:
             validate(instance=importedSchema, schema=self.baseSchema)
             logging.info("TOML content is valid against the schema.")
-        except tomllib.TOMLDecodeError as e:
-            logging.error(f"TOML syntax error: {e}")
         except ValidationError as e:
             logging.error(f"TOML schema validation error: {e.message}")
+            raise
 
-    def importGraphSchema(self, graphSchemaName, tomlFilename):
+    def _loadAndValidateSchemaFile(self, tomlFilename):
         """
-        Method that imports new schema contained in a .toml file
-        @ In, graphSchemaName, string, name of the schema to be imported
-        @ In, tomlFilename, string, .toml file contained the new schema
-        @ Out, None
+        Parse one TOML schema file and run the per-file checks (base-schema
+        structure and allowed data types). Does not mutate session state.
+        @ In, tomlFilename, string, .toml file containing the schema
+        @ Out, configData, dict, parsed and per-file-validated schema
         """
         fullPath = Path(tomlFilename)
 
@@ -151,29 +188,92 @@ class KG:
         #check data types against self.datatypes
         self._checkSchemaDataTypes(configData)
 
-        # Check imported graphSchema against self.graphSchemas
-        # check schema name is not used before
-        if graphSchemaName in list(self.graphSchemas.keys()):
-            message = 'Schema ' + str(graphSchemaName) + ' is already defined in the exisiting schemas'
+        return configData
+
+    def importGraphSchemas(self, schemaFiles, crossCheck=True, replace=False):
+        """
+        Method that imports a batch of schemas atomically. Each file is parsed
+        and per-file-validated into a temporary candidate registry; the whole
+        candidate is cross-checked; session state (self.graphSchemas) is
+        replaced only once every check passes, so a failure anywhere leaves the
+        existing registry untouched (no partial load).
+        @ In, schemaFiles, dict, mapping {schemaName: tomlFilename}
+        @ In, crossCheck, bool, run whole-set cross-schema integrity (duplicate
+            nodes/relation-triples and endpoint resolution) on the candidate
+            before committing. Pass False for a known-partial batch whose
+            endpoints resolve in schemas loaded elsewhere (default True).
+        @ In, replace, bool, build the candidate from an empty registry rather
+            than layering on the committed set, so re-loading the same set is
+            idempotent instead of failing on existing names (default False).
+        @ Out, None
+        """
+        candidate = {} if replace else dict(self.graphSchemas)
+        for name, path in schemaFiles.items():
+            if name in candidate:
+                message = 'Schema ' + str(name) + ' is already defined in the exisiting schemas'
+                logging.error(message)
+                raise ValueError(message)
+            candidate[name] = self._loadAndValidateSchemaFile(path)
+
+        if crossCheck:
+            self._crossSchemasCheck(candidate)
+
+        self.graphSchemas = candidate
+
+    def importGraphSchema(self, graphSchemaName, tomlFilename):
+        """
+        Method that imports new schema contained in a .toml file
+        @ In, graphSchemaName, string, name of the schema to be imported
+        @ In, tomlFilename, string, .toml file contained the new schema
+        @ Out, None
+        """
+        # Single imports do not force endpoint resolution: a schema may
+        # legitimately reference nodes defined in another not-yet-imported
+        # schema (e.g. fmea references degradation_mechanism in causal, while
+        # causal references failure_mode in fmea). Whole-set integrity is a
+        # property of the complete set; run importGraphSchemas(crossCheck=True)
+        # or loadPredefinedGraphSchemas once every participating schema is in.
+        self.importGraphSchemas({graphSchemaName: tomlFilename}, crossCheck=False)
+
+    def loadPredefinedGraphSchemas(self):
+        """
+        Method that loads the full curated set of predefined DACKAR schemas and
+        validates cross-schema integrity once the whole set is in memory. The
+        load is atomic (session state is replaced only after the whole set
+        validates) and idempotent (a repeat load rebuilds the same set rather
+        than failing on existing names).
+        @ In, None
+        @ Out, None
+        """
+        self.importGraphSchemas(self.predefinedGraphSchemas, crossCheck=True, replace=True)
+
+    def removeGraphSchema(self, graphSchemaName):
+        """
+        Method that removes a single schema from the session registry and
+        revalidates the cross-schema references among the schemas that remain,
+        so the registry is never left with a relation pointing at a node label
+        the removal just deleted. The removal is atomic and symmetric with the
+        import path: session state (self.graphSchemas) is replaced only after
+        the remaining set validates, so a removal that would strand a reference
+        raises and leaves the existing registry untouched.
+        @ In, graphSchemaName, string, name of the schema to remove
+        @ Out, None
+        """
+        if graphSchemaName not in self.graphSchemas:
+            message = 'Schema ' + str(graphSchemaName) + ' is not defined in the existing schemas'
             logging.error(message)
             raise ValueError(message)
 
-        # check nodes are not already defined
-        for node in configData['node'].keys():
-            for schema in self.graphSchemas:
-                if node in schema['node'].keys():
-                    message = 'Node ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema)
-                    raise ValueError(message)
-        # check relations are not already defined
-        for relation in configData['relation'].keys():
-            for schema in self.graphSchemas:
-                if relation in schema['relation'].keys():
-                    message = 'Relation ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema)
-                    raise ValueError(message)
+        candidate = dict(self.graphSchemas)
+        del candidate[graphSchemaName]
 
-        self._crossSchemasCheck()
+        # A relation in another schema may have resolved only because the
+        # removed schema supplied its endpoint node label; revalidate the whole
+        # remaining set and reject the removal if it would strand such a
+        # reference, matching the whole-set integrity a full load enforces.
+        self._crossSchemasCheck(candidate)
 
-        self.graphSchemas[graphSchemaName] = configData
+        self.graphSchemas = candidate
 
     def _checkSchemaDataTypes(self, schema):
         """
@@ -182,10 +282,17 @@ class KG:
         @ In, schema, dict, schema parsed by tomllib from .toml file
         @ Out, None
         """
-        for node in schema['node']:
-            for prop in schema['node'][node]['node_properties']:
+        for node in schema.get('node', {}):
+            for prop in schema['node'][node].get('node_properties', []):
                 if prop['type'] not in self.datatypes:
                     message = 'Node ' + str(node) + ' - Property ' + str(prop['name']) + ' data type ' + str(prop['type']) + ' is not allowed'
+                    logging.error(message)
+                    raise ValueError(message)
+
+        for rel in schema.get('relation', {}):
+            for prop in schema['relation'][rel].get('relation_properties', []):
+                if prop['type'] not in self.datatypes:
+                    message = 'Relation ' + str(rel) + ' - Property ' + str(prop['name']) + ' data type ' + str(prop['type']) + ' is not allowed'
                     logging.error(message)
                     raise ValueError(message)
 
@@ -198,9 +305,12 @@ class KG:
         propdf = None
         for schema in self.graphSchemas:
             if nodeLabel in self.graphSchemas[schema]['node'].keys():
-                nodeProperties = self.graphSchemas[schema]['node'][nodeLabel]['node_properties']
-                propdf = pd.DataFrame(nodeProperties)
-                return propdf
+                nodeProperties = self.graphSchemas[schema]['node'][nodeLabel].get('node_properties', [])
+                # A node that declares no properties yields an empty frame that
+                # still carries the columns callers index ('name', 'optional'),
+                # so a propertyless-but-valid label does not KeyError downstream.
+                columns = None if nodeProperties else ['name', 'type', 'optional']
+                return pd.DataFrame(nodeProperties, columns=columns)
 
         if propdf is None:
             message = 'Node ' + str(nodeLabel) + ' does not have any property'
@@ -216,9 +326,12 @@ class KG:
         propdf = None
         for schema in self.graphSchemas:
             if relation in self.graphSchemas[schema]['relation']:
-                relationProperties = self.graphSchemas[schema]['relation'][relation]['relation_properties']
-                propdf = pd.DataFrame(relationProperties)
-                return propdf
+                relationProperties = self.graphSchemas[schema]['relation'][relation].get('relation_properties', [])
+                # Many curated relations omit relation_properties; an empty frame
+                # that still carries the columns callers index ('name', 'optional')
+                # keeps a propertyless-but-valid relation from raising KeyError.
+                columns = None if relationProperties else ['name', 'type', 'optional']
+                return pd.DataFrame(relationProperties, columns=columns)
 
         if propdf is None:
             message = 'Relation ' + str(relation) + ' does not have any property'
@@ -375,8 +488,12 @@ class KG:
                 for prop in constructionSchema['nodes'][node]:
                     allowedDatatype = self._returnNodePropertyDatatype(node,prop)
                     dfDatatype = data[constructionSchema['nodes'][node][prop]]
-                    if allowedDatatype != infer_dtype(dfDatatype):
-                        message = 'Node: ' + str(node) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(set(dfDatatype.map(type))) + ') does not match datatype defined in schema (' + str(allowedDatatype) + ')'
+                    if not isCompatibleDtype(allowedDatatype, infer_dtype(dfDatatype)):
+                        message = 'Node: ' + str(node) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(infer_dtype(dfDatatype)) + ') does not match datatype defined in schema (' + str(allowedDatatype) + ')'
+                        raise ValueError(message)
+                    ok, bad = validateValueSemantics(allowedDatatype, dfDatatype, self._returnPropertyEnumValues(node, prop))
+                    if not ok:
+                        message = 'Node: ' + str(node) + '- Property: ' + str(prop) + '. Value ' + repr(bad) + ' does not satisfy schema type ' + str(allowedDatatype)
                         raise ValueError(message)
 
         # Check relations data types
@@ -385,8 +502,12 @@ class KG:
                 for prop in constructionSchema['relations'][rel]['properties']:
                     allowedDatatype = self._returnRelationPropertyDatatype(rel,prop)
                     dfDatatype = data[constructionSchema['relations'][rel]['properties'][prop]]
-                    if allowedDatatype != infer_dtype(dfDatatype):
-                        message = 'Relation: ' + str(rel) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(dfDatatype) + ') does not match datatype defined in schema (' + str(dfDatatype) + ')'
+                    if not isCompatibleDtype(allowedDatatype, infer_dtype(dfDatatype)):
+                        message = 'Relation: ' + str(rel) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(infer_dtype(dfDatatype)) + ') does not match datatype defined in schema (' + str(allowedDatatype) + ')'
+                        raise ValueError(message)
+                    ok, bad = validateValueSemantics(allowedDatatype, dfDatatype, self._returnPropertyEnumValues(rel, prop, isRelation=True))
+                    if not ok:
+                        message = 'Relation: ' + str(rel) + '- Property: ' + str(prop) + '. Value ' + repr(bad) + ' does not satisfy schema type ' + str(allowedDatatype)
                         raise ValueError(message)
 
     def _returnNodePropertyDatatype(self, nodeID, propID):
@@ -425,9 +546,34 @@ class KG:
         if allowedType is None:
             ValueError('_returnRelationPropertyDatatype error')
 
-    #def _createIteractivePlot(self):
-    #    schemaList = list(self.graphSchemas.values())
-    #    createIteractiveFile(schemaList)
+    def _returnPropertyEnumValues(self, labelID, propID, isRelation=False):
+        """
+        Method that returns the declared enum_values of a node/relation property,
+        used for enum-membership validation. Returns None when the property
+        declares none (membership then cannot be checked).
+        @ In, labelID, string, node label or relation name
+        @ In, propID, string, property name
+        @ In, isRelation, bool, look up a relation property when True, else a node property
+        @ Out, enumValues, list|None, declared allowed values, or None if absent
+        """
+        section = 'relation' if isRelation else 'node'
+        propsKey = 'relation_properties' if isRelation else 'node_properties'
+        for schema in self.graphSchemas:
+            if labelID in self.graphSchemas[schema].get(section, {}):
+                for prop in self.graphSchemas[schema][section][labelID].get(propsKey, []):
+                    if prop['name'] == propID:
+                        return prop.get('enum_values')
+        return None
+
+    def _createIteractivePlot(self, output_file="knowledge_graph_schema_interactive.html"):
+        """
+        Method that renders the currently loaded schemas as an interactive HTML graph.
+        @ In, output_file, string, path of the HTML file to write
+        @ Out, None
+        """
+        from dackar.knowledge_graph.visualize_schema import createInteractiveFile
+        schemaList = list(self.graphSchemas.values())
+        createInteractiveFile(schemaList, output_file=output_file, raise_on_collision=False)
 
 
 def stringToDatetimeConverterFlexible(dateString, formatCode=None):

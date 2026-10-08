@@ -1,0 +1,92 @@
+title = "Temporal Relation Graph Schema"
+version = "1.0"
+
+# ============================================================
+# PURPOSE
+# ------------------------------------------------------------
+# Provides a temporal-reasoning layer over heterogeneous plant
+# events (anomalies, alarms, logs, condition reports, maintenance
+# and operational occurrences). It introduces a single canonical
+# `event` occurrence node (interval-or-instant) and encodes
+# Allen's interval algebra between occurrences via one
+# `temporally_related` relation carrying an `allen_relation`
+# property.
+#
+# Instant vs interval: `t_start` is always present. A null
+# `t_end` denotes a time-instant event; a populated `t_end`
+# denotes an interval. The Allen classification stored on the
+# `temporally_related` edge is COMPUTED from these timestamps by
+# the ingestion/analysis layer; this schema only provides the
+# vocabulary. For instant-instant and instant-interval cases the
+# algebra naturally reduces to the applicable Allen subset
+# (before / after / starts / during / finishes / equals).
+#
+# This `event` node is distinct from `temporal_entity`
+# (nuclearEntitySchema), which is an NLP-extracted mention of a
+# time expression inside text. An `event` may optionally be
+# anchored to such a mention via `anchored_by`.
+# ============================================================
+
+# ============================================================
+# NODE ENTITIES
+# ============================================================
+
+[node.event]
+node_description = "A canonical temporal occurrence with interval-or-instant semantics. Serves as the shared anchor for temporal reasoning across heterogeneous plant events (anomalies, alarms, logs, condition reports, maintenance and operational occurrences). A null t_end denotes a time-instant; a populated t_end denotes a time interval."
+node_properties = [
+  { name = "id", type = "string", optional = false, description = "Stable unique identifier for the event occurrence." },
+  { name = "event_type", type = "enum", optional = false, description = "Category of occurrence.", enum_values = ["anomaly", "alarm", "log", "condition_report", "maintenance", "outage", "operational", "other"] },
+  { name = "t_start", type = "datetime", optional = false, description = "Start of the occurrence. For a time-instant event this is the single point in time. Expected as an ISO-8601 datetime." },
+  { name = "t_end", type = "datetime", optional = true, description = "End of the occurrence for interval events. Left null for time-instant events." },
+  { name = "label", type = "string", optional = true, description = "Human-readable short description of the occurrence." },
+  { name = "source", type = "string", optional = true, description = "Originating system or pipeline that produced the occurrence (e.g. historian, alarm log, CR system)." }
+]
+
+# ============================================================
+# RELATIONS
+# ============================================================
+
+[relation.temporally_related]
+relation_description = "Encodes a qualitative temporal relationship from one event occurrence to another using Allen's interval algebra. The edge is directed: for an edge (A)->(B) the allen_relation describes how A relates to B. The 13 Allen relations are enumerated so the relationship is unambiguous without inverting the edge. For time-instant events the algebra reduces to the applicable subset."
+from_entity = "event"
+to_entity = "event"
+relation_properties = [
+  { name = "allen_relation", type = "enum", optional = false, description = "Allen interval relation of A to B for edge (A)->(B).", enum_values = ["before", "after", "meets", "met_by", "overlaps", "overlapped_by", "starts", "started_by", "during", "contains", "finishes", "finished_by", "equals"] },
+  { name = "certainty", type = "float", optional = true, description = "Confidence in the asserted temporal relation (0.0-1.0)." },
+  { name = "inferred_by", type = "string", optional = true, description = "Method or source that established the relation (e.g. computed_from_timestamps, nlp, manual)." }
+]
+
+[relation.anchored_by]
+relation_description = "Links an event occurrence to an NLP-extracted temporal mention (temporal_entity) that references it in text, keeping extracted time expressions separate from the resolved occurrence."
+from_entity = "event"
+to_entity = "temporal_entity"
+
+[relation.realized_by]
+relation_description = "Links a numeric-performance anomaly to its temporal occurrence, placing the anomaly on the shared event timeline for temporal reasoning."
+from_entity = "anomaly"
+to_entity = "event"
+
+[relation.occurs_as]
+relation_description = "Links a condition report to its temporal occurrence, placing the reported event on the shared event timeline for temporal reasoning."
+from_entity = "condition_report"
+to_entity = "event"
+
+[relation.outage_occurs_as]
+relation_description = "Links an outage instance to its temporal occurrence (an interval event), placing the outage window on the shared event timeline for temporal reasoning."
+from_entity = "outage_instance"
+to_entity = "event"
+
+[relation.outage_activity_occurs_as]
+relation_description = "Links an outage activity to its temporal occurrence, placing the activity on the shared event timeline for temporal reasoning."
+from_entity = "outage_activity"
+to_entity = "event"
+
+[relation.work_order_occurs_as]
+relation_description = "Links a work order to its temporal occurrence, placing the work-order action on the shared event timeline for temporal reasoning."
+from_entity = "work_order"
+to_entity = "event"
+
+[relation.logistics_event_occurs_as]
+relation_description = "Links a supply-chain logistics event to its temporal occurrence, placing the delivery/shipment/transfer on the shared event timeline for temporal reasoning."
+from_entity = "logistics_event"
+to_entity = "event"

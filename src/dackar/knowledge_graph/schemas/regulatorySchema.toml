@@ -1,0 +1,119 @@
+title = "Regulatory and Standards Graph Schema"
+version = "1.0"
+
+# ============================================================
+# PURPOSE
+# ------------------------------------------------------------
+# Models the regulatory and consensus-standards landscape as
+# first-class, differentiated node types and the relations that
+# connect them:
+#   * regulatory_directive  - binding regulation / order
+#                             (e.g. 10 CFR 50 Appendix B)
+#   * regulatory_guide      - non-binding guidance that endorses
+#                             standards (e.g. NRC RG 1.26)
+#   * code_or_standard      - consensus codes and standards
+#                             (e.g. ASME BPVC Section III, IEEE 603)
+#
+# Integration: the schema bridges to the MBSE spine
+# (requirement, technical_specification in mbseSchema) so that
+# design requirements can be traced to the regulatory basis they
+# satisfy.
+#
+# Reconciliation (additive): the lightweight `standard` node in
+# documentSchema (used by the AI_MBSE_licensing citation pipeline)
+# is kept as-is. The richer `code_or_standard` node here links to
+# it via `aligns_with` rather than replacing it.
+# ============================================================
+
+# ============================================================
+# NODE ENTITIES
+# ============================================================
+
+[node.regulatory_directive]
+node_description = "A binding regulatory requirement, regulation, or order issued by a regulatory authority (e.g. 10 CFR 50 Appendix B, an NRC Order). Represents mandatory obligations that licensees must satisfy."
+node_properties = [
+  { name = "id", type = "string", optional = false, description = "Stable unique identifier for the directive (e.g. 'REG:10CFR50_APPB')." },
+  { name = "citation", type = "string", optional = false, description = "Canonical citation as commonly referenced (e.g. '10 CFR 50 Appendix B')." },
+  { name = "title", type = "string", optional = true, description = "Full title of the directive." },
+  { name = "issuing_authority", type = "string", optional = true, description = "Authority that issued the directive (e.g. NRC)." },
+  { name = "jurisdiction", type = "string", optional = true, description = "Applicable jurisdiction (e.g. US federal)." },
+  { name = "effective_date", type = "string", optional = true, description = "Date the directive became effective (ISO-8601 or as published)." },
+  { name = "status", type = "enum", optional = true, description = "Lifecycle status of the directive.", enum_values = ["active", "superseded", "withdrawn", "proposed"] }
+]
+
+[node.regulatory_guide]
+node_description = "Non-binding regulatory guidance that describes methods acceptable to the regulator for complying with directives, frequently endorsing consensus codes and standards (e.g. NRC Regulatory Guide 1.26)."
+node_properties = [
+  { name = "id", type = "string", optional = false, description = "Stable unique identifier for the guide (e.g. 'RG:1.26')." },
+  { name = "guide_number", type = "string", optional = false, description = "Guide designation (e.g. 'RG 1.26')." },
+  { name = "title", type = "string", optional = true, description = "Full title of the regulatory guide." },
+  { name = "issuing_authority", type = "string", optional = true, description = "Authority that issued the guide (e.g. NRC)." },
+  { name = "revision", type = "string", optional = true, description = "Revision identifier (e.g. 'Rev. 4')." },
+  { name = "effective_date", type = "string", optional = true, description = "Issue or effective date (ISO-8601 or as published)." },
+  { name = "status", type = "enum", optional = true, description = "Lifecycle status of the guide.", enum_values = ["active", "superseded", "withdrawn", "proposed"] }
+]
+
+[node.code_or_standard]
+node_description = "A consensus code or standard issued by a standards development organization (e.g. ASME BPVC Section III, IEEE 603, ASTM, NFPA, ANSI). Richer counterpart to the lightweight documentSchema `standard` citation node."
+node_properties = [
+  { name = "id", type = "string", optional = false, description = "Stable unique identifier (e.g. 'STD:ASME_BPVC_III')." },
+  { name = "designation", type = "string", optional = false, description = "Canonical designation (e.g. 'ASME BPVC Section III', 'IEEE 603')." },
+  { name = "title", type = "string", optional = true, description = "Full title of the code or standard." },
+  { name = "sdo", type = "string", optional = true, description = "Standards development organization / family (e.g. ASME, IEEE, ASTM, NFPA, ANSI)." },
+  { name = "edition", type = "string", optional = true, description = "Edition or year of the code/standard (e.g. '2021')." },
+  { name = "status", type = "enum", optional = true, description = "Lifecycle status of the code/standard.", enum_values = ["active", "superseded", "withdrawn", "proposed"] }
+]
+
+# ============================================================
+# RELATIONS
+# ============================================================
+
+[relation.endorses]
+relation_description = "Indicates that a regulatory guide endorses a consensus code or standard as an acceptable means of compliance."
+from_entity = "regulatory_guide"
+to_entity = "code_or_standard"
+
+[relation.invokes]
+relation_description = "Indicates that a regulatory directive incorporates a consensus code or standard by reference, making it mandatory."
+from_entity = "regulatory_directive"
+to_entity = "code_or_standard"
+
+[relation.provides_guidance_for]
+relation_description = "Indicates that a regulatory guide describes acceptable methods for complying with a regulatory directive."
+from_entity = "regulatory_guide"
+to_entity = "regulatory_directive"
+
+[relation.directive_supersedes]
+relation_description = "Indicates that a regulatory directive supersedes an earlier directive."
+from_entity = "regulatory_directive"
+to_entity = "regulatory_directive"
+
+[relation.guide_supersedes]
+relation_description = "Indicates that a regulatory guide (or revision) supersedes an earlier guide."
+from_entity = "regulatory_guide"
+to_entity = "regulatory_guide"
+
+[relation.standard_supersedes]
+relation_description = "Indicates that a code or standard edition supersedes an earlier edition."
+from_entity = "code_or_standard"
+to_entity = "code_or_standard"
+
+[relation.derived_from]
+relation_description = "Traces an MBSE requirement to the regulatory directive that gives rise to it."
+from_entity = "requirement"
+to_entity = "regulatory_directive"
+
+[relation.conforms_to]
+relation_description = "Traces an MBSE requirement to a consensus code or standard it must conform to."
+from_entity = "requirement"
+to_entity = "code_or_standard"
+
+[relation.implements]
+relation_description = "Indicates that a technical specification implements obligations established by a regulatory directive."
+from_entity = "technical_specification"
+to_entity = "regulatory_directive"
+
+[relation.aligns_with]
+relation_description = "Additive bridge linking the richer code_or_standard node to the lightweight documentSchema `standard` citation node used by the AI_MBSE_licensing pipeline."
+from_entity = "code_or_standard"
+to_entity = "standard"
