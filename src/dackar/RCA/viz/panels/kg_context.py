@@ -1,3 +1,11 @@
+"""KG Context panel: component seeding, subgraph topology, failure modes, events.
+
+Reads the ``kg_context`` artifact to render a seed-match bar chart, an
+interactive Pyvis subgraph (asset, components, failure modes, past events,
+upstream paths), and filterable tables of failure modes, in-scope documents
+(with extracted causal statements), and a past-event timeline.
+"""
+
 from __future__ import annotations
 
 import json
@@ -13,6 +21,12 @@ JsonDict = Dict[str, Any]
 
 
 def build_component_seed_chart(kg_context: JsonDict) -> Optional[Any]:
+    """Build a bar chart of components grouped by ``seed_match_type``.
+
+    @ In, kg_context, dict, the ``kg_context`` artifact; reads ``components[]``
+        ``seed_match_type``/``component_type``
+    @ Out, fig, plotly.graph_objects.Figure, the chart, or None if no components
+    """
     comps = kg_context.get("components") or []
     if not comps:
         return None
@@ -127,6 +141,13 @@ def _cached_pyvis_html(kg_json: str, height_px: int) -> str:
 
 
 def render_kg_panel(kg_context: Optional[JsonDict]) -> None:
+    """Render the KG Context section.
+
+    @ In, kg_context, dict, the ``kg_context`` artifact; reads ``components``,
+        ``failure_modes``, ``past_events``, ``documents``, ``upstream_paths``,
+        ``asset_id``; None shows an info note
+    @ Out, None
+    """
     if not kg_context:
         st.info("No `kg_context` loaded.")
         return
@@ -245,6 +266,12 @@ def render_kg_panel(kg_context: Optional[JsonDict]) -> None:
 
 
 def truncate_safe(val: Any, n: int) -> str:
+    """Stringify a value and truncate to ``n`` characters with an ellipsis.
+
+    @ In, val, object, the value to stringify (None becomes "")
+    @ In, n, int, maximum length of the returned string
+    @ Out, out, str, the (possibly truncated) string
+    """
     if val is None:
         return ""
     s = str(val)

@@ -14,6 +14,14 @@ def render_extra_artifacts_panel(
     ishikawa_matrix: Optional[JsonDict],
     cmms_context: Optional[JsonDict],
 ) -> None:
+    """Render the Ishikawa & CMMS section.
+
+    @ In, ishikawa_matrix, dict, optional ``ishikawa_matrix`` artifact; reads
+        ``categories[].rows`` and ``summary``
+    @ In, cmms_context, dict, optional ``cmms_context`` artifact; reads
+        ``adapter``, ``cr_records``, ``wo_records``, ``sister_components``
+    @ Out, None
+    """
     st.subheader("Ishikawa matrix")
     if not ishikawa_matrix:
         st.info("No `ishikawa_matrix` in this bundle (optional stage).")

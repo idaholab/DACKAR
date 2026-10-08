@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Tuple
 
 import streamlit as st
 
+from utils.navigation import goto_tab
+
 JsonDict = Dict[str, Any]
 
 
@@ -79,6 +81,11 @@ def pipeline_stage_rows(art: JsonDict) -> List[Tuple[str, str, str]]:
         _stage_icon(True, _present(art, "evidence_bundle")),
     )
     add(
+        "Pre-refine candidates (Phase 5)",
+        "Candidates",
+        _stage_icon(False, _present(art, "causality_candidates_pre_refine")),
+    )
+    add(
         "Candidates (refine w/ evidence)",
         "Candidates",
         _stage_icon(False, _evidence_refine_done(art)),
@@ -97,6 +104,11 @@ def pipeline_stage_rows(art: JsonDict) -> List[Tuple[str, str, str]]:
             "Ishikawa & CMMS",
             "⚪",
         )
+    add(
+        "CMMS context (optional)",
+        "Ishikawa & CMMS",
+        _stage_icon(False, _present(art, "cmms_context")),
+    )
     add(
         "Barrier analysis (optional)",
         "Method Outputs",
@@ -127,9 +139,13 @@ def render_pipeline_navigator(art: JsonDict, tab_names: List[str]) -> None:
         with col_a:
             st.markdown(emoji)
         with col_b:
-            if st.button(label, key=f"pipe_nav_{idx}", use_container_width=True):
-                st.session_state.rca_viz_tab_radio = tab
-                st.rerun()
+            st.button(
+                label,
+                key=f"pipe_nav_{idx}",
+                use_container_width=True,
+                on_click=goto_tab,
+                args=(tab,),
+            )
 
     with st.expander("Stage DAG (reference)"):
         st.markdown(

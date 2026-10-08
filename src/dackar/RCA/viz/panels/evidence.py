@@ -1,3 +1,11 @@
+"""Evidence panel: retrieval health, doc-type mix, and per-candidate excerpts.
+
+Reads the ``evidence_bundle`` artifact (results, provenance, retrieval scope,
+planned queries, candidate-evidence summary) and the ``causality_candidates``
+artifact to order and label hits. Honors the ``rca_viz_evidence_filter``
+session value so jumps from the Candidates/RCA Card tabs land pre-filtered.
+"""
+
 from __future__ import annotations
 
 from collections import Counter, defaultdict
@@ -50,6 +58,15 @@ def render_evidence_panel(
     evidence_bundle: Optional[JsonDict],
     causality_candidates: Optional[JsonDict],
 ) -> None:
+    """Render the Evidence section.
+
+    @ In, evidence_bundle, dict, the ``evidence_bundle`` artifact; reads
+        ``results``, ``provenance``, ``retrieval_scope``, ``planned_queries``,
+        ``candidate_evidence_summary``; None shows an info note
+    @ In, causality_candidates, dict, optional; supplies candidate ordering and
+        the "filter by linked candidate" options
+    @ Out, None
+    """
     if not evidence_bundle:
         st.info("No `evidence_bundle` loaded.")
         return

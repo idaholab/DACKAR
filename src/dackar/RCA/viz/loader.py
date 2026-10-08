@@ -49,7 +49,9 @@ def _allowed_path(path: Path) -> bool:
     except OSError:
         return False
     roots = [Path(p.strip()).resolve() for p in raw.split(os.pathsep) if p.strip()]
-    return any(str(resolved).startswith(str(root)) for root in roots)
+    # Path-component containment, not string prefix: a root of "/data/run" must
+    # not admit a sibling like "/data/run-evil" that only shares a text prefix.
+    return any(resolved == root or resolved.is_relative_to(root) for root in roots)
 
 
 def _read_json(path: Path) -> JsonDict:
@@ -63,6 +65,12 @@ def _read_json(path: Path) -> JsonDict:
 
 
 def detect_input_mode(path: str) -> Literal["full_result", "fixtures_dir"]:
+    """Classify a path as a full-result JSON file or a fixtures/run directory.
+
+    @ In, path, str, filesystem path to a ``.json`` file or a directory
+    @ Out, mode, str, ``"fixtures_dir"`` for a directory, ``"full_result"`` for
+        a ``.json`` file
+    """
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(path)
@@ -169,5 +177,10 @@ def load_pre_refine_causality(path: str) -> Optional[JsonDict]:
 
 
 def list_bundle_keys(bundle: JsonDict) -> List[str]:
+    """Return the bundle's artifact keys, sorted, excluding load-error markers.
+
+    @ In, bundle, dict, a loaded bundle (may contain ``<key>__load_error`` markers)
+    @ Out, keys, list, sorted artifact keys with the error markers removed
+    """
     keys = [k for k in bundle if not k.endswith("__load_error")]
     return sorted(keys)

@@ -1,3 +1,11 @@
+"""Validation panel: review hooks, pipeline snapshot, and validation issues.
+
+Reads ``run_manifest`` (review hooks, pipeline config, per-artifact counts,
+manifest ``scoring_evolution``), the input/output validation bundles (rolled up
+into a per-artifact error/warning traffic-light grid), and the ``rca_card``
+``validation_status`` with analyst-attention flags.
+"""
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -62,7 +70,17 @@ def render_validation_panel(
     output_validation: Optional[JsonDict],
     rca_card: Optional[JsonDict] = None,
 ) -> None:
-    """Traffic-light validation, review hooks, and RCA card gates."""
+    """Render the Validation section (traffic light, review hooks, card gates).
+
+    @ In, run_manifest, dict, optional ``run_manifest``; reads ``review_hooks``,
+        ``pipeline_config``, ``artifacts``, manifest ``scoring_evolution``
+    @ In, input_validation, dict, optional input-validation bundle (``ok``,
+        ``issues``)
+    @ In, output_validation, dict, optional output-validation bundle
+    @ In, rca_card, dict, optional; reads ``validation_status`` and the
+        executive-summary analyst-attention flags
+    @ Out, None
+    """
 
     # --- Review hooks (run_manifest) ---
     if run_manifest:

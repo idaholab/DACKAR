@@ -1,17 +1,20 @@
+"""RCA Card panel: the synthesized root-cause card and cross-tab jumps.
+
+Renders the ``rca_card`` artifact (executive summary, validation gates, primary
+hypothesis, alternatives, card-level evidence, recommended actions, analyst
+review) with buttons that jump to the Evidence/Candidates tabs for a candidate.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
 import streamlit as st
 
+from utils.navigation import goto_tab
 from utils.text_helpers import truncate
 
 JsonDict = Dict[str, Any]
-
-
-def _go_evidence_for_candidate(candidate_id: str) -> None:
-    st.session_state.rca_viz_tab_radio = "Evidence"
-    st.session_state.rca_viz_evidence_filter = candidate_id
 
 
 def render_rca_card_panel(
@@ -19,6 +22,16 @@ def render_rca_card_panel(
     evidence_bundle: Optional[JsonDict],
     kg_context: Optional[JsonDict],
 ) -> None:
+    """Render the RCA Card section.
+
+    @ In, rca_card, dict, the ``rca_card`` artifact; reads
+        ``executive_summary``, ``validation_status``, ``primary_hypothesis``,
+        ``alternatives``, ``evidence``, ``recommended_actions``,
+        ``analyst_review``, ``provenance``
+    @ In, evidence_bundle, dict, optional; only ``bundle_id`` is shown as context
+    @ In, kg_context, dict, optional; only the subgraph id is shown as context
+    @ Out, None
+    """
     if not rca_card:
         st.info("No `rca_card` loaded (common in fixture-only mode).")
         return
@@ -62,13 +75,19 @@ def render_rca_card_panel(
     if primary_cid:
         b1, b2 = st.columns([1, 2])
         with b1:
-            if st.button("View evidence for primary", key="rca_nav_primary_evidence"):
-                _go_evidence_for_candidate(primary_cid)
-                st.rerun()
+            st.button(
+                "View evidence for primary",
+                key="rca_nav_primary_evidence",
+                on_click=goto_tab,
+                args=("Evidence", primary_cid),
+            )
         with b2:
-            if st.button("Open Candidates tab", key="rca_nav_candidates"):
-                st.session_state.rca_viz_tab_radio = "Candidates"
-                st.rerun()
+            st.button(
+                "Open Candidates tab",
+                key="rca_nav_candidates",
+                on_click=goto_tab,
+                args=("Candidates",),
+            )
 
     meta = {
         "candidate_id": prim.get("candidate_id"),
@@ -142,9 +161,13 @@ def render_rca_card_panel(
                     st.markdown("**Weaknesses**")
                     for w in weak:
                         st.caption(str(w))
-                if aid and st.button("Evidence filter", key=f"rca_alt_ev_{alt_i}_{aid}"):
-                    _go_evidence_for_candidate(aid)
-                    st.rerun()
+                if aid:
+                    st.button(
+                        "Evidence filter",
+                        key=f"rca_alt_ev_{alt_i}_{aid}",
+                        on_click=goto_tab,
+                        args=("Evidence", aid),
+                    )
 
     # --- Card-level evidence (synthesizer view) ---
     ev_card = rca_card.get("evidence") or []
@@ -169,9 +192,13 @@ def render_rca_card_panel(
                 continue
             st.markdown(f"- **{a.get('priority', '')}** {a.get('description', '')}")
             lac = a.get("linked_candidate_id")
-            if lac and st.button(f"Evidence · {lac}", key=f"rca_act_ev_{a.get('action_id')}"):
-                _go_evidence_for_candidate(str(lac))
-                st.rerun()
+            if lac:
+                st.button(
+                    f"Evidence · {lac}",
+                    key=f"rca_act_ev_{a.get('action_id')}",
+                    on_click=goto_tab,
+                    args=("Evidence", str(lac)),
+                )
 
     # --- Analyst review ---
     ar = rca_card.get("analyst_review") or {}

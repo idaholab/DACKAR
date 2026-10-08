@@ -1,3 +1,11 @@
+"""Telemetry & Temporal panel: anomaly timeline, TSKR patterns, FMEA brackets.
+
+Reads the ``telemetry_summary`` input (per-signal anomalies and changepoints)
+and the ``tskr_patterns`` artifact to render an anomaly-window Gantt (overlaid
+with TSKR pattern windows), a latency-colored TSKR table, an optional FMEA
+expected-latency strip from ``kg_context``, and per-signal statistics.
+"""
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -53,8 +61,17 @@ def build_fmea_latency_figure(
     telemetry_summary: JsonDict,
     kg_context: Optional[JsonDict],
 ) -> Optional[go.Figure]:
-    """
-    Gantt of expected FM latency windows vs event anchor (telemetry window start or earliest anomaly).
+    """Build a Gantt of expected failure-mode latency windows vs the event anchor.
+
+    The anchor is the telemetry window start, or the earliest anomaly timestamp
+    when no window is given.
+
+    @ In, telemetry_summary, dict, the ``telemetry_summary`` input, used only to
+        derive the time anchor
+    @ In, kg_context, dict, optional; reads ``failure_modes[]``
+        ``expected_latency_min_hours``/``expected_latency_max_hours``
+    @ Out, fig, plotly.graph_objects.Figure, the strip, or None if no KG context,
+        no anchor, or no failure mode carries a latency bracket
     """
     if not kg_context:
         return None
@@ -111,6 +128,13 @@ def build_fmea_latency_figure(
 
 
 def build_tskr_table_figure(tskr_patterns: JsonDict) -> Optional[go.Figure]:
+    """Build a table figure of TSKR patterns, row-colored by latency violation.
+
+    @ In, tskr_patterns, dict, the ``tskr_patterns`` artifact; reads
+        ``patterns`` (first 40), each supplying ``pattern_id``/``target_id``/
+        ``relation``/``mean_lag_hours``/``latency_violation_type``/``confidence``
+    @ Out, fig, plotly.graph_objects.Figure, the table, or None if no patterns
+    """
     pats = tskr_patterns.get("patterns") or []
     if not pats:
         return None
@@ -163,6 +187,16 @@ def build_timeline_figure(
     telemetry_summary: JsonDict,
     tskr_patterns: Optional[JsonDict],
 ) -> Optional[go.Figure]:
+    """Build the anomaly-window Gantt, overlaid with changepoints and TSKR windows.
+
+    @ In, telemetry_summary, dict, the ``telemetry_summary`` input; reads
+        ``signals[].anomalies[]`` (window, pattern, ``severity_score``/legacy
+        ``severity``, id) and ``signals[].changepoints[]`` (dashed verticals)
+    @ In, tskr_patterns, dict, optional; its ``patterns[]`` windows (first 16)
+        are drawn as shaded regions over the timeline
+    @ Out, fig, plotly.graph_objects.Figure, the timeline, or None if no
+        anomaly has a valid timestamp
+    """
     rows: List[Dict[str, Any]] = []
     vlines: List[Dict[str, Any]] = []
 
@@ -267,6 +301,15 @@ def render_telemetry_panel(
     tskr_patterns: Optional[JsonDict],
     kg_context: Optional[JsonDict] = None,
 ) -> None:
+    """Render the Telemetry & Temporal section.
+
+    @ In, telemetry_summary, dict, the ``telemetry_summary`` input (signals,
+        anomalies, changepoints, per-signal stats); None shows an info note
+    @ In, tskr_patterns, dict, optional ``tskr_patterns`` artifact for the
+        pattern table and timeline overlay
+    @ In, kg_context, dict, optional; enables the FMEA expected-latency strip
+    @ Out, None
+    """
     if not telemetry_summary:
         st.info("No `telemetry_summary` loaded.")
         return

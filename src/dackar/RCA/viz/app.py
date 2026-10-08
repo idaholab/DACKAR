@@ -70,29 +70,32 @@ non-blocking execution, and dependency alignment — see `RCA_VIZ_ARCHITECTURE.m
 """
 
 
-def _pipeline_status(art: JsonDict) -> list[tuple[str, str]]:
-    """Return (stage_name, emoji) rows for sidebar checklist."""
-    checks: list[tuple[str, str]] = []
+def _load_error_rows(art: JsonDict) -> list[tuple[str, str]]:
+    """Return (artifact_key, error_message) for every ``*__load_error`` marker.
 
-    def ok(k: str) -> str:
-        return "✅" if art.get(k) is not None else "⚪"
+    The fixtures/run-folder loader records a file it could not parse as a
+    ``<key>__load_error`` entry (and sets ``<key>`` to None) instead of aborting
+    the whole load, so these would otherwise be invisible.
 
-    checks.append(("Inputs / run_context", ok("run_context")))
-    checks.append(("KG context", ok("kg_context")))
-    checks.append(("Signal evidence", ok("signal_evidence")))
-    checks.append(("TSKR patterns", ok("tskr_patterns")))
-    checks.append(("Causality candidates", ok("causality_candidates")))
-    checks.append(("Pre-refine candidates (Phase 5)", ok("causality_candidates_pre_refine")))
-    checks.append(("Evidence bundle", ok("evidence_bundle")))
-    checks.append(("Barrier analysis (optional)", ok("barrier_analysis")))
-    checks.append(("RCA card", ok("rca_card")))
-    checks.append(("Ishikawa matrix (optional)", ok("ishikawa_matrix")))
-    checks.append(("CMMS context (optional)", ok("cmms_context")))
-    checks.append(("Run manifest", ok("run_manifest")))
-    return checks
+    @ In, art, dict, the loaded bundle
+    @ Out, rows, list, (key, message) pairs; empty when every file parsed
+    """
+    rows: list[tuple[str, str]] = []
+    for k, v in art.items():
+        if k.endswith("__load_error"):
+            rows.append((k[: -len("__load_error")], str(v)))
+    return rows
 
 
 def main() -> None:
+    """Render the whole viewer: sidebar loader, navigator, and the active section.
+
+    Loads the bundle from the sidebar path (optionally merging a supplemental
+    inputs/fixtures path), surfaces any per-file load errors, then dispatches to
+    the panel for the selected section.
+
+    @ Out, None
+    """
     st.set_page_config(page_title="DACKAR RCA Viewer", layout="wide")
     st.title("DACKAR RCA Viewer")
 
@@ -154,6 +157,18 @@ def main() -> None:
 
     art: JsonDict = st.session_state["artifacts"]
 
+    load_errors = _load_error_rows(art)
+    for key, msg in load_errors:
+        st.sidebar.error(f"Failed to load `{key}`: {msg}")
+
+    if not list_bundle_keys(art):
+        st.warning(
+            "No artifacts were loaded from this path. For a fixtures/run folder, "
+            "check it contains `*.json` files; for a full-result file, check it is "
+            "a JSON object. See the sidebar for any per-file load errors."
+        )
+        return
+
     if "rca_viz_tab_radio" not in st.session_state:
         st.session_state.rca_viz_tab_radio = TAB_NAMES[0]
     if "rca_viz_evidence_filter" not in st.session_state:
@@ -168,10 +183,6 @@ def main() -> None:
     pre_refine = pre_refine_loaded or art.get("causality_candidates_pre_refine")
 
     with st.sidebar:
-        st.subheader("Pipeline presence")
-        for label, emoji in _pipeline_status(art):
-            st.write(f"{emoji} {label}")
-        st.divider()
         st.caption(f"Keys loaded: {len(list_bundle_keys(art))}")
         pipeline_nav.render_pipeline_navigator(art, TAB_NAMES)
         with st.expander("Viewer vs full RCA run"):
@@ -179,8 +190,9 @@ def main() -> None:
 
     with st.expander("Raw bundle keys (JSON)", expanded=False):
         keys = list_bundle_keys(art)
-        pick = st.selectbox("Artifact key", keys, index=0)
-        st.json(art[pick])
+        pick = st.selectbox("Artifact key", keys, index=0 if keys else None)
+        if pick is not None:
+            st.json(art[pick])
 
     st.radio("Section", TAB_NAMES, horizontal=True, key="rca_viz_tab_radio")
     nav = st.session_state.rca_viz_tab_radio

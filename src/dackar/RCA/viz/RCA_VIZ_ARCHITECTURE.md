@@ -523,6 +523,8 @@ flowchart TD
 - **Security:** Optional env `RCA_VIZ_ALLOWED_ROOTS` (use `os.pathsep`-separated absolute prefixes); reject loads outside allowed roots when set. Default local dev: trusted user.
 - **Run command:** `cd DACKAR/src/dackar/RCA/viz` then `streamlit run app.py` (keeps `from loader import` working). Alternatively `python -m streamlit run app.py` from the same directory.
 - **Pins:** See `viz/requirements.txt`.
+- **Packaging decision (standalone tool, not a shipped subpackage):** the viewer is run as a Streamlit script from its own directory, so it uses top-level imports (`from loader import …`, `from panels import …`) and does not add a `viz/__init__.py`. Making it an importable subpackage with relative imports would break `streamlit run app.py` (the entry point runs as `__main__`, not as a package module) and would require a separate launcher such as `python -m dackar.RCA.viz`. We keep the run-from-directory model deliberately; the alternative is noted here for anyone who later wants to embed the viewer (see §20).
+- **Dependency decision (local `requirements.txt`, not a pyproject extra):** because the viewer is a standalone dev tool rather than part of the installed `dackar` library, its pins live in `viz/requirements.txt` (`pip install -r requirements.txt` from `viz/`). We intentionally do **not** add a `dackar[rca-viz]` optional-dependencies extra, to keep this MR confined to `src/dackar/RCA/viz/` and avoid coupling the tool's pins to the library's packaging. If the viewer is later promoted into the library (or embeds the orchestrator per §20), align the pins with the `rca`/`kg` extras at that time.
 
 ---
 

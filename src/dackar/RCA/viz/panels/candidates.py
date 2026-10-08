@@ -1,3 +1,10 @@
+"""Candidates panel: ranked causality candidates and the pre-refine delta.
+
+Renders the ``causality_candidates`` artifact (retained/filtered counts, a
+per-candidate score-breakdown chart, and per-candidate detail) and, when a
+pre-refine snapshot is available, a v1 to v2 ranking-delta table.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -5,6 +12,8 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+
+from utils.navigation import goto_tab
 
 JsonDict = Dict[str, Any]
 
@@ -31,6 +40,16 @@ def build_score_breakdown_chart(
     scoring_config: Optional[JsonDict],
     title: str = "Score breakdown (retained candidates)",
 ) -> Optional[go.Figure]:
+    """Build a grouped bar chart of each candidate's component scores.
+
+    @ In, candidates_list, list, ``causality_candidates.candidates`` rows; each
+        row's ``scores`` dict supplies the structural/temporal/telemetry/
+        evidence/governance values (first 12 candidates shown)
+    @ In, scoring_config, dict, optional thresholds (``minimum_evidence_threshold``,
+        ``minimum_composite_threshold``) drawn as reference lines
+    @ In, title, str, chart title
+    @ Out, fig, plotly.graph_objects.Figure, the chart, or None if no candidates
+    """
     if not candidates_list:
         return None
 
@@ -75,6 +94,15 @@ def render_candidates_panel(
     causality_candidates: Optional[JsonDict],
     pre_refine: Optional[JsonDict] = None,
 ) -> None:
+    """Render the Candidates section.
+
+    @ In, causality_candidates, dict, the (post-refine) ``causality_candidates``
+        artifact; reads ``candidates``, ``filtered_out_candidates``,
+        ``event_analogs``, ``provenance``, ``scoring_config``/``screening``
+    @ In, pre_refine, dict, optional ``causality_candidates_pre_refine`` snapshot
+        used to render the v1 to v2 ranking-delta table
+    @ Out, None
+    """
     if not causality_candidates:
         st.info("No `causality_candidates` loaded.")
         return
@@ -154,14 +182,21 @@ def render_candidates_panel(
             with st.expander(f"{cid} — {str(c.get('cause_label', ''))[:50]}"):
                 nav1, nav2 = st.columns(2)
                 with nav1:
-                    if cid and st.button("Evidence tab (this candidate)", key=f"cand_ev_{cid}"):
-                        st.session_state.rca_viz_tab_radio = "Evidence"
-                        st.session_state.rca_viz_evidence_filter = str(cid)
-                        st.rerun()
+                    if cid:
+                        st.button(
+                            "Evidence tab (this candidate)",
+                            key=f"cand_ev_{cid}",
+                            on_click=goto_tab,
+                            args=("Evidence", str(cid)),
+                        )
                 with nav2:
-                    if cid and st.button("RCA Card tab", key=f"cand_rca_{cid}"):
-                        st.session_state.rca_viz_tab_radio = "RCA Card"
-                        st.rerun()
+                    if cid:
+                        st.button(
+                            "RCA Card tab",
+                            key=f"cand_rca_{cid}",
+                            on_click=goto_tab,
+                            args=("RCA Card",),
+                        )
                 st.write(
                     {
                         "composite_score": c.get("composite_score"),
