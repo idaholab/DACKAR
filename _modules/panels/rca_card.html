@@ -1,0 +1,353 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>panels.rca_card &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">panels.rca_card</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for panels.rca_card</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""RCA Card panel: the synthesized root-cause card and cross-tab jumps.</span>
+
+<span class="sd">Renders the ``rca_card`` artifact (executive summary, validation gates, primary</span>
+<span class="sd">hypothesis, alternatives, card-level evidence, recommended actions, analyst</span>
+<span class="sd">review) with buttons that jump to the Evidence/Candidates tabs for a candidate.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">streamlit</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">st</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">utils.navigation</span><span class="w"> </span><span class="kn">import</span> <span class="n">goto_tab</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">utils.text_helpers</span><span class="w"> </span><span class="kn">import</span> <span class="n">truncate</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../autoapi/panels/rca_card/index.html#panels.rca_card.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="render_rca_card_panel">
+<a class="viewcode-back" href="../../autoapi/panels/rca_card/index.html#panels.rca_card.render_rca_card_panel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">render_rca_card_panel</span><span class="p">(</span>
+    <span class="n">rca_card</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">evidence_bundle</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">kg_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Render the RCA Card section.</span>
+
+<span class="sd">    @ In, rca_card, dict, the ``rca_card`` artifact; reads</span>
+<span class="sd">        ``executive_summary``, ``validation_status``, ``primary_hypothesis``,</span>
+<span class="sd">        ``alternatives``, ``evidence``, ``recommended_actions``,</span>
+<span class="sd">        ``analyst_review``, ``provenance``</span>
+<span class="sd">    @ In, evidence_bundle, dict, optional; only ``bundle_id`` is shown as context</span>
+<span class="sd">    @ In, kg_context, dict, optional; only the subgraph id is shown as context</span>
+<span class="sd">    @ Out, None</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">rca_card</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"No `rca_card` loaded (common in fixture-only mode)."</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="n">ex</span> <span class="o">=</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"executive_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">status</span> <span class="o">=</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"validation_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">prim</span> <span class="o">=</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"primary_hypothesis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">primary_cid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">prim</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+
+    <span class="c1"># --- Executive row ---</span>
+    <span class="n">ds</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">ex</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"decision_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">ds</span> <span class="o">==</span> <span class="s2">"candidate_ready"</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">success</span><span class="p">(</span><span class="sa">f</span><span class="s2">"**decision_status:** </span><span class="si">{</span><span class="n">ds</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">ds</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"review_required"</span><span class="p">,</span> <span class="s2">"insufficient_evidence"</span><span class="p">):</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">"**decision_status:** </span><span class="si">{</span><span class="n">ds</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">"**decision_status:** </span><span class="si">{</span><span class="n">ds</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="n">c1</span><span class="p">,</span> <span class="n">c2</span><span class="p">,</span> <span class="n">c3</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">columns</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">c1</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"confidence (exec)"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">ex</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_label"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"—"</span><span class="p">))</span>
+    <span class="k">with</span> <span class="n">c2</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"schema_valid"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">status</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"schema_valid"</span><span class="p">,</span> <span class="s2">"—"</span><span class="p">)))</span>
+    <span class="k">with</span> <span class="n">c3</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"fallback_used"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">status</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fallback_used"</span><span class="p">,</span> <span class="s2">"—"</span><span class="p">)))</span>
+
+    <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"### Executive summary"</span><span class="p">)</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">ex</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"primary_conclusion"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+    <span class="n">flags</span> <span class="o">=</span> <span class="n">ex</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_attention_flags"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">flags</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"**Analyst attention**"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">flags</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">f</span><span class="p">))</span>
+
+    <span class="c1"># --- Validation gates ---</span>
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"validation_status"</span><span class="p">):</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">json</span><span class="p">(</span><span class="n">status</span><span class="p">)</span>
+
+    <span class="c1"># --- Primary hypothesis ---</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"### Primary hypothesis"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">primary_cid</span><span class="p">:</span>
+        <span class="n">b1</span><span class="p">,</span> <span class="n">b2</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">columns</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">])</span>
+        <span class="k">with</span> <span class="n">b1</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">button</span><span class="p">(</span>
+                <span class="s2">"View evidence for primary"</span><span class="p">,</span>
+                <span class="n">key</span><span class="o">=</span><span class="s2">"rca_nav_primary_evidence"</span><span class="p">,</span>
+                <span class="n">on_click</span><span class="o">=</span><span class="n">goto_tab</span><span class="p">,</span>
+                <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="s2">"Evidence"</span><span class="p">,</span> <span class="n">primary_cid</span><span class="p">),</span>
+            <span class="p">)</span>
+        <span class="k">with</span> <span class="n">b2</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">button</span><span class="p">(</span>
+                <span class="s2">"Open Candidates tab"</span><span class="p">,</span>
+                <span class="n">key</span><span class="o">=</span><span class="s2">"rca_nav_candidates"</span><span class="p">,</span>
+                <span class="n">on_click</span><span class="o">=</span><span class="n">goto_tab</span><span class="p">,</span>
+                <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="s2">"Candidates"</span><span class="p">,),</span>
+            <span class="p">)</span>
+
+    <span class="n">meta</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"candidate_id"</span><span class="p">:</span> <span class="n">prim</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">),</span>
+        <span class="s2">"hypothesis_type"</span><span class="p">:</span> <span class="n">prim</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hypothesis_type"</span><span class="p">),</span>
+        <span class="s2">"composite_score"</span><span class="p">:</span> <span class="n">prim</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">),</span>
+        <span class="s2">"confidence_label"</span><span class="p">:</span> <span class="n">prim</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_label"</span><span class="p">),</span>
+    <span class="p">}</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">meta</span><span class="p">)</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="sa">f</span><span class="s2">"**</span><span class="si">{</span><span class="n">prim</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'cause_label'</span><span class="p">)</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="s1">'Cause'</span><span class="si">}</span><span class="s2">**"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">prim</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"narrative"</span><span class="p">):</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">prim</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"narrative"</span><span class="p">))</span>
+
+    <span class="n">why</span> <span class="o">=</span> <span class="n">prim</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"why_primary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">why</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"**Why primary**"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">why</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="sa">f</span><span class="s2">"- </span><span class="si">{</span><span class="n">line</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="n">unc</span> <span class="o">=</span> <span class="n">prim</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"uncertainties"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">unc</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"**Uncertainties**"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">unc</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="sa">f</span><span class="s2">"- </span><span class="si">{</span><span class="n">line</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="n">cites</span> <span class="o">=</span> <span class="n">prim</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"citations"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">cites</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"**Primary citations**"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">cit</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">cites</span><span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cit</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">cit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'source_type'</span><span class="p">,</span><span class="w"> </span><span class="s1">'ref'</span><span class="p">)</span><span class="si">}</span><span class="s2"> · </span><span class="si">{</span><span class="n">truncate</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">cit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'source_id'</span><span class="p">,</span><span class="w"> </span><span class="s1">''</span><span class="p">)),</span><span class="w"> </span><span class="mi">40</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="n">expanded</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="p">):</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+                    <span class="p">{</span>
+                        <span class="s2">"claim_summary"</span><span class="p">:</span> <span class="n">cit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"claim_summary"</span><span class="p">),</span>
+                        <span class="s2">"source_type"</span><span class="p">:</span> <span class="n">cit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_type"</span><span class="p">),</span>
+                        <span class="s2">"source_id"</span><span class="p">:</span> <span class="n">cit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_id"</span><span class="p">),</span>
+                    <span class="p">}</span>
+                <span class="p">)</span>
+                <span class="n">ex_text</span> <span class="o">=</span> <span class="n">cit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"excerpt"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">cit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"claim_summary"</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">ex_text</span><span class="p">:</span>
+                    <span class="n">st</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">ex_text</span><span class="p">))</span>
+
+    <span class="c1"># --- Alternatives ---</span>
+    <span class="n">alts</span> <span class="o">=</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"alternatives"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">alts</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"### Alternatives"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">alt_i</span><span class="p">,</span> <span class="n">alt</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">alts</span><span class="p">[:</span><span class="mi">8</span><span class="p">]):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">alt</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">aid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+            <span class="n">label</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause_label"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">aid</span><span class="p">)[:</span><span class="mi">56</span><span class="p">]</span>
+            <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">"</span><span class="p">):</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+                    <span class="p">{</span>
+                        <span class="s2">"candidate_id"</span><span class="p">:</span> <span class="n">aid</span><span class="p">,</span>
+                        <span class="s2">"composite_score"</span><span class="p">:</span> <span class="n">alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">),</span>
+                        <span class="s2">"confidence_label"</span><span class="p">:</span> <span class="n">alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_label"</span><span class="p">),</span>
+                        <span class="s2">"reason_not_primary"</span><span class="p">:</span> <span class="n">alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"reason_not_primary"</span><span class="p">),</span>
+                    <span class="p">}</span>
+                <span class="p">)</span>
+                <span class="n">sup</span> <span class="o">=</span> <span class="n">alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"supports"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+                <span class="n">weak</span> <span class="o">=</span> <span class="n">alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"weaknesses"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+                <span class="k">if</span> <span class="n">sup</span><span class="p">:</span>
+                    <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"**Supports**"</span><span class="p">)</span>
+                    <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">sup</span><span class="p">:</span>
+                        <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="p">))</span>
+                <span class="k">if</span> <span class="n">weak</span><span class="p">:</span>
+                    <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"**Weaknesses**"</span><span class="p">)</span>
+                    <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">weak</span><span class="p">:</span>
+                        <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">w</span><span class="p">))</span>
+                <span class="k">if</span> <span class="n">aid</span><span class="p">:</span>
+                    <span class="n">st</span><span class="o">.</span><span class="n">button</span><span class="p">(</span>
+                        <span class="s2">"Evidence filter"</span><span class="p">,</span>
+                        <span class="n">key</span><span class="o">=</span><span class="sa">f</span><span class="s2">"rca_alt_ev_</span><span class="si">{</span><span class="n">alt_i</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">aid</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                        <span class="n">on_click</span><span class="o">=</span><span class="n">goto_tab</span><span class="p">,</span>
+                        <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="s2">"Evidence"</span><span class="p">,</span> <span class="n">aid</span><span class="p">),</span>
+                    <span class="p">)</span>
+
+    <span class="c1"># --- Card-level evidence (synthesizer view) ---</span>
+    <span class="n">ev_card</span> <span class="o">=</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">ev_card</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"### Evidence (on card)"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">ev_card</span><span class="p">[:</span><span class="mi">12</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"`</span><span class="si">{</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'evidence_id'</span><span class="p">)</span><span class="si">}</span><span class="s2">` · **</span><span class="si">{</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'support_role'</span><span class="p">)</span><span class="si">}</span><span class="s2">** · `</span><span class="si">{</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'doc_id'</span><span class="p">)</span><span class="si">}</span><span class="s2">`"</span>
+            <span class="p">)</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"excerpt"</span><span class="p">):</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"excerpt"</span><span class="p">)))</span>
+
+    <span class="c1"># --- Recommended actions ---</span>
+    <span class="n">acts</span> <span class="o">=</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"recommended_actions"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">acts</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"### Recommended actions"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">acts</span><span class="p">[:</span><span class="mi">8</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="sa">f</span><span class="s2">"- **</span><span class="si">{</span><span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'priority'</span><span class="p">,</span><span class="w"> </span><span class="s1">''</span><span class="p">)</span><span class="si">}</span><span class="s2">** </span><span class="si">{</span><span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'description'</span><span class="p">,</span><span class="w"> </span><span class="s1">''</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="n">lac</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"linked_candidate_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">lac</span><span class="p">:</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">button</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"Evidence · </span><span class="si">{</span><span class="n">lac</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                    <span class="n">key</span><span class="o">=</span><span class="sa">f</span><span class="s2">"rca_act_ev_</span><span class="si">{</span><span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'action_id'</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                    <span class="n">on_click</span><span class="o">=</span><span class="n">goto_tab</span><span class="p">,</span>
+                    <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="s2">"Evidence"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">lac</span><span class="p">)),</span>
+                <span class="p">)</span>
+
+    <span class="c1"># --- Analyst review ---</span>
+    <span class="n">ar</span> <span class="o">=</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_review"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="n">ar</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"### Analyst review"</span><span class="p">)</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">"decision_required"</span><span class="p">:</span> <span class="n">ar</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"decision_required"</span><span class="p">),</span>
+                <span class="s2">"writeback_recommendation"</span><span class="p">:</span> <span class="n">ar</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"writeback_recommendation"</span><span class="p">),</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">ar</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"questions_to_resolve"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">qs</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"**Questions to resolve**"</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">qs</span><span class="p">[:</span><span class="mi">12</span><span class="p">]:</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="sa">f</span><span class="s2">"- </span><span class="si">{</span><span class="n">q</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="c1"># --- KG / bundle context (compact) ---</span>
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"Cross-artifact context"</span><span class="p">):</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">"rca_id"</span><span class="p">:</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rca_id"</span><span class="p">),</span>
+                <span class="s2">"event_id"</span><span class="p">:</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">),</span>
+                <span class="s2">"input_artifacts"</span><span class="p">:</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"input_artifacts"</span><span class="p">),</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">kg_context</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="s2">"KG subgraph_id"</span><span class="p">)</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="nb">str</span><span class="p">((</span><span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"subgraph_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"graph_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)))</span>
+        <span class="k">if</span> <span class="n">evidence_bundle</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="s2">"evidence_bundle.bundle_id"</span><span class="p">)</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">evidence_bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"bundle_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">))</span>
+
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"rca_card provenance (raw)"</span><span class="p">):</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">json</span><span class="p">(</span><span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"provenance"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

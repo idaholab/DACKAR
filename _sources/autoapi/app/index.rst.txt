@@ -1,0 +1,110 @@
+app
+===
+
+.. py:module:: app
+
+.. autoapi-nested-parse::
+
+   DACKAR RCA Viewer — Streamlit entry point.
+
+   **Scope:** This process only **loads and displays** artifact JSON (fixtures or
+   ``full_result.json``). It does **not** call ``RCAReasoningOrchestrator.run()`` or
+   execute Neo4j / evidence retrieval / synthesis. To run the full RCA workflow, use
+   your existing Python entry point (orchestrator factory + ``.run()``), then open
+   the produced bundle here. Optional future work to embed a run in Streamlit is
+   described in ``RCA_VIZ_ARCHITECTURE.md`` §20.
+
+   Run from this directory::
+
+       cd DACKAR/src/dackar/RCA/viz
+       pip install -r requirements.txt
+       streamlit run app.py
+
+   Example paths (adjust to your clone):
+
+   - Full result: ``..\tests\test_case_2\rca_runs_case_002\v32_full_result.json``
+   - Fixtures: ``..\tests\test_case_2\fixtures``
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   app.JsonDict
+   app.TAB_NAMES
+   app._VIEWER_VS_RUN_HELP
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   app._load_error_rows
+   app.main
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:data:: TAB_NAMES
+   :value: ['Validation', 'KG Context', 'Telemetry & Temporal', 'Candidates', 'Evidence', 'Method Outputs',...
+
+
+.. py:data:: _VIEWER_VS_RUN_HELP
+   :value: Multiline-String
+
+   .. raw:: html
+
+      <details><summary>Show Value</summary>
+
+   .. code-block:: python
+
+      """
+      This app **only loads JSON** already produced by the RCA pipeline (or hand-built
+      fixtures). It does **not** run `RCAReasoningOrchestrator`, Neo4j, Chroma, or the
+      synthesizer from here.
+      
+      **Typical workflow:** run the orchestrator in Python/CLI/notebook with the same
+      inputs and services you use in dev, write `full_result.json` (or a run folder),
+      then paste that path above.
+      
+      **Future:** embedding “Run pipeline” in Streamlit is possible (subprocess or
+      in-process `run()`, merge results into session state) but needs config, secrets,
+      non-blocking execution, and dependency alignment — see `RCA_VIZ_ARCHITECTURE.md`
+      **§20**.
+      """
+
+   .. raw:: html
+
+      </details>
+
+
+
+.. py:function:: _load_error_rows(art)
+
+   Return (artifact_key, error_message) for every ``*__load_error`` marker.
+
+   The fixtures/run-folder loader records a file it could not parse as a
+   ``<key>__load_error`` entry (and sets ``<key>`` to None) instead of aborting
+   the whole load, so these would otherwise be invisible.
+
+   @ In, art, dict, the loaded bundle
+   @ Out, rows, list, (key, message) pairs; empty when every file parsed
+
+
+.. py:function:: main()
+
+   Render the whole viewer: sidebar loader, navigator, and the active section.
+
+   Loads the bundle from the sidebar path (optionally merging a supplemental
+   inputs/fixtures path), surfaces any per-file load errors, then dispatches to
+   the panel for the selected section.
+
+   @ Out, None
+
+

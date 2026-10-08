@@ -1,0 +1,377 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>panels.evidence &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">panels.evidence</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for panels.evidence</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Evidence panel: retrieval health, doc-type mix, and per-candidate excerpts.</span>
+
+<span class="sd">Reads the ``evidence_bundle`` artifact (results, provenance, retrieval scope,</span>
+<span class="sd">planned queries, candidate-evidence summary) and the ``causality_candidates``</span>
+<span class="sd">artifact to order and label hits. Honors the ``rca_viz_evidence_filter``</span>
+<span class="sd">session value so jumps from the Candidates/RCA Card tabs land pre-filtered.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span><span class="p">,</span> <span class="n">defaultdict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">DefaultDict</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">plotly.express</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">px</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">streamlit</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">st</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">utils.text_helpers</span><span class="w"> </span><span class="kn">import</span> <span class="n">truncate</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../autoapi/panels/evidence/index.html#panels.evidence.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="_linked_id">
+<a class="viewcode-back" href="../../autoapi/panels/evidence/index.html#panels.evidence._linked_id">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_linked_id</span><span class="p">(</span><span class="n">hit</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">meta</span> <span class="o">=</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">return</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"linked_candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_support_role">
+<a class="viewcode-back" href="../../autoapi/panels/evidence/index.html#panels.evidence._support_role">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_support_role</span><span class="p">(</span><span class="n">hit</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">meta</span> <span class="o">=</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"support_role"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"contextual"</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="_doc_type">
+<a class="viewcode-back" href="../../autoapi/panels/evidence/index.html#panels.evidence._doc_type">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_doc_type</span><span class="p">(</span><span class="n">hit</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">meta</span> <span class="o">=</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">vm</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"_vector_metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">vm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"UNKNOWN"</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_bm25_from_hits">
+<a class="viewcode-back" href="../../autoapi/panels/evidence/index.html#panels.evidence._bm25_from_hits">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_bm25_from_hits</span><span class="p">(</span><span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">],</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Infer BM25 availability from hit metadata; align with retriever provenance."""</span>
+    <span class="n">bm25</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">hit</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
+        <span class="n">vm</span> <span class="o">=</span> <span class="p">(</span><span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"_vector_metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">flag</span> <span class="o">=</span> <span class="n">vm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"_bm25_available"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">flag</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">bm25</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">bm25</span> <span class="o">=</span> <span class="n">flag</span>
+            <span class="k">elif</span> <span class="ow">not</span> <span class="n">flag</span><span class="p">:</span>
+                <span class="n">bm25</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="n">bm25</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">"hybrid (dense + BM25) for sampled hits"</span>
+    <span class="k">if</span> <span class="n">bm25</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="s2">"dense-only for at least one hit (BM25 unavailable on disk-loaded collection)"</span>
+    <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"unknown — no `_bm25_available` flags on hits"</span></div>
+
+
+
+<div class="viewcode-block" id="render_evidence_panel">
+<a class="viewcode-back" href="../../autoapi/panels/evidence/index.html#panels.evidence.render_evidence_panel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">render_evidence_panel</span><span class="p">(</span>
+    <span class="n">evidence_bundle</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">causality_candidates</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Render the Evidence section.</span>
+
+<span class="sd">    @ In, evidence_bundle, dict, the ``evidence_bundle`` artifact; reads</span>
+<span class="sd">        ``results``, ``provenance``, ``retrieval_scope``, ``planned_queries``,</span>
+<span class="sd">        ``candidate_evidence_summary``; None shows an info note</span>
+<span class="sd">    @ In, causality_candidates, dict, optional; supplies candidate ordering and</span>
+<span class="sd">        the "filter by linked candidate" options</span>
+<span class="sd">    @ Out, None</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">evidence_bundle</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"No `evidence_bundle` loaded."</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="n">results</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">evidence_bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"results"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"Retrieved results"</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">results</span><span class="p">))</span>
+
+    <span class="c1"># --- Retrieval health ---</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"Retrieval health"</span><span class="p">)</span>
+    <span class="n">prov</span> <span class="o">=</span> <span class="n">evidence_bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"provenance"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">scope</span> <span class="o">=</span> <span class="n">evidence_bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"retrieval_scope"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">bm25_prov</span> <span class="o">=</span> <span class="n">prov</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"bm25_available"</span><span class="p">)</span>
+    <span class="n">bm25_inf</span><span class="p">,</span> <span class="n">bm25_note</span> <span class="o">=</span> <span class="n">_bm25_from_hits</span><span class="p">(</span><span class="n">results</span><span class="p">)</span>
+    <span class="n">bm25_final</span> <span class="o">=</span> <span class="n">bm25_prov</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">bm25_prov</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="k">else</span> <span class="n">bm25_inf</span>
+    <span class="n">c1</span><span class="p">,</span> <span class="n">c2</span><span class="p">,</span> <span class="n">c3</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">columns</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">c1</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"retrieval_mode"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">prov</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"retrieval_mode"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="s2">"dense_only"</span> <span class="k">if</span> <span class="n">bm25_final</span> <span class="ow">is</span> <span class="kc">False</span> <span class="k">else</span> <span class="s2">"hybrid"</span> <span class="k">if</span> <span class="n">bm25_final</span> <span class="ow">is</span> <span class="kc">True</span> <span class="k">else</span> <span class="s2">"unknown"</span><span class="p">)))</span>
+    <span class="k">with</span> <span class="n">c2</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"bm25_available"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">bm25_final</span><span class="p">))</span>
+    <span class="k">with</span> <span class="n">c3</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"query_count"</span><span class="p">,</span> <span class="n">prov</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"query_count"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">scope</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"query_count"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"—"</span><span class="p">)</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="n">bm25_note</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">scope</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"retrieval_scope"</span><span class="p">):</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">json</span><span class="p">(</span><span class="n">scope</span><span class="p">)</span>
+
+    <span class="c1"># --- Doc-type distribution + corpus coverage hint ---</span>
+    <span class="k">if</span> <span class="n">results</span><span class="p">:</span>
+        <span class="n">types</span> <span class="o">=</span> <span class="p">[</span><span class="n">_doc_type</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">results</span><span class="p">]</span>
+        <span class="n">tc</span> <span class="o">=</span> <span class="n">Counter</span><span class="p">(</span><span class="n">types</span><span class="p">)</span>
+        <span class="n">ddf</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s2">"doc_type"</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">tc</span><span class="o">.</span><span class="n">keys</span><span class="p">()),</span> <span class="s2">"count"</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">tc</span><span class="o">.</span><span class="n">values</span><span class="p">())})</span>
+        <span class="n">fig</span> <span class="o">=</span> <span class="n">px</span><span class="o">.</span><span class="n">bar</span><span class="p">(</span><span class="n">ddf</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s2">"doc_type"</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="s2">"count"</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">"Hits by doc_type"</span><span class="p">)</span>
+        <span class="n">fig</span><span class="o">.</span><span class="n">update_layout</span><span class="p">(</span><span class="n">height</span><span class="o">=</span><span class="mi">320</span><span class="p">)</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">plotly_chart</span><span class="p">(</span><span class="n">fig</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">present</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tc</span><span class="p">}</span>
+        <span class="n">missing</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"FMEA"</span><span class="p">,</span> <span class="s2">"ECA"</span><span class="p">)</span> <span class="k">if</span> <span class="n">x</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">present</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"No hits with doc_type **</span><span class="si">{</span><span class="s1">' / '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">missing</span><span class="p">)</span><span class="si">}</span><span class="s2">** in this bundle. "</span>
+                <span class="s2">"Temporal or governance-oriented scoring may be thin relative to runs with those corpora."</span>
+            <span class="p">)</span>
+
+    <span class="n">pq</span> <span class="o">=</span> <span class="n">evidence_bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"planned_queries"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pq</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">pq</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"planned_queries (from bundle)"</span><span class="p">):</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">json</span><span class="p">(</span><span class="n">pq</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">evidence_bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"query"</span><span class="p">):</span>
+        <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"Query sample (first planned query text only)"</span><span class="p">):</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">evidence_bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"query"</span><span class="p">)))</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span>
+                <span class="s2">"Full per-candidate query plans are not persisted on `evidence_bundle` in the current retriever output; "</span>
+                <span class="s2">"see `retrieval_scope.query_count` and orchestrator logs for the full set."</span>
+            <span class="p">)</span>
+
+    <span class="c1"># --- Candidate evidence summary (from bundle) ---</span>
+    <span class="n">ces</span> <span class="o">=</span> <span class="n">evidence_bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_evidence_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">ces</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"candidate_evidence_summary"</span><span class="p">)</span>
+        <span class="n">cdf</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">ces</span><span class="p">)</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">dataframe</span><span class="p">(</span><span class="n">cdf</span><span class="p">,</span> <span class="n">hide_index</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="c1"># --- Overview table ---</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"All hits (overview)"</span><span class="p">)</span>
+    <span class="n">_opts</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"(all)"</span><span class="p">]</span> <span class="o">+</span> <span class="n">_candidate_filter_options</span><span class="p">(</span><span class="n">causality_candidates</span><span class="p">,</span> <span class="n">results</span><span class="p">)</span>
+    <span class="n">_pref</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rca_viz_evidence_filter"</span><span class="p">,</span> <span class="s2">"(all)"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">_pref</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_opts</span><span class="p">:</span>
+        <span class="n">_pref</span> <span class="o">=</span> <span class="s2">"(all)"</span>
+    <span class="n">filter_cid</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">selectbox</span><span class="p">(</span>
+        <span class="s2">"Filter by linked candidate"</span><span class="p">,</span>
+        <span class="n">options</span><span class="o">=</span><span class="n">_opts</span><span class="p">,</span>
+        <span class="n">index</span><span class="o">=</span><span class="n">_opts</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">_pref</span><span class="p">),</span>
+    <span class="p">)</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="o">.</span><span class="n">rca_viz_evidence_filter</span> <span class="o">=</span> <span class="n">filter_cid</span>
+    <span class="k">if</span> <span class="n">filter_cid</span> <span class="o">!=</span> <span class="s2">"(all)"</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"Filter active: **</span><span class="si">{</span><span class="n">filter_cid</span><span class="si">}</span><span class="s2">** (set from Candidates / RCA Card, or choose “(all)” above)."</span>
+        <span class="p">)</span>
+    <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">results</span><span class="p">[:</span><span class="mi">800</span><span class="p">]:</span>
+        <span class="n">meta</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">lc</span> <span class="o">=</span> <span class="n">_linked_id</span><span class="p">(</span><span class="n">r</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">filter_cid</span> <span class="o">!=</span> <span class="s2">"(all)"</span> <span class="ow">and</span> <span class="n">lc</span> <span class="o">!=</span> <span class="n">filter_cid</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">vm</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"_vector_metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">"snippet_id"</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"snippet_id"</span><span class="p">),</span>
+                <span class="s2">"doc_id"</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_id"</span><span class="p">),</span>
+                <span class="s2">"doc_type"</span><span class="p">:</span> <span class="n">_doc_type</span><span class="p">(</span><span class="n">r</span><span class="p">),</span>
+                <span class="s2">"score"</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"score"</span><span class="p">),</span>
+                <span class="s2">"support_role"</span><span class="p">:</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"support_role"</span><span class="p">),</span>
+                <span class="s2">"linked_candidate_id"</span><span class="p">:</span> <span class="n">lc</span><span class="p">,</span>
+                <span class="s2">"authority_weight"</span><span class="p">:</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"authority_weight"</span><span class="p">),</span>
+                <span class="s2">"finding_status"</span><span class="p">:</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"finding_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">vm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"finding_status"</span><span class="p">),</span>
+                <span class="s2">"excerpt"</span><span class="p">:</span> <span class="n">truncate</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"snippet"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">),</span> <span class="mi">180</span><span class="p">),</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">dataframe</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">hide_index</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">height</span><span class="o">=</span><span class="mi">360</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">download_button</span><span class="p">(</span>
+            <span class="s2">"Download filtered overview CSV"</span><span class="p">,</span>
+            <span class="n">df</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s2">"utf-8"</span><span class="p">),</span>
+            <span class="n">file_name</span><span class="o">=</span><span class="s2">"evidence_overview.csv"</span><span class="p">,</span>
+            <span class="n">mime</span><span class="o">=</span><span class="s2">"text/csv"</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="s2">"No rows after filter."</span><span class="p">)</span>
+
+    <span class="c1"># --- Per-candidate linkage (verbatim excerpts) ---</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"Per-candidate linkage (verbatim excerpts)"</span><span class="p">)</span>
+    <span class="n">ordered</span> <span class="o">=</span> <span class="n">_ordered_candidate_ids</span><span class="p">(</span><span class="n">causality_candidates</span><span class="p">,</span> <span class="n">results</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">ordered</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="s2">"No linked_candidate_id on hits — expand **All hits** above."</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">cid</span> <span class="ow">in</span> <span class="n">ordered</span><span class="p">[:</span><span class="mi">12</span><span class="p">]:</span>
+        <span class="n">bucket</span><span class="p">:</span> <span class="n">DefaultDict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]]</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">_linked_id</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="o">!=</span> <span class="n">cid</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">bucket</span><span class="p">[</span><span class="n">_support_role</span><span class="p">(</span><span class="n">r</span><span class="p">)]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">r</span><span class="p">)</span>
+        <span class="n">total</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">bucket</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">total</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">label</span> <span class="o">=</span> <span class="n">cid</span><span class="p">[:</span><span class="mi">56</span><span class="p">]</span>
+        <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2"> — </span><span class="si">{</span><span class="n">total</span><span class="si">}</span><span class="s2"> hit(s)"</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">role</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"supporting"</span><span class="p">,</span> <span class="s2">"contradicting"</span><span class="p">,</span> <span class="s2">"contextual"</span><span class="p">,</span> <span class="s2">"missing"</span><span class="p">):</span>
+                <span class="n">hits</span> <span class="o">=</span> <span class="n">bucket</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">role</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">hits</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="sa">f</span><span class="s2">"**</span><span class="si">{</span><span class="n">role</span><span class="si">}</span><span class="s2">** (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">hits</span><span class="p">)</span><span class="si">}</span><span class="s2">)"</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">hits</span><span class="p">[:</span><span class="mi">25</span><span class="p">]:</span>
+                    <span class="n">meta</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+                    <span class="n">auth</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"authority_weight"</span><span class="p">)</span>
+                    <span class="n">auth_s</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">" · authority_weight **</span><span class="si">{</span><span class="n">auth</span><span class="si">}</span><span class="s2">**"</span> <span class="k">if</span> <span class="n">auth</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">""</span>
+                    <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="sa">f</span><span class="s2">"`</span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'doc_id'</span><span class="p">)</span><span class="si">}</span><span class="s2">` · </span><span class="si">{</span><span class="n">_doc_type</span><span class="p">(</span><span class="n">r</span><span class="p">)</span><span class="si">}{</span><span class="n">auth_s</span><span class="si">}</span><span class="s2"> · score **</span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'score'</span><span class="p">)</span><span class="si">}</span><span class="s2">**"</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ca_as_found_condition"</span><span class="p">):</span>
+                        <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="sa">f</span><span class="s2">"as_found_condition: </span><span class="si">{</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'ca_as_found_condition'</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+                    <span class="n">st</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"snippet"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">))</span>
+                    <span class="n">st</span><span class="o">.</span><span class="n">divider</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="_candidate_filter_options">
+<a class="viewcode-back" href="../../autoapi/panels/evidence/index.html#panels.evidence._candidate_filter_options">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_candidate_filter_options</span><span class="p">(</span>
+    <span class="n">causality_candidates</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">causality_candidates</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidates"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="n">cid</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">cid</span> <span class="ow">and</span> <span class="n">cid</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ids</span><span class="p">:</span>
+                <span class="n">ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">cid</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
+        <span class="n">lc</span> <span class="o">=</span> <span class="n">_linked_id</span><span class="p">(</span><span class="n">r</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">lc</span> <span class="ow">and</span> <span class="n">lc</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ids</span><span class="p">:</span>
+            <span class="n">ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">lc</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">ids</span></div>
+
+
+
+<div class="viewcode-block" id="_ordered_candidate_ids">
+<a class="viewcode-back" href="../../autoapi/panels/evidence/index.html#panels.evidence._ordered_candidate_ids">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_ordered_candidate_ids</span><span class="p">(</span>
+    <span class="n">causality_candidates</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">ordered</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">causality_candidates</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidates"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="n">cid</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">cid</span> <span class="ow">and</span> <span class="n">cid</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ordered</span><span class="p">:</span>
+                <span class="n">ordered</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">cid</span><span class="p">))</span>
+    <span class="n">linked</span> <span class="o">=</span> <span class="p">{</span><span class="n">_linked_id</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">results</span> <span class="k">if</span> <span class="n">_linked_id</span><span class="p">(</span><span class="n">r</span><span class="p">)}</span>
+    <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">linked</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">x</span> <span class="ow">and</span> <span class="n">x</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ordered</span><span class="p">:</span>
+            <span class="n">ordered</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">ordered</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

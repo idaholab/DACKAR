@@ -1,0 +1,290 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>panels.pipeline_nav &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">panels.pipeline_nav</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for panels.pipeline_nav</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">§14 Pipeline navigator — stage checklist aligned with RCAReasoningOrchestrator.run().</span>
+<span class="sd">Click a stage to jump to the relevant tab (session_state.rca_viz_tab_radio).</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">streamlit</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">st</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">utils.navigation</span><span class="w"> </span><span class="kn">import</span> <span class="n">goto_tab</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../autoapi/panels/pipeline_nav/index.html#panels.pipeline_nav.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="_present">
+<a class="viewcode-back" href="../../autoapi/panels/pipeline_nav/index.html#panels.pipeline_nav._present">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_present</span><span class="p">(</span><span class="n">art</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_ishikawa_expected">
+<a class="viewcode-back" href="../../autoapi/panels/pipeline_nav/index.html#panels.pipeline_nav._ishikawa_expected">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_ishikawa_expected</span><span class="p">(</span><span class="n">art</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="n">rc</span> <span class="o">=</span> <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_context"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">cfg</span> <span class="o">=</span> <span class="n">rc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"enable_ishikawa"</span><span class="p">),</span> <span class="nb">bool</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">cfg</span><span class="p">[</span><span class="s2">"enable_ishikawa"</span><span class="p">])</span>
+    <span class="n">mf</span> <span class="o">=</span> <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_manifest"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">pc</span> <span class="o">=</span> <span class="n">mf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pipeline_config"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">pc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"enable_ishikawa"</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="_evidence_refine_done">
+<a class="viewcode-back" href="../../autoapi/panels/pipeline_nav/index.html#panels.pipeline_nav._evidence_refine_done">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_evidence_refine_done</span><span class="p">(</span><span class="n">art</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="n">cc</span> <span class="o">=</span> <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causality_candidates"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">return</span> <span class="nb">bool</span><span class="p">((</span><span class="n">cc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"provenance"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_refinement_applied"</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="_stage_icon">
+<a class="viewcode-back" href="../../autoapi/panels/pipeline_nav/index.html#panels.pipeline_nav._stage_icon">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_stage_icon</span><span class="p">(</span><span class="n">required</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">present</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">optional_skip</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">optional_skip</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"⚪"</span>
+    <span class="k">if</span> <span class="n">required</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"✅"</span> <span class="k">if</span> <span class="n">present</span> <span class="k">else</span> <span class="s2">"❌"</span>
+    <span class="k">return</span> <span class="s2">"✅"</span> <span class="k">if</span> <span class="n">present</span> <span class="k">else</span> <span class="s2">"⚠️"</span></div>
+
+
+
+<div class="viewcode-block" id="pipeline_stage_rows">
+<a class="viewcode-back" href="../../autoapi/panels/pipeline_nav/index.html#panels.pipeline_nav.pipeline_stage_rows">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pipeline_stage_rows</span><span class="p">(</span><span class="n">art</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Return list of (emoji, stage_label, tab_name) in orchestrator order.</span>
+<span class="sd">    """</span>
+    <span class="n">rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">tab</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">emoji</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">emoji</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">tab</span><span class="p">))</span>
+
+    <span class="n">add</span><span class="p">(</span>
+        <span class="s2">"Inputs / run_context"</span><span class="p">,</span>
+        <span class="s2">"Validation"</span><span class="p">,</span>
+        <span class="n">_stage_icon</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">_present</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="s2">"run_context"</span><span class="p">)),</span>
+    <span class="p">)</span>
+    <span class="n">add</span><span class="p">(</span>
+        <span class="s2">"KG context"</span><span class="p">,</span>
+        <span class="s2">"KG Context"</span><span class="p">,</span>
+        <span class="n">_stage_icon</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">_present</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="s2">"kg_context"</span><span class="p">)),</span>
+    <span class="p">)</span>
+    <span class="n">add</span><span class="p">(</span>
+        <span class="s2">"Signal evidence"</span><span class="p">,</span>
+        <span class="s2">"Method Outputs"</span><span class="p">,</span>
+        <span class="n">_stage_icon</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">_present</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="s2">"signal_evidence"</span><span class="p">)),</span>
+    <span class="p">)</span>
+    <span class="n">add</span><span class="p">(</span>
+        <span class="s2">"TSKR patterns"</span><span class="p">,</span>
+        <span class="s2">"Telemetry &amp; Temporal"</span><span class="p">,</span>
+        <span class="n">_stage_icon</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">_present</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="s2">"tskr_patterns"</span><span class="p">)),</span>
+    <span class="p">)</span>
+    <span class="n">add</span><span class="p">(</span>
+        <span class="s2">"Candidates (generate)"</span><span class="p">,</span>
+        <span class="s2">"Candidates"</span><span class="p">,</span>
+        <span class="n">_stage_icon</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">_present</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="s2">"causality_candidates"</span><span class="p">)),</span>
+    <span class="p">)</span>
+    <span class="n">add</span><span class="p">(</span>
+        <span class="s2">"Evidence retrieve"</span><span class="p">,</span>
+        <span class="s2">"Evidence"</span><span class="p">,</span>
+        <span class="n">_stage_icon</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">_present</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="s2">"evidence_bundle"</span><span class="p">)),</span>
+    <span class="p">)</span>
+    <span class="n">add</span><span class="p">(</span>
+        <span class="s2">"Pre-refine candidates (Phase 5)"</span><span class="p">,</span>
+        <span class="s2">"Candidates"</span><span class="p">,</span>
+        <span class="n">_stage_icon</span><span class="p">(</span><span class="kc">False</span><span class="p">,</span> <span class="n">_present</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="s2">"causality_candidates_pre_refine"</span><span class="p">)),</span>
+    <span class="p">)</span>
+    <span class="n">add</span><span class="p">(</span>
+        <span class="s2">"Candidates (refine w/ evidence)"</span><span class="p">,</span>
+        <span class="s2">"Candidates"</span><span class="p">,</span>
+        <span class="n">_stage_icon</span><span class="p">(</span><span class="kc">False</span><span class="p">,</span> <span class="n">_evidence_refine_done</span><span class="p">(</span><span class="n">art</span><span class="p">)),</span>
+    <span class="p">)</span>
+    <span class="n">ish_exp</span> <span class="o">=</span> <span class="n">_ishikawa_expected</span><span class="p">(</span><span class="n">art</span><span class="p">)</span>
+    <span class="n">ish_have</span> <span class="o">=</span> <span class="n">_present</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="s2">"ishikawa_matrix"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">ish_exp</span><span class="p">:</span>
+        <span class="n">add</span><span class="p">(</span>
+            <span class="s2">"Ishikawa (optional)"</span><span class="p">,</span>
+            <span class="s2">"Ishikawa &amp; CMMS"</span><span class="p">,</span>
+            <span class="n">_stage_icon</span><span class="p">(</span><span class="kc">False</span><span class="p">,</span> <span class="n">ish_have</span><span class="p">),</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">add</span><span class="p">(</span>
+            <span class="s2">"Ishikawa (disabled)"</span><span class="p">,</span>
+            <span class="s2">"Ishikawa &amp; CMMS"</span><span class="p">,</span>
+            <span class="s2">"⚪"</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="n">add</span><span class="p">(</span>
+        <span class="s2">"CMMS context (optional)"</span><span class="p">,</span>
+        <span class="s2">"Ishikawa &amp; CMMS"</span><span class="p">,</span>
+        <span class="n">_stage_icon</span><span class="p">(</span><span class="kc">False</span><span class="p">,</span> <span class="n">_present</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="s2">"cmms_context"</span><span class="p">)),</span>
+    <span class="p">)</span>
+    <span class="n">add</span><span class="p">(</span>
+        <span class="s2">"Barrier analysis (optional)"</span><span class="p">,</span>
+        <span class="s2">"Method Outputs"</span><span class="p">,</span>
+        <span class="n">_stage_icon</span><span class="p">(</span><span class="kc">False</span><span class="p">,</span> <span class="n">_present</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="s2">"barrier_analysis"</span><span class="p">)),</span>
+    <span class="p">)</span>
+    <span class="n">add</span><span class="p">(</span>
+        <span class="s2">"RCA synthesize"</span><span class="p">,</span>
+        <span class="s2">"RCA Card"</span><span class="p">,</span>
+        <span class="n">_stage_icon</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">_present</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="s2">"rca_card"</span><span class="p">)),</span>
+    <span class="p">)</span>
+    <span class="n">add</span><span class="p">(</span>
+        <span class="s2">"Run manifest"</span><span class="p">,</span>
+        <span class="s2">"Validation"</span><span class="p">,</span>
+        <span class="n">_stage_icon</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">_present</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="s2">"run_manifest"</span><span class="p">)),</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">rows</span></div>
+
+
+
+<div class="viewcode-block" id="render_pipeline_navigator">
+<a class="viewcode-back" href="../../autoapi/panels/pipeline_nav/index.html#panels.pipeline_nav.render_pipeline_navigator">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">render_pipeline_navigator</span><span class="p">(</span><span class="n">art</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span> <span class="n">tab_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Sidebar block: linear stages as vertical buttons."""</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"Pipeline (§14)"</span><span class="p">)</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="s2">"Orchestrator order — click to open the matching section."</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="p">(</span><span class="n">emoji</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">tab</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">pipeline_stage_rows</span><span class="p">(</span><span class="n">art</span><span class="p">)):</span>
+        <span class="k">if</span> <span class="n">tab</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">tab_names</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">col_a</span><span class="p">,</span> <span class="n">col_b</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">columns</span><span class="p">([</span><span class="mf">0.22</span><span class="p">,</span> <span class="mf">0.78</span><span class="p">])</span>
+        <span class="k">with</span> <span class="n">col_a</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="n">emoji</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">col_b</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">button</span><span class="p">(</span>
+                <span class="n">label</span><span class="p">,</span>
+                <span class="n">key</span><span class="o">=</span><span class="sa">f</span><span class="s2">"pipe_nav_</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">on_click</span><span class="o">=</span><span class="n">goto_tab</span><span class="p">,</span>
+                <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">tab</span><span class="p">,),</span>
+            <span class="p">)</span>
+
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"Stage DAG (reference)"</span><span class="p">):</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span>
+<span class="w">            </span><span class="sd">"""</span>
+<span class="sd">```</span>
+<span class="sd">Inputs_validation → KG_context → TSKR_patterns → Candidates_generate</span>
+<span class="sd">  → Evidence_retrieve → Candidates_refine → Ishikawa_opt → RCA_card → Run_manifest</span>
+<span class="sd">```</span>
+<span class="sd">"""</span>
+        <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

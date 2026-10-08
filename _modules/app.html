@@ -1,0 +1,370 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>app &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Module code</a></li>
+      <li class="breadcrumb-item active">app</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for app</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">DACKAR RCA Viewer — Streamlit entry point.</span>
+
+<span class="sd">**Scope:** This process only **loads and displays** artifact JSON (fixtures or</span>
+<span class="sd">``full_result.json``). It does **not** call ``RCAReasoningOrchestrator.run()`` or</span>
+<span class="sd">execute Neo4j / evidence retrieval / synthesis. To run the full RCA workflow, use</span>
+<span class="sd">your existing Python entry point (orchestrator factory + ``.run()``), then open</span>
+<span class="sd">the produced bundle here. Optional future work to embed a run in Streamlit is</span>
+<span class="sd">described in ``RCA_VIZ_ARCHITECTURE.md`` §20.</span>
+
+<span class="sd">Run from this directory::</span>
+
+<span class="sd">    cd DACKAR/src/dackar/RCA/viz</span>
+<span class="sd">    pip install -r requirements.txt</span>
+<span class="sd">    streamlit run app.py</span>
+
+<span class="sd">Example paths (adjust to your clone):</span>
+
+<span class="sd">- Full result: ``..\\tests\\test_case_2\\rca_runs_case_002\\v32_full_result.json``</span>
+<span class="sd">- Fixtures: ``..\\tests\\test_case_2\\fixtures``</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">streamlit</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">st</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">loader</span><span class="w"> </span><span class="kn">import</span> <span class="n">list_bundle_keys</span><span class="p">,</span> <span class="n">load_artifacts</span><span class="p">,</span> <span class="n">load_pre_refine_causality</span><span class="p">,</span> <span class="n">merge_bundles</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">panels</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">candidates</span><span class="p">,</span>
+    <span class="n">evidence</span><span class="p">,</span>
+    <span class="n">extra_artifacts</span><span class="p">,</span>
+    <span class="n">kg_context</span><span class="p">,</span>
+    <span class="n">method_outputs</span><span class="p">,</span>
+    <span class="n">pipeline_nav</span><span class="p">,</span>
+    <span class="n">rca_card</span><span class="p">,</span>
+    <span class="n">telemetry</span><span class="p">,</span>
+    <span class="n">validation</span><span class="p">,</span>
+<span class="p">)</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../autoapi/app/index.html#app.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="TAB_NAMES">
+<a class="viewcode-back" href="../autoapi/app/index.html#app.TAB_NAMES">[docs]</a>
+<span class="n">TAB_NAMES</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">"Validation"</span><span class="p">,</span>
+    <span class="s2">"KG Context"</span><span class="p">,</span>
+    <span class="s2">"Telemetry &amp; Temporal"</span><span class="p">,</span>
+    <span class="s2">"Candidates"</span><span class="p">,</span>
+    <span class="s2">"Evidence"</span><span class="p">,</span>
+    <span class="s2">"Method Outputs"</span><span class="p">,</span>
+    <span class="s2">"Ishikawa &amp; CMMS"</span><span class="p">,</span>
+    <span class="s2">"RCA Card"</span><span class="p">,</span>
+<span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="_VIEWER_VS_RUN_HELP">
+<a class="viewcode-back" href="../autoapi/app/index.html#app._VIEWER_VS_RUN_HELP">[docs]</a>
+<span class="n">_VIEWER_VS_RUN_HELP</span> <span class="o">=</span> <span class="s2">"""</span>
+<span class="s2">This app **only loads JSON** already produced by the RCA pipeline (or hand-built</span>
+<span class="s2">fixtures). It does **not** run `RCAReasoningOrchestrator`, Neo4j, Chroma, or the</span>
+<span class="s2">synthesizer from here.</span>
+
+<span class="s2">**Typical workflow:** run the orchestrator in Python/CLI/notebook with the same</span>
+<span class="s2">inputs and services you use in dev, write `full_result.json` (or a run folder),</span>
+<span class="s2">then paste that path above.</span>
+
+<span class="s2">**Future:** embedding “Run pipeline” in Streamlit is possible (subprocess or</span>
+<span class="s2">in-process `run()`, merge results into session state) but needs config, secrets,</span>
+<span class="s2">non-blocking execution, and dependency alignment — see `RCA_VIZ_ARCHITECTURE.md`</span>
+<span class="s2">**§20**.</span>
+<span class="s2">"""</span></div>
+
+
+
+<div class="viewcode-block" id="_load_error_rows">
+<a class="viewcode-back" href="../autoapi/app/index.html#app._load_error_rows">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_load_error_rows</span><span class="p">(</span><span class="n">art</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Return (artifact_key, error_message) for every ``*__load_error`` marker.</span>
+
+<span class="sd">    The fixtures/run-folder loader records a file it could not parse as a</span>
+<span class="sd">    ``&lt;key&gt;__load_error`` entry (and sets ``&lt;key&gt;`` to None) instead of aborting</span>
+<span class="sd">    the whole load, so these would otherwise be invisible.</span>
+
+<span class="sd">    @ In, art, dict, the loaded bundle</span>
+<span class="sd">    @ Out, rows, list, (key, message) pairs; empty when every file parsed</span>
+<span class="sd">    """</span>
+    <span class="n">rows</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">art</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">"__load_error"</span><span class="p">):</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">k</span><span class="p">[:</span> <span class="o">-</span><span class="nb">len</span><span class="p">(</span><span class="s2">"__load_error"</span><span class="p">)],</span> <span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">)))</span>
+    <span class="k">return</span> <span class="n">rows</span></div>
+
+
+
+<div class="viewcode-block" id="main">
+<a class="viewcode-back" href="../autoapi/app/index.html#app.main">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Render the whole viewer: sidebar loader, navigator, and the active section.</span>
+
+<span class="sd">    Loads the bundle from the sidebar path (optionally merging a supplemental</span>
+<span class="sd">    inputs/fixtures path), surfaces any per-file load errors, then dispatches to</span>
+<span class="sd">    the panel for the selected section.</span>
+
+<span class="sd">    @ Out, None</span>
+<span class="sd">    """</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">set_page_config</span><span class="p">(</span><span class="n">page_title</span><span class="o">=</span><span class="s2">"DACKAR RCA Viewer"</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="s2">"wide"</span><span class="p">)</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">"DACKAR RCA Viewer"</span><span class="p">)</span>
+
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">sidebar</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">header</span><span class="p">(</span><span class="s2">"Load artifacts"</span><span class="p">)</span>
+        <span class="n">default_root</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parents</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="s2">"tests"</span> <span class="o">/</span> <span class="s2">"test_case_2"</span>
+        <span class="n">hint</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">default_root</span> <span class="o">/</span> <span class="s2">"rca_runs_case_002"</span> <span class="o">/</span> <span class="s2">"v32_full_result.json"</span><span class="p">)</span>
+        <span class="n">input_path</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">text_input</span><span class="p">(</span>
+            <span class="s2">"Path to full_result.json or fixtures directory"</span><span class="p">,</span>
+            <span class="n">value</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"RCA_VIZ_DEFAULT_PATH"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+            <span class="n">placeholder</span><span class="o">=</span><span class="n">hint</span><span class="p">,</span>
+            <span class="n">help</span><span class="o">=</span><span class="s2">"Use forward slashes or escaped backslashes on Windows."</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">pre_refine_path</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">text_input</span><span class="p">(</span>
+            <span class="s2">"Optional: pre-refine causality_candidates.json"</span><span class="p">,</span>
+            <span class="n">value</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
+            <span class="n">help</span><span class="o">=</span><span class="s2">"Overrides bundle `causality_candidates_pre_refine` when set (see RCA_VIZ_ARCHITECTURE.md §12)."</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">supplemental_path</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">text_input</span><span class="p">(</span>
+            <span class="s2">"Optional: supplemental inputs/outputs path"</span><span class="p">,</span>
+            <span class="n">value</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
+            <span class="n">help</span><span class="o">=</span><span class="p">(</span>
+                <span class="s2">"A second full_result.json or fixtures/run directory whose "</span>
+                <span class="s2">"artifacts fill in keys the primary lacks (the primary always "</span>
+                <span class="s2">"wins on shared keys). Use it to pair a post-run bundle with "</span>
+                <span class="s2">"its raw inputs — e.g. the fixtures folder that supplies "</span>
+                <span class="s2">"`event` / `telemetry_summary` — so one view shows both the "</span>
+                <span class="s2">"data provided as input and the data every method produced."</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">load_btn</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">button</span><span class="p">(</span><span class="s2">"Load / reload"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">"primary"</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">input_path</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Enter a path in the sidebar (see placeholder for an example)."</span><span class="p">)</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Optional env: `RCA_VIZ_DEFAULT_PATH`, `RCA_VIZ_ALLOWED_ROOTS` (</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">pathsep</span><span class="si">}</span><span class="s2">-separated roots)."</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"This viewer does not run the RCA pipeline"</span><span class="p">):</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="n">_VIEWER_VS_RUN_HELP</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="k">if</span> <span class="n">load_btn</span> <span class="ow">or</span> <span class="s2">"artifacts"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">bundle</span> <span class="o">=</span> <span class="n">load_artifacts</span><span class="p">(</span><span class="n">input_path</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+            <span class="k">if</span> <span class="n">supplemental_path</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+                <span class="n">supplement</span> <span class="o">=</span> <span class="n">load_artifacts</span><span class="p">(</span><span class="n">supplemental_path</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+                <span class="n">bundle</span> <span class="o">=</span> <span class="n">merge_bundles</span><span class="p">(</span><span class="n">bundle</span><span class="p">,</span> <span class="n">supplement</span><span class="p">)</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="p">[</span><span class="s2">"artifacts"</span><span class="p">]</span> <span class="o">=</span> <span class="n">bundle</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="p">[</span><span class="s2">"primary_path"</span><span class="p">]</span> <span class="o">=</span> <span class="n">input_path</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="p">[</span><span class="s2">"load_error"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">load_btn</span><span class="p">:</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="o">.</span><span class="n">rca_viz_tab_radio</span> <span class="o">=</span> <span class="n">TAB_NAMES</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="o">.</span><span class="n">rca_viz_evidence_filter</span> <span class="o">=</span> <span class="s2">"(all)"</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="p">[</span><span class="s2">"load_error"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="p">[</span><span class="s2">"artifacts"</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">if</span> <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"load_error"</span><span class="p">):</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="p">[</span><span class="s2">"load_error"</span><span class="p">])</span>
+        <span class="k">return</span>
+
+    <span class="n">art</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="p">[</span><span class="s2">"artifacts"</span><span class="p">]</span>
+
+    <span class="n">load_errors</span> <span class="o">=</span> <span class="n">_load_error_rows</span><span class="p">(</span><span class="n">art</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">msg</span> <span class="ow">in</span> <span class="n">load_errors</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">sidebar</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Failed to load `</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">`: </span><span class="si">{</span><span class="n">msg</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">list_bundle_keys</span><span class="p">(</span><span class="n">art</span><span class="p">):</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"No artifacts were loaded from this path. For a fixtures/run folder, "</span>
+            <span class="s2">"check it contains `*.json` files; for a full-result file, check it is "</span>
+            <span class="s2">"a JSON object. See the sidebar for any per-file load errors."</span>
+        <span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="k">if</span> <span class="s2">"rca_viz_tab_radio"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="o">.</span><span class="n">rca_viz_tab_radio</span> <span class="o">=</span> <span class="n">TAB_NAMES</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">if</span> <span class="s2">"rca_viz_evidence_filter"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="o">.</span><span class="n">rca_viz_evidence_filter</span> <span class="o">=</span> <span class="s2">"(all)"</span>
+
+    <span class="n">pre_refine_loaded</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">pre_refine_path</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">pre_refine_loaded</span> <span class="o">=</span> <span class="n">load_pre_refine_causality</span><span class="p">(</span><span class="n">pre_refine_path</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Pre-refine load failed: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="n">pre_refine</span> <span class="o">=</span> <span class="n">pre_refine_loaded</span> <span class="ow">or</span> <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causality_candidates_pre_refine"</span><span class="p">)</span>
+
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">sidebar</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Keys loaded: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">list_bundle_keys</span><span class="p">(</span><span class="n">art</span><span class="p">))</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="n">pipeline_nav</span><span class="o">.</span><span class="n">render_pipeline_navigator</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="n">TAB_NAMES</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"Viewer vs full RCA run"</span><span class="p">):</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="n">_VIEWER_VS_RUN_HELP</span><span class="p">)</span>
+
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"Raw bundle keys (JSON)"</span><span class="p">,</span> <span class="n">expanded</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="n">keys</span> <span class="o">=</span> <span class="n">list_bundle_keys</span><span class="p">(</span><span class="n">art</span><span class="p">)</span>
+        <span class="n">pick</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">selectbox</span><span class="p">(</span><span class="s2">"Artifact key"</span><span class="p">,</span> <span class="n">keys</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="mi">0</span> <span class="k">if</span> <span class="n">keys</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pick</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">json</span><span class="p">(</span><span class="n">art</span><span class="p">[</span><span class="n">pick</span><span class="p">])</span>
+
+    <span class="n">st</span><span class="o">.</span><span class="n">radio</span><span class="p">(</span><span class="s2">"Section"</span><span class="p">,</span> <span class="n">TAB_NAMES</span><span class="p">,</span> <span class="n">horizontal</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s2">"rca_viz_tab_radio"</span><span class="p">)</span>
+    <span class="n">nav</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="o">.</span><span class="n">rca_viz_tab_radio</span>
+
+    <span class="n">run_ctx</span> <span class="o">=</span> <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_context"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">input_val</span> <span class="o">=</span> <span class="p">(</span><span class="n">run_ctx</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"validation"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"inputs"</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">run_ctx</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="n">out_val</span> <span class="o">=</span> <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"output_validation"</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">nav</span> <span class="o">==</span> <span class="s2">"Validation"</span><span class="p">:</span>
+        <span class="n">validation</span><span class="o">.</span><span class="n">render_validation_panel</span><span class="p">(</span>
+            <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_manifest"</span><span class="p">),</span>
+            <span class="n">input_val</span><span class="p">,</span>
+            <span class="n">out_val</span><span class="p">,</span>
+            <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rca_card"</span><span class="p">),</span>
+        <span class="p">)</span>
+    <span class="k">elif</span> <span class="n">nav</span> <span class="o">==</span> <span class="s2">"KG Context"</span><span class="p">:</span>
+        <span class="n">kg_context</span><span class="o">.</span><span class="n">render_kg_panel</span><span class="p">(</span><span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"kg_context"</span><span class="p">))</span>
+    <span class="k">elif</span> <span class="n">nav</span> <span class="o">==</span> <span class="s2">"Telemetry &amp; Temporal"</span><span class="p">:</span>
+        <span class="n">telemetry</span><span class="o">.</span><span class="n">render_telemetry_panel</span><span class="p">(</span>
+            <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"telemetry_summary"</span><span class="p">),</span>
+            <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"tskr_patterns"</span><span class="p">),</span>
+            <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"kg_context"</span><span class="p">),</span>
+        <span class="p">)</span>
+    <span class="k">elif</span> <span class="n">nav</span> <span class="o">==</span> <span class="s2">"Candidates"</span><span class="p">:</span>
+        <span class="n">candidates</span><span class="o">.</span><span class="n">render_candidates_panel</span><span class="p">(</span><span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causality_candidates"</span><span class="p">),</span> <span class="n">pre_refine</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">nav</span> <span class="o">==</span> <span class="s2">"Evidence"</span><span class="p">:</span>
+        <span class="n">evidence</span><span class="o">.</span><span class="n">render_evidence_panel</span><span class="p">(</span><span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_bundle"</span><span class="p">),</span> <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causality_candidates"</span><span class="p">))</span>
+    <span class="k">elif</span> <span class="n">nav</span> <span class="o">==</span> <span class="s2">"Method Outputs"</span><span class="p">:</span>
+        <span class="n">method_outputs</span><span class="o">.</span><span class="n">render_method_outputs_panel</span><span class="p">(</span>
+            <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signal_evidence"</span><span class="p">),</span>
+            <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"barrier_analysis"</span><span class="p">),</span>
+            <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"reentry_execution"</span><span class="p">),</span>
+            <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"scoring_evolution"</span><span class="p">),</span>
+            <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cross_pattern_evidence"</span><span class="p">),</span>
+        <span class="p">)</span>
+    <span class="k">elif</span> <span class="n">nav</span> <span class="o">==</span> <span class="s2">"Ishikawa &amp; CMMS"</span><span class="p">:</span>
+        <span class="n">extra_artifacts</span><span class="o">.</span><span class="n">render_extra_artifacts_panel</span><span class="p">(</span>
+            <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ishikawa_matrix"</span><span class="p">),</span>
+            <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cmms_context"</span><span class="p">),</span>
+        <span class="p">)</span>
+    <span class="k">elif</span> <span class="n">nav</span> <span class="o">==</span> <span class="s2">"RCA Card"</span><span class="p">:</span>
+        <span class="n">rca_card</span><span class="o">.</span><span class="n">render_rca_card_panel</span><span class="p">(</span>
+            <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rca_card"</span><span class="p">),</span>
+            <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_bundle"</span><span class="p">),</span>
+            <span class="n">art</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"kg_context"</span><span class="p">),</span>
+        <span class="p">)</span></div>
+
+
+
+<span class="n">main</span><span class="p">()</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

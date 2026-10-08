@@ -1,0 +1,346 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>panels.candidates &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">panels.candidates</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for panels.candidates</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Candidates panel: ranked causality candidates and the pre-refine delta.</span>
+
+<span class="sd">Renders the ``causality_candidates`` artifact (retained/filtered counts, a</span>
+<span class="sd">per-candidate score-breakdown chart, and per-candidate detail) and, when a</span>
+<span class="sd">pre-refine snapshot is available, a v1 to v2 ranking-delta table.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">plotly.graph_objects</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">go</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">streamlit</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">st</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">utils.navigation</span><span class="w"> </span><span class="kn">import</span> <span class="n">goto_tab</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../autoapi/panels/candidates/index.html#panels.candidates.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="_SCORE_KEYS">
+<a class="viewcode-back" href="../../autoapi/panels/candidates/index.html#panels.candidates._SCORE_KEYS">[docs]</a>
+<span class="n">_SCORE_KEYS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"structural"</span><span class="p">,</span> <span class="s2">"temporal"</span><span class="p">,</span> <span class="s2">"telemetry"</span><span class="p">,</span> <span class="s2">"evidence"</span><span class="p">,</span> <span class="s2">"governance"</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_rank_candidates">
+<a class="viewcode-back" href="../../autoapi/panels/candidates/index.html#panels.candidates._rank_candidates">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_rank_candidates</span><span class="p">(</span><span class="n">cands</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+    <span class="n">sorted_c</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+        <span class="n">cands</span><span class="p">,</span>
+        <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">c</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">),</span> <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)),</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span><span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)):</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">sorted_c</span><span class="p">)</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)}</span></div>
+
+
+
+<div class="viewcode-block" id="_candidate_by_id">
+<a class="viewcode-back" href="../../autoapi/panels/candidates/index.html#panels.candidates._candidate_by_id">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_candidate_by_id</span><span class="p">(</span><span class="n">cands</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="n">cid</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cands</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">))</span> <span class="o">==</span> <span class="n">cid</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">c</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="build_score_breakdown_chart">
+<a class="viewcode-back" href="../../autoapi/panels/candidates/index.html#panels.candidates.build_score_breakdown_chart">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_score_breakdown_chart</span><span class="p">(</span>
+    <span class="n">candidates_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">scoring_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">title</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"Score breakdown (retained candidates)"</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">go</span><span class="o">.</span><span class="n">Figure</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Build a grouped bar chart of each candidate's component scores.</span>
+
+<span class="sd">    @ In, candidates_list, list, ``causality_candidates.candidates`` rows; each</span>
+<span class="sd">        row's ``scores`` dict supplies the structural/temporal/telemetry/</span>
+<span class="sd">        evidence/governance values (first 12 candidates shown)</span>
+<span class="sd">    @ In, scoring_config, dict, optional thresholds (``minimum_evidence_threshold``,</span>
+<span class="sd">        ``minimum_composite_threshold``) drawn as reference lines</span>
+<span class="sd">    @ In, title, str, chart title</span>
+<span class="sd">    @ Out, fig, plotly.graph_objects.Figure, the chart, or None if no candidates</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">candidates_list</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="n">labels</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates_list</span><span class="p">[:</span><span class="mi">12</span><span class="p">]:</span>
+        <span class="n">cid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">cl</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause_label"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">cid</span><span class="p">)[:</span><span class="mi">28</span><span class="p">]</span>
+        <span class="n">labels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">cl</span><span class="si">}</span><span class="s2"> [</span><span class="si">{</span><span class="n">cid</span><span class="si">}</span><span class="s2">]"</span><span class="p">[:</span><span class="mi">52</span><span class="p">])</span>
+
+    <span class="n">fig</span> <span class="o">=</span> <span class="n">go</span><span class="o">.</span><span class="n">Figure</span><span class="p">()</span>
+    <span class="n">colors</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"#5B8DEF"</span><span class="p">,</span> <span class="s2">"#00A896"</span><span class="p">,</span> <span class="s2">"#F4A261"</span><span class="p">,</span> <span class="s2">"#E76F51"</span><span class="p">,</span> <span class="s2">"#9B59B6"</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">key</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">_SCORE_KEYS</span><span class="p">):</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates_list</span><span class="p">[:</span><span class="mi">12</span><span class="p">]:</span>
+            <span class="n">sc</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"scores"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="n">vals</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">sc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">))</span>
+        <span class="n">fig</span><span class="o">.</span><span class="n">add_trace</span><span class="p">(</span>
+            <span class="n">go</span><span class="o">.</span><span class="n">Bar</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="n">labels</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="n">vals</span><span class="p">,</span> <span class="n">marker_color</span><span class="o">=</span><span class="n">colors</span><span class="p">[</span><span class="n">idx</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">colors</span><span class="p">)])</span>
+        <span class="p">)</span>
+
+    <span class="n">fig</span><span class="o">.</span><span class="n">update_layout</span><span class="p">(</span>
+        <span class="n">barmode</span><span class="o">=</span><span class="s2">"group"</span><span class="p">,</span>
+        <span class="n">title</span><span class="o">=</span><span class="n">title</span><span class="p">,</span>
+        <span class="n">yaxis</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s2">"Score (0–1)"</span><span class="p">,</span> <span class="nb">range</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mf">1.05</span><span class="p">]),</span>
+        <span class="n">height</span><span class="o">=</span><span class="nb">max</span><span class="p">(</span><span class="mi">420</span><span class="p">,</span> <span class="mi">120</span> <span class="o">+</span> <span class="mi">40</span> <span class="o">*</span> <span class="nb">min</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">candidates_list</span><span class="p">),</span> <span class="mi">12</span><span class="p">)),</span>
+        <span class="n">legend</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">orientation</span><span class="o">=</span><span class="s2">"h"</span><span class="p">,</span> <span class="n">yanchor</span><span class="o">=</span><span class="s2">"bottom"</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="mf">1.02</span><span class="p">),</span>
+        <span class="n">margin</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">t</span><span class="o">=</span><span class="mi">60</span><span class="p">,</span> <span class="n">b</span><span class="o">=</span><span class="mi">120</span><span class="p">),</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">scoring_config</span><span class="p">:</span>
+        <span class="n">min_e</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">scoring_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"minimum_evidence_threshold"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">min_c</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">scoring_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"minimum_composite_threshold"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">min_e</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">fig</span><span class="o">.</span><span class="n">add_hline</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">min_e</span><span class="p">,</span> <span class="n">line_dash</span><span class="o">=</span><span class="s2">"dot"</span><span class="p">,</span> <span class="n">line_color</span><span class="o">=</span><span class="s2">"orange"</span><span class="p">,</span> <span class="n">annotation_text</span><span class="o">=</span><span class="s2">"min evidence"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">min_c</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">fig</span><span class="o">.</span><span class="n">add_hline</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">min_c</span><span class="p">,</span> <span class="n">line_dash</span><span class="o">=</span><span class="s2">"dash"</span><span class="p">,</span> <span class="n">line_color</span><span class="o">=</span><span class="s2">"red"</span><span class="p">,</span> <span class="n">annotation_text</span><span class="o">=</span><span class="s2">"min composite"</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">fig</span></div>
+
+
+
+<div class="viewcode-block" id="render_candidates_panel">
+<a class="viewcode-back" href="../../autoapi/panels/candidates/index.html#panels.candidates.render_candidates_panel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">render_candidates_panel</span><span class="p">(</span>
+    <span class="n">causality_candidates</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">pre_refine</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Render the Candidates section.</span>
+
+<span class="sd">    @ In, causality_candidates, dict, the (post-refine) ``causality_candidates``</span>
+<span class="sd">        artifact; reads ``candidates``, ``filtered_out_candidates``,</span>
+<span class="sd">        ``event_analogs``, ``provenance``, ``scoring_config``/``screening``</span>
+<span class="sd">    @ In, pre_refine, dict, optional ``causality_candidates_pre_refine`` snapshot</span>
+<span class="sd">        used to render the v1 to v2 ranking-delta table</span>
+<span class="sd">    @ Out, None</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">causality_candidates</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"No `causality_candidates` loaded."</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="n">prov</span> <span class="o">=</span> <span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"provenance"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">refined</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">prov</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_refinement_applied"</span><span class="p">))</span>
+    <span class="n">scoring_cfg</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="o">**</span><span class="p">(</span><span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"screening"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}),</span>
+        <span class="o">**</span><span class="p">(</span><span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"scoring_config"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}),</span>
+    <span class="p">}</span>
+
+    <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+        <span class="p">{</span>
+            <span class="s2">"retained"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidates"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]),</span>
+            <span class="s2">"filtered_out"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"filtered_out_candidates"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]),</span>
+            <span class="s2">"event_analogs"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_analogs"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]),</span>
+            <span class="s2">"evidence_refinement_applied"</span><span class="p">:</span> <span class="n">refined</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="p">)</span>
+
+    <span class="n">cands</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidates"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+    <span class="n">fig</span> <span class="o">=</span> <span class="n">build_score_breakdown_chart</span><span class="p">(</span><span class="n">cands</span><span class="p">,</span> <span class="n">scoring_cfg</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">fig</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">plotly_chart</span><span class="p">(</span><span class="n">fig</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"Scoring config (raw)"</span><span class="p">):</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">json</span><span class="p">(</span><span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"scoring_config"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"screening"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+
+    <span class="c1"># --- v1 → v2 delta ---</span>
+    <span class="k">if</span> <span class="n">pre_refine</span> <span class="ow">and</span> <span class="n">pre_refine</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidates"</span><span class="p">):</span>
+        <span class="n">v1</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">pre_refine</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidates"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+        <span class="n">v2</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidates"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+        <span class="n">r1</span><span class="p">,</span> <span class="n">r2</span> <span class="o">=</span> <span class="n">_rank_candidates</span><span class="p">(</span><span class="n">v1</span><span class="p">),</span> <span class="n">_rank_candidates</span><span class="p">(</span><span class="n">v2</span><span class="p">)</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">r1</span><span class="p">)</span> <span class="o">|</span> <span class="nb">set</span><span class="p">(</span><span class="n">r2</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">cid</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">ids</span><span class="p">):</span>
+            <span class="n">c1</span> <span class="o">=</span> <span class="n">_candidate_by_id</span><span class="p">(</span><span class="n">v1</span><span class="p">,</span> <span class="n">cid</span><span class="p">)</span>
+            <span class="n">c2</span> <span class="o">=</span> <span class="n">_candidate_by_id</span><span class="p">(</span><span class="n">v2</span><span class="p">,</span> <span class="n">cid</span><span class="p">)</span>
+            <span class="n">s1</span> <span class="o">=</span> <span class="p">(</span><span class="n">c1</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"scores"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="n">s2</span> <span class="o">=</span> <span class="p">(</span><span class="n">c2</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"scores"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="s2">"candidate_id"</span><span class="p">:</span> <span class="n">cid</span><span class="p">,</span>
+                    <span class="s2">"cause_label"</span><span class="p">:</span> <span class="p">((</span><span class="n">c2</span> <span class="ow">or</span> <span class="n">c1</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause_label"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)[:</span><span class="mi">48</span><span class="p">],</span>
+                    <span class="s2">"v1_rank"</span><span class="p">:</span> <span class="n">r1</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cid</span><span class="p">),</span>
+                    <span class="s2">"v2_rank"</span><span class="p">:</span> <span class="n">r2</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cid</span><span class="p">),</span>
+                    <span class="s2">"rank_delta"</span><span class="p">:</span> <span class="p">(</span><span class="n">r2</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cid</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">999</span><span class="p">)</span> <span class="o">-</span> <span class="p">(</span><span class="n">r1</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cid</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">999</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">r1</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cid</span><span class="p">)</span> <span class="ow">and</span> <span class="n">r2</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cid</span><span class="p">)</span>
+                    <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                    <span class="s2">"v1_composite"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">((</span><span class="n">c1</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">),</span> <span class="mi">5</span><span class="p">)</span> <span class="k">if</span> <span class="n">c1</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                    <span class="s2">"v2_composite"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">((</span><span class="n">c2</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">),</span> <span class="mi">5</span><span class="p">)</span> <span class="k">if</span> <span class="n">c2</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                    <span class="s2">"Δ_composite"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span>
+                        <span class="nb">float</span><span class="p">((</span><span class="n">c2</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span> <span class="o">-</span> <span class="nb">float</span><span class="p">((</span><span class="n">c1</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">),</span>
+                        <span class="mi">5</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="k">if</span> <span class="n">c1</span> <span class="ow">and</span> <span class="n">c2</span>
+                    <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                    <span class="s2">"Δ_evidence"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">s2</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">s1</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">),</span> <span class="mi">5</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">c1</span> <span class="ow">and</span> <span class="n">c2</span>
+                    <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                    <span class="s2">"v2_posture"</span><span class="p">:</span> <span class="p">(</span><span class="n">c2</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_posture"</span><span class="p">),</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">abs</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="s2">"rank_delta"</span><span class="p">]</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">),</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"Ranking delta (pre-refine vs current)"</span><span class="p">)</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="s2">"Negative **rank_delta** means the candidate moved up (better rank)."</span><span class="p">)</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">dataframe</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">[:</span><span class="mi">50</span><span class="p">]),</span> <span class="n">hide_index</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"No pre-refine snapshot — **Candidates delta** needs `causality_candidates_pre_refine` on the bundle "</span>
+            <span class="s2">"(orchestrator Phase 5) or an optional **pre-refine causality_candidates.json** path in the sidebar."</span>
+        <span class="p">)</span>
+
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"Candidate detail (expand one)"</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cands</span><span class="p">[:</span><span class="mi">8</span><span class="p">]:</span>
+            <span class="n">cid</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span>
+            <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">cid</span><span class="si">}</span><span class="s2"> — </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'cause_label'</span><span class="p">,</span><span class="w"> </span><span class="s1">''</span><span class="p">))[:</span><span class="mi">50</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">):</span>
+                <span class="n">nav1</span><span class="p">,</span> <span class="n">nav2</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">columns</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+                <span class="k">with</span> <span class="n">nav1</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">cid</span><span class="p">:</span>
+                        <span class="n">st</span><span class="o">.</span><span class="n">button</span><span class="p">(</span>
+                            <span class="s2">"Evidence tab (this candidate)"</span><span class="p">,</span>
+                            <span class="n">key</span><span class="o">=</span><span class="sa">f</span><span class="s2">"cand_ev_</span><span class="si">{</span><span class="n">cid</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                            <span class="n">on_click</span><span class="o">=</span><span class="n">goto_tab</span><span class="p">,</span>
+                            <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="s2">"Evidence"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">cid</span><span class="p">)),</span>
+                        <span class="p">)</span>
+                <span class="k">with</span> <span class="n">nav2</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">cid</span><span class="p">:</span>
+                        <span class="n">st</span><span class="o">.</span><span class="n">button</span><span class="p">(</span>
+                            <span class="s2">"RCA Card tab"</span><span class="p">,</span>
+                            <span class="n">key</span><span class="o">=</span><span class="sa">f</span><span class="s2">"cand_rca_</span><span class="si">{</span><span class="n">cid</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                            <span class="n">on_click</span><span class="o">=</span><span class="n">goto_tab</span><span class="p">,</span>
+                            <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="s2">"RCA Card"</span><span class="p">,),</span>
+                        <span class="p">)</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+                    <span class="p">{</span>
+                        <span class="s2">"composite_score"</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">),</span>
+                        <span class="s2">"confidence_label"</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_label"</span><span class="p">),</span>
+                        <span class="s2">"evidence_posture"</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_posture"</span><span class="p">),</span>
+                        <span class="s2">"temporal_posture"</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"temporal_posture"</span><span class="p">),</span>
+                        <span class="s2">"meets_evidence_threshold"</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"meets_evidence_threshold"</span><span class="p">),</span>
+                    <span class="p">}</span>
+                <span class="p">)</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"**score_rationale**"</span><span class="p">)</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">json</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"score_rationale"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"**temporal_evidence**"</span><span class="p">)</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">json</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"temporal_evidence"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"filtered_out_candidates (raw)"</span><span class="p">):</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">json</span><span class="p">(</span><span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"filtered_out_candidates"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"event_analogs (raw)"</span><span class="p">):</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">json</span><span class="p">(</span><span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_analogs"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

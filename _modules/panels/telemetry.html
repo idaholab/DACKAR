@@ -1,0 +1,512 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>panels.telemetry &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">panels.telemetry</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for panels.telemetry</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Telemetry &amp; Temporal panel: anomaly timeline, TSKR patterns, FMEA brackets.</span>
+
+<span class="sd">Reads the ``telemetry_summary`` input (per-signal anomalies and changepoints)</span>
+<span class="sd">and the ``tskr_patterns`` artifact to render an anomaly-window Gantt (overlaid</span>
+<span class="sd">with TSKR pattern windows), a latency-colored TSKR table, an optional FMEA</span>
+<span class="sd">expected-latency strip from ``kg_context``, and per-signal statistics.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">timedelta</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">plotly.express</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">px</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">plotly.graph_objects</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">go</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">streamlit</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">st</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../autoapi/panels/telemetry/index.html#panels.telemetry.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="_parse_ts">
+<a class="viewcode-back" href="../../autoapi/panels/telemetry/index.html#panels.telemetry._parse_ts">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_ts</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">value</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"Z"</span><span class="p">,</span> <span class="s2">"+00:00"</span><span class="p">),</span> <span class="n">utc</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_telemetry_anchor_ts">
+<a class="viewcode-back" href="../../autoapi/panels/telemetry/index.html#panels.telemetry._telemetry_anchor_ts">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_telemetry_anchor_ts</span><span class="p">(</span><span class="n">telemetry_summary</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">]:</span>
+    <span class="n">w</span> <span class="o">=</span> <span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"window"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">t0</span> <span class="o">=</span> <span class="n">_parse_ts</span><span class="p">(</span><span class="n">w</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"start"</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">t0</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">t0</span>
+    <span class="n">earliest</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signals"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+        <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomalies"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="n">ts</span> <span class="o">=</span> <span class="n">_parse_ts</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">ts</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span><span class="n">earliest</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">ts</span> <span class="o">&lt;</span> <span class="n">earliest</span><span class="p">):</span>
+                <span class="n">earliest</span> <span class="o">=</span> <span class="n">ts</span>
+    <span class="k">return</span> <span class="n">earliest</span></div>
+
+
+
+<div class="viewcode-block" id="_tskr_pattern_window">
+<a class="viewcode-back" href="../../autoapi/panels/telemetry/index.html#panels.telemetry._tskr_pattern_window">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_tskr_pattern_window</span><span class="p">(</span><span class="n">p</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">]]:</span>
+    <span class="n">ws</span> <span class="o">=</span> <span class="n">_parse_ts</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"window_start"</span><span class="p">))</span>
+    <span class="n">we</span> <span class="o">=</span> <span class="n">_parse_ts</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"window_end"</span><span class="p">))</span> <span class="ow">or</span> <span class="n">ws</span>
+    <span class="k">return</span> <span class="n">ws</span><span class="p">,</span> <span class="n">we</span></div>
+
+
+
+<div class="viewcode-block" id="_violation_bg">
+<a class="viewcode-back" href="../../autoapi/panels/telemetry/index.html#panels.telemetry._violation_bg">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_violation_bg</span><span class="p">(</span><span class="n">lat</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">lat</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">lat</span> <span class="o">==</span> <span class="s2">"none"</span> <span class="ow">or</span> <span class="n">lat</span> <span class="o">==</span> <span class="s2">""</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"rgba(46, 204, 113, 0.35)"</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">lat</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">s</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"too_fast"</span><span class="p">,</span> <span class="s2">"too_slow"</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">"rgba(241, 196, 15, 0.45)"</span>
+    <span class="k">return</span> <span class="s2">"rgba(189, 195, 199, 0.45)"</span></div>
+
+
+
+<div class="viewcode-block" id="build_fmea_latency_figure">
+<a class="viewcode-back" href="../../autoapi/panels/telemetry/index.html#panels.telemetry.build_fmea_latency_figure">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_fmea_latency_figure</span><span class="p">(</span>
+    <span class="n">telemetry_summary</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="n">kg_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">go</span><span class="o">.</span><span class="n">Figure</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Build a Gantt of expected failure-mode latency windows vs the event anchor.</span>
+
+<span class="sd">    The anchor is the telemetry window start, or the earliest anomaly timestamp</span>
+<span class="sd">    when no window is given.</span>
+
+<span class="sd">    @ In, telemetry_summary, dict, the ``telemetry_summary`` input, used only to</span>
+<span class="sd">        derive the time anchor</span>
+<span class="sd">    @ In, kg_context, dict, optional; reads ``failure_modes[]``</span>
+<span class="sd">        ``expected_latency_min_hours``/``expected_latency_max_hours``</span>
+<span class="sd">    @ Out, fig, plotly.graph_objects.Figure, the strip, or None if no KG context,</span>
+<span class="sd">        no anchor, or no failure mode carries a latency bracket</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">kg_context</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">anchor</span> <span class="o">=</span> <span class="n">_telemetry_anchor_ts</span><span class="p">(</span><span class="n">telemetry_summary</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">anchor</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">fm</span> <span class="ow">in</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_modes"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+        <span class="n">lo</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_latency_min_hours"</span><span class="p">)</span>
+        <span class="n">hi</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_latency_max_hours"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">lo</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">hi</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">h0</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">lo</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="n">h1</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">hi</span> <span class="k">if</span> <span class="n">hi</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">lo</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">h1</span> <span class="o">&lt;</span> <span class="n">h0</span><span class="p">:</span>
+            <span class="n">h0</span><span class="p">,</span> <span class="n">h1</span> <span class="o">=</span> <span class="n">h1</span><span class="p">,</span> <span class="n">h0</span>
+        <span class="n">t0</span> <span class="o">=</span> <span class="n">anchor</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">hours</span><span class="o">=</span><span class="n">h0</span><span class="p">)</span>
+        <span class="n">t1</span> <span class="o">=</span> <span class="n">anchor</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">hours</span><span class="o">=</span><span class="n">h1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">t1</span> <span class="o">&lt;=</span> <span class="n">t0</span><span class="p">:</span>
+            <span class="n">t1</span> <span class="o">=</span> <span class="n">t0</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">minutes</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">fid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"FM"</span><span class="p">)</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">"failure_mode"</span><span class="p">:</span> <span class="n">fid</span><span class="p">[:</span><span class="mi">40</span><span class="p">],</span>
+                <span class="s2">"start"</span><span class="p">:</span> <span class="n">t0</span><span class="p">,</span>
+                <span class="s2">"end"</span><span class="p">:</span> <span class="n">t1</span><span class="p">,</span>
+                <span class="s2">"min_h"</span><span class="p">:</span> <span class="n">h0</span><span class="p">,</span>
+                <span class="s2">"max_h"</span><span class="p">:</span> <span class="n">h1</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">rows</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+    <span class="n">fig</span> <span class="o">=</span> <span class="n">px</span><span class="o">.</span><span class="n">timeline</span><span class="p">(</span>
+        <span class="n">df</span><span class="p">,</span>
+        <span class="n">x_start</span><span class="o">=</span><span class="s2">"start"</span><span class="p">,</span>
+        <span class="n">x_end</span><span class="o">=</span><span class="s2">"end"</span><span class="p">,</span>
+        <span class="n">y</span><span class="o">=</span><span class="s2">"failure_mode"</span><span class="p">,</span>
+        <span class="n">hover_data</span><span class="o">=</span><span class="p">[</span><span class="s2">"min_h"</span><span class="p">,</span> <span class="s2">"max_h"</span><span class="p">],</span>
+        <span class="n">color_discrete_sequence</span><span class="o">=</span><span class="p">[</span><span class="s2">"#9b59b6"</span><span class="p">],</span>
+    <span class="p">)</span>
+    <span class="n">fig</span><span class="o">.</span><span class="n">update_yaxes</span><span class="p">(</span><span class="n">autorange</span><span class="o">=</span><span class="s2">"reversed"</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">"Failure mode (KG)"</span><span class="p">)</span>
+    <span class="n">fig</span><span class="o">.</span><span class="n">update_xaxes</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s2">"Time (UTC)"</span><span class="p">)</span>
+    <span class="n">fig</span><span class="o">.</span><span class="n">update_layout</span><span class="p">(</span>
+        <span class="n">height</span><span class="o">=</span><span class="nb">max</span><span class="p">(</span><span class="mi">260</span><span class="p">,</span> <span class="mi">60</span> <span class="o">+</span> <span class="mi">32</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">rows</span><span class="p">)),</span>
+        <span class="n">title</span><span class="o">=</span><span class="s2">"FMEA expected latency windows (anchor = telemetry window / earliest anomaly)"</span><span class="p">,</span>
+        <span class="n">showlegend</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">margin</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">l</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">t</span><span class="o">=</span><span class="mi">48</span><span class="p">,</span> <span class="n">b</span><span class="o">=</span><span class="mi">8</span><span class="p">),</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">fig</span></div>
+
+
+
+<div class="viewcode-block" id="build_tskr_table_figure">
+<a class="viewcode-back" href="../../autoapi/panels/telemetry/index.html#panels.telemetry.build_tskr_table_figure">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_tskr_table_figure</span><span class="p">(</span><span class="n">tskr_patterns</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">go</span><span class="o">.</span><span class="n">Figure</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Build a table figure of TSKR patterns, row-colored by latency violation.</span>
+
+<span class="sd">    @ In, tskr_patterns, dict, the ``tskr_patterns`` artifact; reads</span>
+<span class="sd">        ``patterns`` (first 40), each supplying ``pattern_id``/``target_id``/</span>
+<span class="sd">        ``relation``/``mean_lag_hours``/``latency_violation_type``/``confidence``</span>
+<span class="sd">    @ Out, fig, plotly.graph_objects.Figure, the table, or None if no patterns</span>
+<span class="sd">    """</span>
+    <span class="n">pats</span> <span class="o">=</span> <span class="n">tskr_patterns</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"patterns"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">pats</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">cols_text</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">"pattern_id"</span><span class="p">,</span>
+        <span class="s2">"target_id"</span><span class="p">,</span>
+        <span class="s2">"relation"</span><span class="p">,</span>
+        <span class="s2">"mean_lag_h"</span><span class="p">,</span>
+        <span class="s2">"latency_violation"</span><span class="p">,</span>
+        <span class="s2">"confidence"</span><span class="p">,</span>
+    <span class="p">]</span>
+    <span class="n">cells</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[[],</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]]</span>
+    <span class="n">fills</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pats</span><span class="p">[:</span><span class="mi">40</span><span class="p">]:</span>
+        <span class="n">lat</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"latency_violation_type"</span><span class="p">)</span>
+        <span class="n">fills</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_violation_bg</span><span class="p">(</span><span class="n">lat</span><span class="p">))</span>
+        <span class="n">cells</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">))</span>
+        <span class="n">cells</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"target_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">))</span>
+        <span class="n">cells</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">))</span>
+        <span class="n">cells</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mean_lag_hours"</span><span class="p">)</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mean_lag_hours"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">""</span><span class="p">))</span>
+        <span class="n">cells</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">lat</span> <span class="k">if</span> <span class="n">lat</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">""</span><span class="p">))</span>
+        <span class="n">cells</span><span class="p">[</span><span class="mi">5</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">)</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">""</span><span class="p">))</span>
+
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">fills</span><span class="p">)</span>
+    <span class="n">row_colors</span> <span class="o">=</span> <span class="p">[[</span><span class="n">fills</span><span class="p">[</span><span class="n">r</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">)]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">6</span><span class="p">)]</span>
+
+    <span class="n">fig</span> <span class="o">=</span> <span class="n">go</span><span class="o">.</span><span class="n">Figure</span><span class="p">(</span>
+        <span class="n">data</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">go</span><span class="o">.</span><span class="n">Table</span><span class="p">(</span>
+                <span class="n">header</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">values</span><span class="o">=</span><span class="n">cols_text</span><span class="p">,</span> <span class="n">fill_color</span><span class="o">=</span><span class="s2">"#34495e"</span><span class="p">,</span> <span class="n">font</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="s2">"white"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">12</span><span class="p">)),</span>
+                <span class="n">cells</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
+                    <span class="n">values</span><span class="o">=</span><span class="n">cells</span><span class="p">,</span>
+                    <span class="n">fill_color</span><span class="o">=</span><span class="n">row_colors</span><span class="p">,</span>
+                    <span class="n">align</span><span class="o">=</span><span class="s2">"left"</span><span class="p">,</span>
+                    <span class="n">font</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">11</span><span class="p">),</span>
+                    <span class="n">height</span><span class="o">=</span><span class="mi">26</span><span class="p">,</span>
+                <span class="p">),</span>
+            <span class="p">)</span>
+        <span class="p">]</span>
+    <span class="p">)</span>
+    <span class="n">fig</span><span class="o">.</span><span class="n">update_layout</span><span class="p">(</span>
+        <span class="n">title</span><span class="o">=</span><span class="s2">"TSKR patterns (color by latency_violation_type: green=none, amber=too_fast/slow, grey=other)"</span><span class="p">,</span>
+        <span class="n">height</span><span class="o">=</span><span class="nb">min</span><span class="p">(</span><span class="mi">520</span><span class="p">,</span> <span class="mi">120</span> <span class="o">+</span> <span class="mi">28</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">pats</span><span class="p">)),</span>
+        <span class="n">margin</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">l</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">t</span><span class="o">=</span><span class="mi">48</span><span class="p">,</span> <span class="n">b</span><span class="o">=</span><span class="mi">8</span><span class="p">),</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">fig</span></div>
+
+
+
+<div class="viewcode-block" id="build_timeline_figure">
+<a class="viewcode-back" href="../../autoapi/panels/telemetry/index.html#panels.telemetry.build_timeline_figure">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_timeline_figure</span><span class="p">(</span>
+    <span class="n">telemetry_summary</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="n">tskr_patterns</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">go</span><span class="o">.</span><span class="n">Figure</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Build the anomaly-window Gantt, overlaid with changepoints and TSKR windows.</span>
+
+<span class="sd">    @ In, telemetry_summary, dict, the ``telemetry_summary`` input; reads</span>
+<span class="sd">        ``signals[].anomalies[]`` (window, pattern, ``severity_score``/legacy</span>
+<span class="sd">        ``severity``, id) and ``signals[].changepoints[]`` (dashed verticals)</span>
+<span class="sd">    @ In, tskr_patterns, dict, optional; its ``patterns[]`` windows (first 16)</span>
+<span class="sd">        are drawn as shaded regions over the timeline</span>
+<span class="sd">    @ Out, fig, plotly.graph_objects.Figure, the timeline, or None if no</span>
+<span class="sd">        anomaly has a valid timestamp</span>
+<span class="sd">    """</span>
+    <span class="n">rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">vlines</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signals"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+        <span class="n">sid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sensor_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"parameter"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomalies"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="n">ts</span> <span class="o">=</span> <span class="n">_parse_ts</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">))</span>
+            <span class="n">te</span> <span class="o">=</span> <span class="n">_parse_ts</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_end"</span><span class="p">))</span> <span class="ow">or</span> <span class="n">ts</span>
+            <span class="k">if</span> <span class="n">ts</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">end_ts</span> <span class="o">=</span> <span class="n">te</span> <span class="k">if</span> <span class="n">te</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">ts</span>
+            <span class="k">if</span> <span class="n">end_ts</span> <span class="o">&lt;</span> <span class="n">ts</span><span class="p">:</span>
+                <span class="n">end_ts</span> <span class="o">=</span> <span class="n">ts</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="s2">"sensor"</span><span class="p">:</span> <span class="n">sid</span><span class="p">,</span>
+                    <span class="s2">"start"</span><span class="p">:</span> <span class="n">ts</span><span class="p">,</span>
+                    <span class="s2">"end"</span><span class="p">:</span> <span class="n">end_ts</span><span class="p">,</span>
+                    <span class="s2">"pattern"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown"</span><span class="p">),</span>
+                    <span class="c1"># Canonical input anomalies carry `severity_score`; builder</span>
+                    <span class="c1"># output carries `severity`. Accept either so the hover is</span>
+                    <span class="c1"># populated in both input modes.</span>
+                    <span class="s2">"severity"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity_score"</span><span class="p">,</span> <span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity"</span><span class="p">))</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">),</span>
+                    <span class="s2">"anomaly_id"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomaly_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">),</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+        <span class="k">for</span> <span class="n">cp</span> <span class="ow">in</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"changepoints"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="n">ct</span> <span class="o">=</span> <span class="n">_parse_ts</span><span class="p">(</span><span class="n">cp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">ct</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">vlines</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">"sensor"</span><span class="p">:</span> <span class="n">sid</span><span class="p">,</span> <span class="s2">"time"</span><span class="p">:</span> <span class="n">ct</span><span class="p">,</span> <span class="s2">"id"</span><span class="p">:</span> <span class="n">cp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"changepoint_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)})</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">rows</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+    <span class="n">fig</span> <span class="o">=</span> <span class="n">px</span><span class="o">.</span><span class="n">timeline</span><span class="p">(</span>
+        <span class="n">df</span><span class="p">,</span>
+        <span class="n">x_start</span><span class="o">=</span><span class="s2">"start"</span><span class="p">,</span>
+        <span class="n">x_end</span><span class="o">=</span><span class="s2">"end"</span><span class="p">,</span>
+        <span class="n">y</span><span class="o">=</span><span class="s2">"sensor"</span><span class="p">,</span>
+        <span class="n">color</span><span class="o">=</span><span class="s2">"pattern"</span><span class="p">,</span>
+        <span class="n">hover_data</span><span class="o">=</span><span class="p">[</span><span class="s2">"severity"</span><span class="p">,</span> <span class="s2">"anomaly_id"</span><span class="p">],</span>
+    <span class="p">)</span>
+    <span class="n">fig</span><span class="o">.</span><span class="n">update_yaxes</span><span class="p">(</span><span class="n">autorange</span><span class="o">=</span><span class="s2">"reversed"</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">"Signal / sensor"</span><span class="p">)</span>
+    <span class="n">fig</span><span class="o">.</span><span class="n">update_xaxes</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s2">"Time (UTC)"</span><span class="p">)</span>
+    <span class="n">fig</span><span class="o">.</span><span class="n">update_layout</span><span class="p">(</span>
+        <span class="n">height</span><span class="o">=</span><span class="nb">max</span><span class="p">(</span><span class="mi">320</span><span class="p">,</span> <span class="mi">80</span> <span class="o">+</span> <span class="mi">36</span> <span class="o">*</span> <span class="n">df</span><span class="p">[</span><span class="s2">"sensor"</span><span class="p">]</span><span class="o">.</span><span class="n">nunique</span><span class="p">()),</span>
+        <span class="n">legend_title_text</span><span class="o">=</span><span class="s2">"Anomaly pattern"</span><span class="p">,</span>
+        <span class="n">margin</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">l</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">t</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span> <span class="n">b</span><span class="o">=</span><span class="mi">8</span><span class="p">),</span>
+        <span class="n">title</span><span class="o">=</span><span class="s2">"Anomaly windows (telemetry_summary)"</span><span class="p">,</span>
+        <span class="n">dragmode</span><span class="o">=</span><span class="s2">"pan"</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">shapes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">seen_cp</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">vlines</span><span class="p">:</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">item</span><span class="p">[</span><span class="s2">"time"</span><span class="p">]</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">value</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">seen_cp</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">seen_cp</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="n">shapes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="nb">dict</span><span class="p">(</span>
+                <span class="nb">type</span><span class="o">=</span><span class="s2">"line"</span><span class="p">,</span>
+                <span class="n">x0</span><span class="o">=</span><span class="n">t</span><span class="p">,</span>
+                <span class="n">x1</span><span class="o">=</span><span class="n">t</span><span class="p">,</span>
+                <span class="n">y0</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">y1</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                <span class="n">xref</span><span class="o">=</span><span class="s2">"x"</span><span class="p">,</span>
+                <span class="n">yref</span><span class="o">=</span><span class="s2">"paper"</span><span class="p">,</span>
+                <span class="n">line</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="s2">"rgba(80,80,80,0.55)"</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">dash</span><span class="o">=</span><span class="s2">"dash"</span><span class="p">),</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">tskr_patterns</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="p">(</span><span class="n">tskr_patterns</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"patterns"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])[:</span><span class="mi">16</span><span class="p">]:</span>
+            <span class="n">ws</span><span class="p">,</span> <span class="n">we</span> <span class="o">=</span> <span class="n">_tskr_pattern_window</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ws</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">we</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">shapes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="nb">dict</span><span class="p">(</span>
+                        <span class="nb">type</span><span class="o">=</span><span class="s2">"rect"</span><span class="p">,</span>
+                        <span class="n">x0</span><span class="o">=</span><span class="n">ws</span><span class="p">,</span>
+                        <span class="n">x1</span><span class="o">=</span><span class="n">we</span><span class="p">,</span>
+                        <span class="n">y0</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                        <span class="n">y1</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                        <span class="n">xref</span><span class="o">=</span><span class="s2">"x"</span><span class="p">,</span>
+                        <span class="n">yref</span><span class="o">=</span><span class="s2">"paper"</span><span class="p">,</span>
+                        <span class="n">fillcolor</span><span class="o">=</span><span class="s2">"rgba(99,110,250,0.14)"</span><span class="p">,</span>
+                        <span class="n">line</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="s2">"rgba(99,110,250,0.35)"</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span>
+                        <span class="n">layer</span><span class="o">=</span><span class="s2">"below"</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">shapes</span><span class="p">:</span>
+        <span class="n">fig</span><span class="o">.</span><span class="n">update_layout</span><span class="p">(</span><span class="n">shapes</span><span class="o">=</span><span class="n">shapes</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">fig</span></div>
+
+
+
+<div class="viewcode-block" id="render_telemetry_panel">
+<a class="viewcode-back" href="../../autoapi/panels/telemetry/index.html#panels.telemetry.render_telemetry_panel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">render_telemetry_panel</span><span class="p">(</span>
+    <span class="n">telemetry_summary</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">tskr_patterns</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">kg_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Render the Telemetry &amp; Temporal section.</span>
+
+<span class="sd">    @ In, telemetry_summary, dict, the ``telemetry_summary`` input (signals,</span>
+<span class="sd">        anomalies, changepoints, per-signal stats); None shows an info note</span>
+<span class="sd">    @ In, tskr_patterns, dict, optional ``tskr_patterns`` artifact for the</span>
+<span class="sd">        pattern table and timeline overlay</span>
+<span class="sd">    @ In, kg_context, dict, optional; enables the FMEA expected-latency strip</span>
+<span class="sd">    @ Out, None</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">telemetry_summary</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"No `telemetry_summary` loaded."</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="n">sigs</span> <span class="o">=</span> <span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signals"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"Signals"</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">sigs</span><span class="p">))</span>
+
+    <span class="n">fig</span> <span class="o">=</span> <span class="n">build_timeline_figure</span><span class="p">(</span><span class="n">telemetry_summary</span><span class="p">,</span> <span class="n">tskr_patterns</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">fig</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">plotly_chart</span><span class="p">(</span><span class="n">fig</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"No anomaly intervals with valid timestamps — nothing to plot on the timeline."</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">kg_context</span><span class="p">:</span>
+        <span class="n">fmea_fig</span> <span class="o">=</span> <span class="n">build_fmea_latency_figure</span><span class="p">(</span><span class="n">telemetry_summary</span><span class="p">,</span> <span class="n">kg_context</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">fmea_fig</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">plotly_chart</span><span class="p">(</span><span class="n">fmea_fig</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span>
+                <span class="s2">"No **expected_latency_min/max_hours** on KG failure modes — FMEA bracket strip skipped."</span>
+            <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">tskr_patterns</span><span class="p">:</span>
+        <span class="n">pats</span> <span class="o">=</span> <span class="n">tskr_patterns</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"patterns"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"TSKR patterns"</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">pats</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">pats</span><span class="p">:</span>
+            <span class="n">tfig</span> <span class="o">=</span> <span class="n">build_tskr_table_figure</span><span class="p">(</span><span class="n">tskr_patterns</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">tfig</span><span class="p">:</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">plotly_chart</span><span class="p">(</span><span class="n">tfig</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">tdf</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+                <span class="p">[</span>
+                    <span class="p">{</span>
+                        <span class="s2">"pattern_id"</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern_id"</span><span class="p">),</span>
+                        <span class="s2">"target_id"</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"target_id"</span><span class="p">),</span>
+                        <span class="s2">"relation"</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation"</span><span class="p">),</span>
+                        <span class="s2">"confidence"</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">),</span>
+                        <span class="s2">"latency_violation"</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"latency_violation_type"</span><span class="p">),</span>
+                        <span class="s2">"mean_lag_h"</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mean_lag_hours"</span><span class="p">),</span>
+                        <span class="s2">"window_start"</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"window_start"</span><span class="p">),</span>
+                        <span class="s2">"window_end"</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"window_end"</span><span class="p">),</span>
+                    <span class="p">}</span>
+                    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pats</span><span class="p">[:</span><span class="mi">50</span><span class="p">]</span>
+                <span class="p">]</span>
+            <span class="p">)</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"TSKR patterns (sortable)"</span><span class="p">)</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">dataframe</span><span class="p">(</span><span class="n">tdf</span><span class="p">,</span> <span class="n">hide_index</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">height</span><span class="o">=</span><span class="nb">min</span><span class="p">(</span><span class="mi">420</span><span class="p">,</span> <span class="mi">36</span> <span class="o">+</span> <span class="mi">28</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">tdf</span><span class="p">)))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="s2">"No `tskr_patterns` loaded (fixture mode is OK — timeline uses anomalies only)."</span><span class="p">)</span>
+
+    <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"Per-signal stats"</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">sigs</span><span class="p">[:</span><span class="mi">20</span><span class="p">]:</span>
+        <span class="n">sid</span> <span class="o">=</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sensor_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"parameter"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"signal"</span>
+        <span class="n">param</span> <span class="o">=</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"parameter"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">unit</span> <span class="o">=</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"unit"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">sid</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">param</span><span class="si">}</span><span class="s2">) [</span><span class="si">{</span><span class="n">unit</span><span class="si">}</span><span class="s2">]"</span><span class="o">.</span><span class="n">strip</span><span class="p">()):</span>
+            <span class="n">stats</span> <span class="o">=</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"stats"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stats</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">stats</span><span class="p">:</span>
+                <span class="n">mcols</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">columns</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">stats</span><span class="p">)))</span>
+                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">items</span><span class="p">())[:</span><span class="mi">8</span><span class="p">]):</span>
+                    <span class="k">with</span> <span class="n">mcols</span><span class="p">[</span><span class="n">i</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">mcols</span><span class="p">)]:</span>
+                        <span class="n">st</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">k</span><span class="p">),</span> <span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">))</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">json</span><span class="p">(</span><span class="n">stats</span> <span class="k">if</span> <span class="n">stats</span> <span class="k">else</span> <span class="p">{</span><span class="s2">"note"</span><span class="p">:</span> <span class="s2">"no stats block"</span><span class="p">})</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

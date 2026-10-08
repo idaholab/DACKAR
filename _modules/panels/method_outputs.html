@@ -1,0 +1,288 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>panels.method_outputs &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">panels.method_outputs</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for panels.method_outputs</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Method-output artifacts that otherwise have no dedicated tab.</span>
+
+<span class="sd">Groups the generated artifacts the orchestrator persists/returns but which no</span>
+<span class="sd">other panel reads: ``signal_evidence`` (augmented anomalies + propagation chains</span>
+<span class="sd">+ DAG topology), ``barrier_analysis`` (defense/barrier status), ``reentry_execution``</span>
+<span class="sd">(auto re-entry decision + attempts), and the standalone ``scoring_evolution`` /</span>
+<span class="sd">``cross_pattern_evidence`` artifacts. Collecting them here keeps the section</span>
+<span class="sd">radio short while making every method's output explorable.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">streamlit</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">st</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../autoapi/panels/method_outputs/index.html#panels.method_outputs.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="_rows_df">
+<a class="viewcode-back" href="../../autoapi/panels/method_outputs/index.html#panels.method_outputs._rows_df">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_rows_df</span><span class="p">(</span><span class="n">rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]:</span>
+    <span class="n">clean</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">rows</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">clean</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">clean</span><span class="p">[:</span><span class="n">limit</span><span class="p">])</span></div>
+
+
+
+<div class="viewcode-block" id="_render_signal_evidence">
+<a class="viewcode-back" href="../../autoapi/panels/method_outputs/index.html#panels.method_outputs._render_signal_evidence">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_render_signal_evidence</span><span class="p">(</span><span class="n">se</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"Signal evidence"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">se</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"No `signal_evidence` in this bundle (MR #06a output)."</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="n">cols</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">columns</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span>
+    <span class="n">cols</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"Augmented anomalies"</span><span class="p">,</span> <span class="n">se</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"augmented_anomaly_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+    <span class="n">cols</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"Historian anomalies"</span><span class="p">,</span> <span class="n">se</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"historian_anomaly_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+    <span class="n">cols</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"Propagation chains"</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">se</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"propagation_chains"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]))</span>
+    <span class="n">cov</span> <span class="o">=</span> <span class="n">se</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"chain_coverage"</span><span class="p">)</span>
+    <span class="n">cols</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"Chain coverage"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">cov</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cov</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">))</span> <span class="k">else</span> <span class="s2">"—"</span><span class="p">)</span>
+
+    <span class="n">topo</span> <span class="o">=</span> <span class="n">se</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"dag_topology_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="n">topo</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="s2">"DAG topology"</span><span class="p">)</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">topo</span><span class="p">)</span>
+
+    <span class="n">anoms</span> <span class="o">=</span> <span class="n">_rows_df</span><span class="p">(</span><span class="n">se</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"augmented_anomaly_set"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+    <span class="k">if</span> <span class="n">anoms</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Augmented anomaly set (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">se</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'augmented_anomaly_set'</span><span class="p">)</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="p">[])</span><span class="si">}</span><span class="s2">)"</span><span class="p">):</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">dataframe</span><span class="p">(</span><span class="n">anoms</span><span class="p">,</span> <span class="n">hide_index</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="n">chains</span> <span class="o">=</span> <span class="n">se</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"propagation_chains"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">chains</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Propagation chains (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">chains</span><span class="p">)</span><span class="si">}</span><span class="s2">)"</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">chains</span><span class="p">[:</span><span class="mi">25</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="k">continue</span>
+                <span class="n">nodes</span> <span class="o">=</span> <span class="s2">" -&gt; "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"nodes"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]))</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"**</span><span class="si">{</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'chain_id'</span><span class="p">,</span><span class="w"> </span><span class="s1">'?'</span><span class="p">)</span><span class="si">}</span><span class="s2">** "</span>
+                    <span class="sa">f</span><span class="s2">"(path_score=</span><span class="si">{</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'path_score'</span><span class="p">)</span><span class="si">}</span><span class="s2">, "</span>
+                    <span class="sa">f</span><span class="s2">"allen=</span><span class="si">{</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'mean_allen_score'</span><span class="p">)</span><span class="si">}</span><span class="s2">): </span><span class="si">{</span><span class="n">nodes</span><span class="si">}</span><span class="s2">"</span>
+                <span class="p">)</span>
+
+    <span class="n">warns</span> <span class="o">=</span> <span class="n">se</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"chain_warnings"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="n">gaps</span> <span class="o">=</span> <span class="n">se</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fetch_gaps"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">warns</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">warns</span><span class="p">)</span><span class="si">}</span><span class="s2"> chain warning(s)"</span><span class="p">)</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">warns</span><span class="p">[:</span><span class="mi">20</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">gaps</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">gaps</span><span class="p">)</span><span class="si">}</span><span class="s2"> fetch gap(s)"</span><span class="p">)</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">gaps</span><span class="p">[:</span><span class="mi">20</span><span class="p">])</span>
+
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"signal_evidence (raw JSON)"</span><span class="p">):</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">json</span><span class="p">(</span><span class="n">se</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_render_barrier_analysis">
+<a class="viewcode-back" href="../../autoapi/panels/method_outputs/index.html#panels.method_outputs._render_barrier_analysis">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_render_barrier_analysis</span><span class="p">(</span><span class="n">ba</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"Barrier analysis"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">ba</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"No `barrier_analysis` in this bundle (optional stage)."</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="n">summ</span> <span class="o">=</span> <span class="n">ba</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">cols</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">columns</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+    <span class="n">cols</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"Overall status"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">summ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"overall_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"—"</span><span class="p">))</span>
+    <span class="n">cols</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"Barriers"</span><span class="p">,</span> <span class="n">summ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"barrier_count"</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ba</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"barriers"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])))</span>
+    <span class="n">cols</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"Degraded"</span><span class="p">,</span> <span class="n">summ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"degraded_barrier_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+
+    <span class="n">barriers</span> <span class="o">=</span> <span class="n">_rows_df</span><span class="p">(</span><span class="n">ba</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"barriers"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+    <span class="k">if</span> <span class="n">barriers</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">dataframe</span><span class="p">(</span><span class="n">barriers</span><span class="p">,</span> <span class="n">hide_index</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"barrier_analysis (raw JSON)"</span><span class="p">):</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">json</span><span class="p">(</span><span class="n">ba</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_render_reentry">
+<a class="viewcode-back" href="../../autoapi/panels/method_outputs/index.html#panels.method_outputs._render_reentry">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_render_reentry</span><span class="p">(</span><span class="n">re_exec</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"Auto re-entry"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">re_exec</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"No `reentry_execution` in this bundle."</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="n">hook</span> <span class="o">=</span> <span class="n">re_exec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"reentry_hook"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">cols</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">columns</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+    <span class="n">cols</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"Enabled"</span><span class="p">,</span> <span class="s2">"yes"</span> <span class="k">if</span> <span class="n">re_exec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"auto_reentry_enabled"</span><span class="p">)</span> <span class="k">else</span> <span class="s2">"no"</span><span class="p">)</span>
+    <span class="n">cols</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"Attempts"</span><span class="p">,</span> <span class="n">re_exec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"attempt_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+    <span class="n">cols</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"Re-entered"</span><span class="p">,</span> <span class="s2">"yes"</span> <span class="k">if</span> <span class="n">hook</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"should_reenter"</span><span class="p">)</span> <span class="k">else</span> <span class="s2">"no"</span><span class="p">)</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Reason: </span><span class="si">{</span><span class="n">hook</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'reason'</span><span class="p">)</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="s1">'—'</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="n">attempts</span> <span class="o">=</span> <span class="n">_rows_df</span><span class="p">(</span><span class="n">re_exec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"attempts"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+    <span class="k">if</span> <span class="n">attempts</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Attempts (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">re_exec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'attempts'</span><span class="p">)</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="p">[])</span><span class="si">}</span><span class="s2">)"</span><span class="p">):</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">dataframe</span><span class="p">(</span><span class="n">attempts</span><span class="p">,</span> <span class="n">hide_index</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"reentry_execution (raw JSON)"</span><span class="p">):</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">json</span><span class="p">(</span><span class="n">re_exec</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_render_scoring_evolution">
+<a class="viewcode-back" href="../../autoapi/panels/method_outputs/index.html#panels.method_outputs._render_scoring_evolution">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_render_scoring_evolution</span><span class="p">(</span><span class="n">se</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"Scoring evolution"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">se</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"No standalone `scoring_evolution` artifact in this bundle."</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="n">rows</span> <span class="o">=</span> <span class="n">_rows_df</span><span class="p">(</span><span class="n">se</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rows"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+    <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">dataframe</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">hide_index</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">se</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_render_cross_pattern">
+<a class="viewcode-back" href="../../autoapi/panels/method_outputs/index.html#panels.method_outputs._render_cross_pattern">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_render_cross_pattern</span><span class="p">(</span><span class="n">cpe</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"Cross-pattern evidence"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">cpe</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"No `cross_pattern_evidence` in this bundle (optional stage)."</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">json</span><span class="p">(</span><span class="n">cpe</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="render_method_outputs_panel">
+<a class="viewcode-back" href="../../autoapi/panels/method_outputs/index.html#panels.method_outputs.render_method_outputs_panel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">render_method_outputs_panel</span><span class="p">(</span>
+    <span class="n">signal_evidence</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">barrier_analysis</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">reentry_execution</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">scoring_evolution</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">cross_pattern_evidence</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Render the grouped method-output section."""</span>
+    <span class="n">_render_signal_evidence</span><span class="p">(</span><span class="n">signal_evidence</span><span class="p">)</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">divider</span><span class="p">()</span>
+    <span class="n">_render_barrier_analysis</span><span class="p">(</span><span class="n">barrier_analysis</span><span class="p">)</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">divider</span><span class="p">()</span>
+    <span class="n">_render_reentry</span><span class="p">(</span><span class="n">reentry_execution</span><span class="p">)</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">divider</span><span class="p">()</span>
+    <span class="n">_render_scoring_evolution</span><span class="p">(</span><span class="n">scoring_evolution</span><span class="p">)</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">divider</span><span class="p">()</span>
+    <span class="n">_render_cross_pattern</span><span class="p">(</span><span class="n">cross_pattern_evidence</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,314 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>panels.validation &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">panels.validation</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for panels.validation</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Validation panel: review hooks, pipeline snapshot, and validation issues.</span>
+
+<span class="sd">Reads ``run_manifest`` (review hooks, pipeline config, per-artifact counts,</span>
+<span class="sd">manifest ``scoring_evolution``), the input/output validation bundles (rolled up</span>
+<span class="sd">into a per-artifact error/warning traffic-light grid), and the ``rca_card``</span>
+<span class="sd">``validation_status`` with analyst-attention flags.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">streamlit</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">st</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../autoapi/panels/validation/index.html#panels.validation.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="_issues_list">
+<a class="viewcode-back" href="../../autoapi/panels/validation/index.html#panels.validation._issues_list">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_issues_list</span><span class="p">(</span><span class="n">bundle</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">bundle</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">bundle</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="n">issues</span> <span class="o">=</span> <span class="n">bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"issues"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">issues</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">issues</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)]</span>
+    <span class="k">return</span> <span class="p">[]</span></div>
+
+
+
+<div class="viewcode-block" id="_artifact_issue_grid">
+<a class="viewcode-back" href="../../autoapi/panels/validation/index.html#panels.validation._artifact_issue_grid">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_artifact_issue_grid</span><span class="p">(</span>
+    <span class="n">input_issues</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">output_issues</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""One row per artifact name with error/warning counts."""</span>
+    <span class="n">counts</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="n">issue_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">iss</span> <span class="ow">in</span> <span class="n">issue_list</span><span class="p">:</span>
+            <span class="n">art</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">iss</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"artifact"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown"</span><span class="p">)</span>
+            <span class="n">sev</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">iss</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">sev</span> <span class="o">==</span> <span class="s2">"error"</span><span class="p">:</span>
+                <span class="n">counts</span><span class="p">[</span><span class="n">art</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="n">sev</span> <span class="o">==</span> <span class="s2">"warning"</span><span class="p">:</span>
+                <span class="n">counts</span><span class="p">[</span><span class="n">art</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="n">add</span><span class="p">(</span><span class="n">input_issues</span><span class="p">)</span>
+    <span class="n">add</span><span class="p">(</span><span class="n">output_issues</span><span class="p">)</span>
+
+    <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">art</span><span class="p">,</span> <span class="p">(</span><span class="n">err</span><span class="p">,</span> <span class="n">warn</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">counts</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+        <span class="k">if</span> <span class="n">err</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">status</span> <span class="o">=</span> <span class="s2">"fail"</span>
+        <span class="k">elif</span> <span class="n">warn</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">status</span> <span class="o">=</span> <span class="s2">"warn"</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">status</span> <span class="o">=</span> <span class="s2">"ok"</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">"artifact"</span><span class="p">:</span> <span class="n">art</span><span class="p">,</span>
+                <span class="s2">"errors"</span><span class="p">:</span> <span class="n">err</span><span class="p">,</span>
+                <span class="s2">"warnings"</span><span class="p">:</span> <span class="n">warn</span><span class="p">,</span>
+                <span class="s2">"status"</span><span class="p">:</span> <span class="n">status</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="render_validation_panel">
+<a class="viewcode-back" href="../../autoapi/panels/validation/index.html#panels.validation.render_validation_panel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">render_validation_panel</span><span class="p">(</span>
+    <span class="n">run_manifest</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">input_validation</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">output_validation</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">rca_card</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Render the Validation section (traffic light, review hooks, card gates).</span>
+
+<span class="sd">    @ In, run_manifest, dict, optional ``run_manifest``; reads ``review_hooks``,</span>
+<span class="sd">        ``pipeline_config``, ``artifacts``, manifest ``scoring_evolution``</span>
+<span class="sd">    @ In, input_validation, dict, optional input-validation bundle (``ok``,</span>
+<span class="sd">        ``issues``)</span>
+<span class="sd">    @ In, output_validation, dict, optional output-validation bundle</span>
+<span class="sd">    @ In, rca_card, dict, optional; reads ``validation_status`` and the</span>
+<span class="sd">        executive-summary analyst-attention flags</span>
+<span class="sd">    @ Out, None</span>
+<span class="sd">    """</span>
+
+    <span class="c1"># --- Review hooks (run_manifest) ---</span>
+    <span class="k">if</span> <span class="n">run_manifest</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"Review hooks"</span><span class="p">)</span>
+        <span class="n">rh</span> <span class="o">=</span> <span class="n">run_manifest</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"review_hooks"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">rh</span><span class="p">:</span>
+            <span class="n">c1</span><span class="p">,</span> <span class="n">c2</span><span class="p">,</span> <span class="n">c3</span><span class="p">,</span> <span class="n">c4</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">columns</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span>
+            <span class="k">with</span> <span class="n">c1</span><span class="p">:</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"requires_human_review"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">rh</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"requires_human_review"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)))</span>
+            <span class="k">with</span> <span class="n">c2</span><span class="p">:</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"writeback_ready"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">rh</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"writeback_ready"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)))</span>
+            <span class="k">with</span> <span class="n">c3</span><span class="p">:</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"outputs_ok"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">rh</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"outputs_ok"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)))</span>
+            <span class="k">with</span> <span class="n">c4</span><span class="p">:</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">metric</span><span class="p">(</span><span class="s2">"next_step"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">rh</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"next_step"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))[:</span><span class="mi">24</span><span class="p">]</span> <span class="o">+</span> <span class="s2">"…"</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">rh</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"next_step"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)))</span> <span class="o">&gt;</span> <span class="mi">24</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">rh</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"next_step"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)))</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="s2">"schema_valid"</span><span class="p">:</span> <span class="n">rh</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"schema_valid"</span><span class="p">),</span>
+                    <span class="s2">"all_claims_cited"</span><span class="p">:</span> <span class="n">rh</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"all_claims_cited"</span><span class="p">),</span>
+                    <span class="s2">"fallback_used"</span><span class="p">:</span> <span class="n">rh</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fallback_used"</span><span class="p">),</span>
+                    <span class="s2">"passed_minimum_evidence_gate"</span><span class="p">:</span> <span class="n">rh</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"passed_minimum_evidence_gate"</span><span class="p">),</span>
+                    <span class="s2">"decision_status"</span><span class="p">:</span> <span class="n">rh</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"decision_status"</span><span class="p">),</span>
+                    <span class="s2">"writeback_recommendation"</span><span class="p">:</span> <span class="n">rh</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"writeback_recommendation"</span><span class="p">),</span>
+                    <span class="s2">"decision_required"</span><span class="p">:</span> <span class="n">rh</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"decision_required"</span><span class="p">),</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">rh</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fallback_used"</span><span class="p">):</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                    <span class="s2">"When **fallback_used** is true, synthesizer calibration may cap primary "</span>
+                    <span class="s2">"confidence (e.g. medium). Interpret the confidence badge in that context."</span>
+                <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="s2">"No `review_hooks` on run_manifest."</span><span class="p">)</span>
+
+        <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"Pipeline snapshot"</span><span class="p">)</span>
+        <span class="n">pc</span> <span class="o">=</span> <span class="n">run_manifest</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pipeline_config"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">artm</span> <span class="o">=</span> <span class="n">run_manifest</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"artifacts"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">"causality_engine_version"</span><span class="p">:</span> <span class="n">pc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causality_engine_version"</span><span class="p">),</span>
+                <span class="s2">"evidence_refinement_applied"</span><span class="p">:</span> <span class="n">pc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_refinement_applied"</span><span class="p">),</span>
+                <span class="s2">"causality_pre_refine_persisted"</span><span class="p">:</span> <span class="n">pc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causality_pre_refine_persisted"</span><span class="p">),</span>
+                <span class="s2">"enable_ishikawa"</span><span class="p">:</span> <span class="n">pc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"enable_ishikawa"</span><span class="p">),</span>
+                <span class="s2">"tskr_pattern_count"</span><span class="p">:</span> <span class="p">(</span><span class="n">artm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"tskr_patterns"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern_count"</span><span class="p">),</span>
+                <span class="s2">"candidate_count"</span><span class="p">:</span> <span class="p">(</span><span class="n">artm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causality_candidates"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_count"</span><span class="p">),</span>
+                <span class="s2">"pre_refine_candidate_count"</span><span class="p">:</span> <span class="p">(</span><span class="n">artm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causality_candidates_pre_refine"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                    <span class="s2">"candidate_count"</span>
+                <span class="p">),</span>
+                <span class="s2">"evidence_count"</span><span class="p">:</span> <span class="p">(</span><span class="n">artm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_bundle"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_count"</span><span class="p">),</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+        <span class="n">se</span> <span class="o">=</span> <span class="n">pc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"scoring_evolution"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">se</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">se</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"scoring_evolution (manifest)"</span><span class="p">)</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="s2">"Rank / composite / evidence score movement pre- vs post-refine (largest rank moves first)."</span><span class="p">)</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">dataframe</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">se</span><span class="p">),</span> <span class="n">hide_index</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">rca_sum</span> <span class="o">=</span> <span class="n">artm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rca_card"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">rca_sum</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">"**rca_card (manifest)**"</span><span class="p">,</span> <span class="n">rca_sum</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"No `run_manifest` loaded."</span><span class="p">)</span>
+
+    <span class="c1"># --- Validation issue grid ---</span>
+    <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"Validation issues (traffic light)"</span><span class="p">)</span>
+    <span class="n">in_iss</span> <span class="o">=</span> <span class="n">_issues_list</span><span class="p">(</span><span class="n">input_validation</span><span class="p">)</span>
+    <span class="n">out_iss</span> <span class="o">=</span> <span class="n">_issues_list</span><span class="p">(</span><span class="n">output_validation</span><span class="p">)</span>
+
+    <span class="n">in_ok</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">((</span><span class="n">input_validation</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ok"</span><span class="p">,</span> <span class="kc">True</span><span class="p">))</span> <span class="k">if</span> <span class="n">input_validation</span> <span class="k">else</span> <span class="kc">True</span>
+    <span class="n">out_ok</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">((</span><span class="n">output_validation</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ok"</span><span class="p">,</span> <span class="kc">True</span><span class="p">))</span> <span class="k">if</span> <span class="n">output_validation</span> <span class="k">else</span> <span class="kc">True</span>
+
+    <span class="n">col_a</span><span class="p">,</span> <span class="n">col_b</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">columns</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">col_a</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"**Inputs**"</span><span class="p">)</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">({</span><span class="s2">"ok"</span><span class="p">:</span> <span class="n">in_ok</span><span class="p">,</span> <span class="s2">"issue_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">in_iss</span><span class="p">)})</span>
+    <span class="k">with</span> <span class="n">col_b</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">markdown</span><span class="p">(</span><span class="s2">"**Outputs**"</span><span class="p">)</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">({</span><span class="s2">"ok"</span><span class="p">:</span> <span class="n">out_ok</span><span class="p">,</span> <span class="s2">"issue_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">out_iss</span><span class="p">)})</span>
+
+    <span class="n">grid</span> <span class="o">=</span> <span class="n">_artifact_issue_grid</span><span class="p">(</span><span class="n">in_iss</span><span class="p">,</span> <span class="n">out_iss</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">grid</span><span class="o">.</span><span class="n">empty</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">in_iss</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">out_iss</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">success</span><span class="p">(</span><span class="s2">"No validation issues on inputs or outputs."</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="ow">not</span> <span class="n">grid</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">dataframe</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">hide_index</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"All input validation issues"</span><span class="p">,</span> <span class="n">expanded</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">in_iss</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">dataframe</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">in_iss</span><span class="p">),</span> <span class="n">hide_index</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="s2">"None"</span><span class="p">)</span>
+
+    <span class="k">with</span> <span class="n">st</span><span class="o">.</span><span class="n">expander</span><span class="p">(</span><span class="s2">"All output validation issues"</span><span class="p">,</span> <span class="n">expanded</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">out_iss</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">dataframe</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">out_iss</span><span class="p">),</span> <span class="n">hide_index</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">use_container_width</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="s2">"None"</span><span class="p">)</span>
+
+    <span class="c1"># --- RCA card validation_status ---</span>
+    <span class="k">if</span> <span class="n">rca_card</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"RCA card — validation_status"</span><span class="p">)</span>
+        <span class="n">vs</span> <span class="o">=</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"validation_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">vs</span><span class="p">)</span>
+        <span class="n">flags</span> <span class="o">=</span> <span class="p">(</span><span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"executive_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_attention_flags"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">flags</span><span class="p">:</span>
+            <span class="n">st</span><span class="o">.</span><span class="n">subheader</span><span class="p">(</span><span class="s2">"Analyst attention flags"</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">flags</span><span class="p">:</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">f</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="s2">"No `rca_card` — validation tab shows manifest + bundle validation only."</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

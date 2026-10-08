@@ -1,0 +1,111 @@
+loader
+======
+
+.. py:module:: loader
+
+.. autoapi-nested-parse::
+
+   Load RCA artifact bundles from a full-result JSON file or a fixtures directory.
+
+   Run the Streamlit app from this directory so ``import loader`` resolves::
+
+       cd DACKAR/src/dackar/RCA/viz && streamlit run app.py
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   loader.JsonDict
+   loader._FIXTURE_FILE_MAP
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   loader._allowed_path
+   loader._read_json
+   loader.detect_input_mode
+   loader.load_from_full_result
+   loader.load_from_fixtures_dir
+   loader.merge_bundles
+   loader.load_artifacts
+   loader.load_pre_refine_causality
+   loader.list_bundle_keys
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:data:: _FIXTURE_FILE_MAP
+   :type:  Dict[str, str]
+
+.. py:function:: _allowed_path(path)
+
+.. py:function:: _read_json(path)
+
+.. py:function:: detect_input_mode(path)
+
+   Classify a path as a full-result JSON file or a fixtures/run directory.
+
+   @ In, path, str, filesystem path to a ``.json`` file or a directory
+   @ Out, mode, str, ``"fixtures_dir"`` for a directory, ``"full_result"`` for
+       a ``.json`` file
+
+
+.. py:function:: load_from_full_result(path)
+
+   Load a single JSON object (e.g. v32_full_result.json). Keys pass through unchanged.
+
+
+.. py:function:: load_from_fixtures_dir(directory)
+
+   Merge every ``*.json`` in a directory into one bundle, keyed by filename.
+
+   The directory may be a hand-built fixtures folder or a real orchestrator run
+   folder (``ArtifactStore`` writes one ``<artifact_name>.json`` per artifact),
+   so scanning the directory surfaces whatever artifacts are actually present
+   rather than a fixed allow-list. ``_FIXTURE_FILE_MAP`` is consulted as an
+   alias layer: a basename it names maps to that key, otherwise the filename
+   stem is the key. Missing files are simply absent; never raises for them.
+
+
+.. py:function:: merge_bundles(primary, supplemental)
+
+   Return *primary* with any keys it lacks filled in from *supplemental*.
+
+   Primary wins on every shared key, so a complete run bundle is never
+   overwritten; the supplement only contributes artifacts the primary is
+   missing (e.g. the raw ``event`` / ``telemetry_summary`` inputs that a
+   ``v32_full_result.json`` does not carry, or the generated artifacts a
+   hand-built fixtures folder lacks). This lets one view combine the data
+   provided as input with the data produced by every pipeline stage.
+
+
+.. py:function:: load_artifacts(path)
+
+   Auto-detect file vs directory and load.
+
+
+.. py:function:: load_pre_refine_causality(path)
+
+   Load optional pre-refine causality artifact.
+
+   Accepts either a bare ``causality_candidates`` object (has ``candidates``)
+   or a full bundle (uses ``causality_candidates`` key if present).
+
+
+.. py:function:: list_bundle_keys(bundle)
+
+   Return the bundle's artifact keys, sorted, excluding load-error markers.
+
+   @ In, bundle, dict, a loaded bundle (may contain ``<key>__load_error`` markers)
+   @ Out, keys, list, sorted artifact keys with the error markers removed
+
+
