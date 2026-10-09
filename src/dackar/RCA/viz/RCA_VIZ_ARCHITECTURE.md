@@ -530,9 +530,9 @@ flowchart TD
 
 ## 17. Related documents
 
-- [RCA_dual_review_progress_tracker_april_20.md](../diagrams/april_20/RCA_dual_review_progress_tracker_april_20.md) — review gaps and progress.
-- [RCA_TSKR_orchestrator_causality_deep_pass_april_20.md](../diagrams/april_20/RCA_TSKR_orchestrator_causality_deep_pass_april_20.md) — TSKR + orchestrator + v31/v32 semantics.
-- [RCA_workflow_april_2.md](../diagrams/april_20/RCA_workflow_april_2.md) — formal workflow steps.
+- [ARCHITECTURE.md](../ARCHITECTURE.md) — canonical, code-grounded description of the RCA subsystem.
+- [REVIEWS.md](../devNotes/REVIEWS.md) — the April–August review chronology, findings and resolutions.
+- [PIPELINE_STAGES.md](../devNotes/PIPELINE_STAGES.md) — the staged workflow, scoring streams and TSKR semantics.
 
 ---
 
