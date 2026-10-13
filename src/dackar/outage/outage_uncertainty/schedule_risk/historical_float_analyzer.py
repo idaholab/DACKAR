@@ -3,12 +3,12 @@ Historical float consumption analyzer for pre-outage risk prediction.
 
 Computes per-component empirical schedule-impact metrics derived from
 training-outage history, as a complement to the Monte Carlo / critical-path
-analysis in :mod:`robustness_metrics` and :mod:`cp_analyzer`.
+analysis performed by the Stage E schedule stage.
 
-While :class:`~outage_uncertainty.schedule_risk.robustness_metrics.RobustnessMetrics`
-summarises *simulated* project-finish distributions, this module answers a
-different question: *how much critical-path float did emergent work historically
-consume for a specific component, and how often did it hit the critical path?*
+While Stage E summarises *simulated* project-finish distributions, this module
+answers a different question: *how much critical-path float did emergent work
+historically consume for a specific component, and how often did it hit the
+critical path?*
 
 These empirical figures serve as Bayesian priors when sizing schedule reserve
 recommendations in the tier synthesis stage.

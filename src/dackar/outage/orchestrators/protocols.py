@@ -213,11 +213,11 @@ class ScheduleImpactAssessor(Protocol):
 
     Reuse targets from RCA: none directly.
     Reuse targets from outage_uncertainty:
-        - schedule_risk.schedule_graph (ScheduleGraph)
-        - schedule_risk.cp_analyzer (CriticalPathRiskAnalyzer)
-        - schedule_risk.monte_carlo (MonteCarloSimulator)
-        - schedule_risk.scenario_runner (ScenarioRunner)
         - P6_adapter.outage_model (OutageDataset — schedule version access)
+
+    Implemented by the Stage E schedule stage, which builds the critical-path
+    network and runs the Monte Carlo impact estimate directly on the LOGOS
+    ``Pert`` engine.
     """
 
     def assess(

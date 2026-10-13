@@ -75,7 +75,7 @@ def plot_finish_distribution(
     Parameters
     ----------
     cp_times    : raw list of sampled project durations (hours)
-    risk        : dict from CriticalPathRiskAnalyzer / ScenarioRunner with keys
+    risk        : schedule-risk dict with keys
                   p50_finish, p80_finish, p90_finish, robustness
     baseline_cp : deterministic baseline critical-path duration (hours)
     """
@@ -130,7 +130,7 @@ def plot_activity_risk_ranking(
 
     Parameters
     ----------
-    risk         : dict from CriticalPathRiskAnalyzer with keys
+    risk         : schedule-risk dict with keys
                    criticality_index, expected_drag, cp_sensitivity
     activity_ids : ordered list of activity IDs to include
     """
