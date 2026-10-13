@@ -15,9 +15,12 @@ jobs:
         with:
           enable-cache: true
       - name: Set up Python
-        run: uv python install
+        # Pin to 3.11: torch 2.9.1+cpu ships wheels only through cp314, so an
+        # unpinned `uv python install` picking a newer interpreter (e.g. 3.15)
+        # fails to resolve torch during `uv sync`.
+        run: uv python install 3.11
       - name: Install docs dependencies
-        run: uv sync --group docs
+        run: uv sync --python 3.11 --group docs
       # - name: Use Pandoc
       #   uses: docker://pandoc/core:2.9
       #   with:
@@ -34,7 +37,7 @@ jobs:
           pwd
           ls -l
           cd docs
-          uv run make html
+          uv run --python 3.11 make html
           cd ..
       # - name: Build HTML
       #   uses: ammaraskar/sphinx-action@master
