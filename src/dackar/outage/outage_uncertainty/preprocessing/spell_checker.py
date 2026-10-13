@@ -44,11 +44,19 @@ which is borderline — resolved by ``install`` matching itself exactly at 1.0).
 No external dependencies are required.  The checker is deterministic and
 fast enough for the corpus sizes (tens of thousands of activities) encountered
 in a single-outage planning cycle.
+
+Implementation
+--------------
+The closed-vocabulary correction algorithm is the generic
+:class:`dackar.text_processing.VocabSpellChecker.VocabSpellChecker`.  This module
+is the outage adapter: it supplies the nuclear-domain vocabulary and keeps the
+``.transform`` interface expected by :class:`ActivityCleaner`.
 """
 from __future__ import annotations
 
 import logging
-from difflib import get_close_matches
+
+from dackar.text_processing.VocabSpellChecker import VocabSpellChecker
 
 from dackar.outage.outage_uncertainty.preprocessing.default_taxonomy import DEFAULT_TAXONOMY_RULES
 from dackar.outage.outage_uncertainty.preprocessing.nuclear_abbreviations import (
@@ -184,13 +192,43 @@ _COMMON_ENGINEERING_WORDS: frozenset[str] = frozenset({
 # DomainSpellChecker
 # ---------------------------------------------------------------------------
 
-class DomainSpellChecker:
+def _build_domain_vocab(extra: set[str]) -> set[str]:
+    """Build the nuclear outage vocabulary from four sources:
+
+    1. Individual words from all nuclear abbreviation *expansions*
+       (e.g. "main coolant pump" contributes "main", "coolant", "pump").
+    2. All keywords from the taxonomy rules (single-word and phrase parts).
+    3. The static :data:`_COMMON_ENGINEERING_WORDS` set.
+    4. Any ``extra_vocab`` supplied by the caller.
+    """
+    vocab: set[str] = set()
+
+    # Nuclear abbreviation expansion values
+    for phrase in NUCLEAR_OUTAGE_ABBREVIATIONS.values():
+        vocab.update(phrase.lower().split())
+
+    # Taxonomy keyword tokens
+    for kw in DEFAULT_TAXONOMY_RULES:
+        vocab.update(kw.lower().split())
+
+    # Static engineering vocabulary
+    vocab.update(w.lower() for w in _COMMON_ENGINEERING_WORDS)
+
+    # Caller-supplied extras
+    vocab.update(w.lower() for w in extra)
+
+    return vocab
+
+
+class DomainSpellChecker(VocabSpellChecker):
     """Correct residual misspellings using a nuclear outage domain vocabulary.
 
-    The checker is intentionally conservative: it only suggests corrections
-    whose SequenceMatcher ratio meets the ``cutoff`` threshold and only acts
-    on tokens longer than ``min_token_len`` characters.  Unknown tokens with
-    no close vocabulary match are left unchanged.
+    A thin outage adapter over
+    :class:`dackar.text_processing.VocabSpellChecker.VocabSpellChecker`: it
+    assembles the nuclear-domain vocabulary and leaves the correction algorithm
+    (``.transform``) to the base class.  The checker only ever substitutes a
+    token with a word drawn from that vocabulary; unknown tokens with no close
+    match are left unchanged.
 
     Args:
         cutoff: Minimum SequenceMatcher ratio for a correction to be
@@ -208,77 +246,9 @@ class DomainSpellChecker:
         min_token_len: int = 5,
         extra_vocab: set[str] | None = None,
     ) -> None:
-        self._cutoff = cutoff
-        self._min_len = min_token_len
-        self._vocab: frozenset[str] = self._build_vocab(extra_vocab or set())
-        # Sorted list required by get_close_matches
-        self._vocab_list: list[str] = sorted(self._vocab)
-
-        logger.debug(
-            "DomainSpellChecker: vocabulary size=%d, cutoff=%.2f, min_len=%d",
-            len(self._vocab),
-            cutoff,
-            min_token_len,
+        super().__init__(
+            vocabulary=_build_domain_vocab(extra_vocab or set()),
+            cutoff=cutoff,
+            min_token_len=min_token_len,
         )
-
-    # ------------------------------------------------------------------
-    # Public interface (matches ActivityCleaner's expected .transform API)
-    # ------------------------------------------------------------------
-
-    def transform(self, text: str) -> str:
-        """Return *text* with misspelled tokens replaced by their nearest
-        vocabulary match.  Tokens already in the vocabulary or shorter than
-        ``min_token_len`` are passed through unchanged."""
-        if not text:
-            return text
-
-        corrected: list[str] = []
-        for token in text.lower().split():
-            corrected.append(self._correct(token))
-        return " ".join(corrected)
-
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
-
-    def _correct(self, token: str) -> str:
-        """Return the corrected form of a single token."""
-        # Pass through: too short to spell-check reliably
-        if len(token) < self._min_len:
-            return token
-        # Pass through: already a known domain word
-        if token in self._vocab:
-            return token
-        # Attempt correction
-        matches = get_close_matches(token, self._vocab_list, n=1, cutoff=self._cutoff)
-        if matches:
-            logger.debug("SpellChecker: '%s' → '%s'", token, matches[0])
-            return matches[0]
-        return token
-
-    def _build_vocab(self, extra: set[str]) -> frozenset[str]:
-        """Build the domain vocabulary from three sources:
-
-        1. Individual words from all nuclear abbreviation *expansions*
-           (e.g. "main coolant pump" contributes "main", "coolant", "pump").
-        2. All keywords from the taxonomy rules (single-word and phrase parts).
-        3. The static :data:`_COMMON_ENGINEERING_WORDS` set.
-        4. Any ``extra_vocab`` supplied by the caller.
-        """
-        vocab: set[str] = set()
-
-        # Nuclear abbreviation expansion values
-        for phrase in NUCLEAR_OUTAGE_ABBREVIATIONS.values():
-            vocab.update(phrase.lower().split())
-
-        # Taxonomy keyword tokens
-        for kw in DEFAULT_TAXONOMY_RULES:
-            vocab.update(kw.lower().split())
-
-        # Static engineering vocabulary
-        vocab.update(w.lower() for w in _COMMON_ENGINEERING_WORDS)
-
-        # Caller-supplied extras
-        vocab.update(w.lower() for w in extra)
-
-        return frozenset(vocab)
+        logger.debug("DomainSpellChecker: vocabulary size=%d", len(self._vocab))
