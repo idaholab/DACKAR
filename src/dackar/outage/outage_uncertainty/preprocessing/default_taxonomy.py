@@ -4,7 +4,7 @@ Built-in nuclear-outage taxonomy vocabulary for :class:`TaskLabelMapper`.
 Entries map a keyword (lowercase, word-boundary matched) to a partial or
 complete set of the three label dimensions:
 
-* ``discipline``       – ``mechanical | electrical | I&C | civil | nuclear | operations``
+* ``discipline``       – ``mechanical | electrical | I&C | civil | nuclear``
 * ``task_family``      – ``inspection | replacement | maintenance | calibration |
                           surveillance | testing | modification | refurbishment |
                           cleaning | lubrication | disassembly | restoration``
@@ -22,6 +22,32 @@ the desired behaviour for specificity.
 
 User-supplied ``taxonomy_rules`` in :class:`AppConfig` are merged *on top* of
 these defaults and therefore always win.
+
+Relationship to ``data/tag_keywords_lists.xlsx``
+------------------------------------------------
+This module is **not** a redundant copy of DACKAR's NER keyword library
+(``data/tag_keywords_lists.xlsx``), and the two are not interchangeable.
+They partition the vocabulary for different purposes:
+
+* ``tag_keywords_lists.xlsx`` groups ~1900 words into **NER entity-type
+  categories** (``comp_mech_rot``, ``comp_elt/n``, ``ast_I&C``, ``chem_cmpd``,
+  ``deg_mech``, ``mnt_ops`` …) so the NLP pipeline can tag *what kind of entity
+  a token is*.  It has no column that yields a discipline, a task family, or a
+  component family; its component sheets are split by fastener / rotary /
+  structural / electrical / hydraulic, not by the component-family values
+  below, and it carries no ``civil`` grouping.
+* This module answers a different question — *how should this activity be
+  classified for retrieval and scheduling* — by mapping free text onto the
+  three axes above.  Those three fields are load-bearing downstream: Stage D
+  analog retrieval scores component-family affinity, and Stages E/F use
+  discipline / task_family for crew inference and conflict detection.
+
+Adopting the NER file here would mean building and maintaining a hand-written
+mapping from its entity categories onto these three axes — strictly more code
+and more drift risk than the compact rule set in this module, and with no
+clean source for the component-family axis at all.  The overlap a reader may
+notice (both files contain equipment words) is superficial: the two assets
+classify those words for unrelated ends.
 """
 from __future__ import annotations
 
