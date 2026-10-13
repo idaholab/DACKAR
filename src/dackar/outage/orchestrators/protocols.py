@@ -258,7 +258,6 @@ class InsertionOptionGenerator(Protocol):
 
     Reuse targets (partial):
         - RuleBasedCausalityEngineV31 scoring pattern (adapt for option ranking)
-        - outage_uncertainty.services.schedule_service
     """
 
     def generate(
