@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+from dackar.similarity.scoreAggregator import WeightedScoreAggregator
+
 from dackar.outage.outage_uncertainty.domain.activity import ActivityCase
 from dackar.outage.outage_uncertainty.domain.result_types import SimilarityMatch
 
 
-class SimilarityAggregator:
-    """Combine per-dimension similarity scores into a single total score.
+class SimilarityAggregator(WeightedScoreAggregator):
+    """Combine the outage similarity dimensions into a single total score.
+
+    A thin outage adapter over
+    :class:`dackar.similarity.scoreAggregator.WeightedScoreAggregator` that
+    pins the four retrieval dimensions (lexical / semantic / context /
+    dependency) and keeps the keyword-style :meth:`combine` signature the
+    engine calls.
 
     Args:
         weights: ``{dimension: weight}`` dict.  The default ships with
@@ -21,12 +29,12 @@ class SimilarityAggregator:
     """
 
     def __init__(self, weights: dict[str, float] | None = None):
-        self.weights = weights or {
+        super().__init__(weights or {
             "lexical":     0.2,
             "semantic":    0.4,
             "context":     0.4,
             "dependency":  0.0,   # disabled by default
-        }
+        })
 
     def combine(
         self,
@@ -42,19 +50,18 @@ class SimilarityAggregator:
         that pass only the three positional-style keyword arguments continue
         to work without modification.
 
-        The output is clamped to ``[0, 1]`` regardless of weight configuration.
-        Without clamping, unnormalized weight dicts (weights summing to > 1)
+        Clamping to ``[0, 1]`` (inherited from the base aggregator) matters
+        here: without it, unnormalized weight dicts (weights summing to > 1)
         would produce total scores above 1.0, which would inflate
         ``NeighborSelector`` power weights quadratically and let any moderate
         match trivially pass ``ConfidenceEstimator``'s best-match threshold.
         """
-        raw = (
-            self.weights.get("lexical",    0.0) * lexical
-            + self.weights.get("semantic", 0.0) * semantic
-            + self.weights.get("context",  0.0) * context
-            + self.weights.get("dependency", 0.0) * dependency
-        )
-        return max(0.0, min(1.0, raw))
+        return super().combine({
+            "lexical":    lexical,
+            "semantic":   semantic,
+            "context":    context,
+            "dependency": dependency,
+        })
 
 
 class SimilarityEngine:

@@ -34,6 +34,8 @@ from __future__ import annotations
 
 import logging
 
+from dackar.similarity.stringSimilarity import trigram_jaccard
+
 from dackar.outage.outage_uncertainty.domain.activity import ActivityCase
 from dackar.outage.outage_uncertainty.preprocessing.ollama_embedder import cosine_similarity
 
@@ -123,20 +125,11 @@ class SemanticSimilarityScorer:
     def _trigram_jaccard(text_a: str, text_b: str) -> float:
         """Character-trigram Jaccard index — lightweight dependency-free fallback.
 
-        Gives better recall than word Jaccard for short strings because it
-        handles partial word matches (e.g. "calibr" in both "calibrate" and
-        "calibration") and minor typos (edit distance ≤ 1 on a trigram).
+        Delegates to :func:`dackar.similarity.stringSimilarity.trigram_jaccard`.
+        Retained as a static method because
+        :class:`EmbeddingSemanticScorer` calls it by name as its own fallback.
         """
-        def trigrams(s: str) -> set[str]:
-            s = s.lower()
-            return {s[i : i + 3] for i in range(len(s) - 2)} if len(s) >= 3 else {s}
-
-        tg_a = trigrams(text_a)
-        tg_b = trigrams(text_b)
-        union = tg_a | tg_b
-        if not union:
-            return 0.0
-        return len(tg_a & tg_b) / len(union)
+        return trigram_jaccard(text_a, text_b)
 
 
 # ---------------------------------------------------------------------------
