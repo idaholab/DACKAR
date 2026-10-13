@@ -185,6 +185,15 @@ _COMMON_ENGINEERING_WORDS: frozenset[str] = frozenset({
     "procedure", "instruction",
     "checklist", "record",
     "walkdown",  "walkthrough",
+    # Words formerly contributed by nuclear-abbreviation expansions that were
+    # migrated into the shared abbreviations.xlsx (57-entry split).  Listed here
+    # so slimming NUCLEAR_OUTAGE_ABBREVIATIONS does not shrink the spell-check
+    # vocabulary: these tokens no longer arrive via the module dict.
+    "achievable", "analysis", "and", "as", "brief", "controls",
+    "cooling", "core", "drive", "examination", "hazard", "high",
+    "identification", "job", "low", "material", "non-destructive",
+    "operations", "positive", "pre-job", "reasonably", "reinstallation",
+    "rod", "spray",
 })
 
 

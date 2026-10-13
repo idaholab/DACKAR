@@ -1,21 +1,25 @@
 """
-Built-in nuclear outage abbreviation supplement.
+Nuclear-outage abbreviation layer applied on top of the shared Excel file.
 
-This dictionary is merged into :class:`AbbreviationResolver` on every
-instantiation, regardless of whether the DACKAR Excel file or the
-``dackar.text_processing`` library are available.  It serves two roles:
+The bulk of the nuclear vocabulary now lives in the shared DACKAR
+``data/abbreviations.xlsx`` (loaded by :class:`AbbreviationResolver` and by the
+rest of DACKAR via ``dackar.text_processing``).  This module holds only the
+entries that *cannot* live in that shared file without changing behaviour for
+other, non-outage consumers:
 
-1. **Corrections** — several entries in the general-engineering
-   ``abbreviations.xlsx`` file resolve to the wrong expansion in a nuclear
-   outage context due to last-wins duplicate handling.  These entries are
-   listed first and override those wrong defaults.
+1. **Context overrides** — abbreviations whose shared-file expansion is correct
+   in general engineering text but wrong in a nuclear-outage context (e.g.
+   ``cont`` → "continuous" generally, but "containment" in an outage).  Listed
+   first; they override the shared-file resolution.
 
-2. **Gap-fill** — nuclear-plant-specific component, system, task, and
-   work-management abbreviations that are absent from the general-purpose
-   Excel file.
+2. **Outage-context-only shorthand** — short or English-colliding tokens that
+   are deliberately absent from the shared file because adding them there would
+   mis-expand ordinary text everywhere else in DACKAR (e.g. ``pm`` →
+   "preventive maintenance", ``prev`` → "preventive").  They are safe only
+   inside the outage preprocessing pipeline, so they are applied here.
 
 Resolution order (highest priority last):
-    Excel file  →  this supplement  →  caller-supplied ``extra_abbreviations``
+    shared Excel file  →  this supplement  →  caller-supplied ``extra_abbreviations``
 
 All keys are lowercase; :class:`AbbreviationResolver` handles case
 normalisation internally.
@@ -25,135 +29,34 @@ from __future__ import annotations
 NUCLEAR_OUTAGE_ABBREVIATIONS: dict[str, str] = {
 
     # ------------------------------------------------------------------
-    # Corrections: override wrong last-wins resolutions in abbreviations.xlsx
+    # Context overrides — present in abbreviations.xlsx with a general
+    # meaning that is wrong in a nuclear-outage context.  These win.
     # ------------------------------------------------------------------
-    # Excel duplicate resolution produces:
-    #   cont  → "continuous"   (should be "containment" in outage context)
-    #   rep   → "report"       (should be "replace")
-    #   comp  → "composite"    (should be "component")
-    #   mtg   → "meeting"      (should be "mounting")
-    #   gen   → "general"      (should be "generator")
-    "cont":   "containment",
-    "rep":    "replace",
-    "comp":   "component",
-    "mtg":    "mounting",
-    "gen":    "generator",
+    "cont":   "containment",    # sheet: "continuous"
+    "rep":    "replace",        # sheet: "report"
+    "comp":   "component",      # sheet: "composite"
+    "mtg":    "mounting",       # sheet: "meeting"
+    "gen":    "generator",      # sheet: "general"
+    "cal":    "calibrate",      # sheet: "calibration"
+    "surv":   "surveillance",   # sheet: "survey"
+    "verif":  "verification",   # sheet: "verify"
+    "fdwtr":  "feedwater",      # sheet: "feed water"
 
     # ------------------------------------------------------------------
-    # Reactor coolant and primary systems
+    # Outage-context-only shorthand — deliberately NOT in the shared file
+    # because these tokens collide with common English words or are too
+    # short to disambiguate outside an outage schedule.
     # ------------------------------------------------------------------
-    "mcp":    "main coolant pump",
-    "rcp":    "reactor coolant pump",
-    "rcs":    "reactor coolant system",
-    "rhr":    "residual heat removal",
-    "pzr":    "pressurizer",        # also in Excel — keep for fallback path
-
-    # ------------------------------------------------------------------
-    # Safety systems and injection
-    # ------------------------------------------------------------------
-    "eccs":   "emergency core cooling system",
-    "hpsi":   "high pressure safety injection",
-    "lpsi":   "low pressure safety injection",
-    "csi":    "containment spray injection",
-    "crd":    "control rod drive",
-
-    # ------------------------------------------------------------------
-    # Valves
-    # ------------------------------------------------------------------
-    "msiv":   "main steam isolation valve",
-    "mov":    "motor operated valve",
-    "aov":    "air operated valve",
-    "prv":    "pressure relief valve",
-    "psv":    "pressure safety valve",
-    "chv":    "check valve",
-    "bfv":    "butterfly valve",
-    "gtv":    "gate valve",
-    "glv":    "globe valve",
-    "bav":    "ball valve",
-
-    # ------------------------------------------------------------------
-    # Balance-of-plant and auxiliary systems
-    # ------------------------------------------------------------------
-    "swp":    "service water pump",
-    "ccw":    "component cooling water",
-    "afw":    "auxiliary feedwater",
-    "mfw":    "main feedwater",
-    "edg":    "emergency diesel generator",
-    "dg":     "diesel generator",
-    "htx":    "heat exchanger",     # "hx" already correct in Excel
-
-    # ------------------------------------------------------------------
-    # Task / action abbreviations (all absent from Excel)
-    # ------------------------------------------------------------------
-    "repl":    "replace",
-    "tst":     "test",
-    "adj":     "adjust",
-    "ovhl":    "overhaul",
-    "clb":     "calibration",
-    "lubr":    "lubrication",
-    "lube":    "lubrication",
-    "verif":   "verification",      # Excel has "verify" — override to noun form
-    "verf":    "verification",
-    "rmvl":    "removal",
-    "reinstl": "reinstallation",
-    "disassy": "disassembly",
-    "fabr":    "fabrication",
-    "wldg":    "welding",
-    "torq":    "torquing",
-    "vnt":     "vent",
-
-    # ------------------------------------------------------------------
-    # Radiation protection and non-destructive examination
-    # ------------------------------------------------------------------
-    "rp":     "radiation protection",
-    "alara":  "as low as reasonably achievable",
-    "nde":    "non-destructive examination",
-    "ndt":    "non-destructive testing",
-    "pmi":    "positive material identification",
-
-    # ------------------------------------------------------------------
-    # Work management
-    # ------------------------------------------------------------------
-    "wco":    "work control order",
-    "jha":    "job hazard analysis",
-    "pjb":    "pre-job brief",
     "pm":     "preventive maintenance",
-
-    # ------------------------------------------------------------------
-    # Mechanical hardware components
-    # ------------------------------------------------------------------
-    "sft":    "shaft",
-    "cplg":   "coupling",
-    "gskt":   "gasket",
-    "brkt":   "bracket",
-    "impllr": "impeller",
-
-    # ------------------------------------------------------------------
-    # P6-scheduler shorthand confirmed in benchmark data
-    # (tokens still unresolved after Excel + nuclear supplement pass)
-    # ------------------------------------------------------------------
-    "xmtr":   "transmitter",        # pressure/temperature transmitter
-    "fdtr":   "feedwater",          # feedwater (often "fdwtr" also seen)
-    "fdwtr":  "feedwater",
-    "mn":     "main",               # "mn fdtr vlv" → "main feedwater valve"
-    "vlv":    "valve",              # generic valve shorthand
-    "clnt":   "coolant",            # typo-adjacent shorthand for coolant
-    "cal":    "calibrate",          # calibrate (Excel has "calibration")
-    "rpl":    "replace",            # alternate to "repl"
-    "si":     "safety injection",   # "SI SYS" → "safety injection system"
-    "aux":    "auxiliary",          # auxiliary building / auxiliary feedwater
-    "edgr":   "emergency diesel generator",  # variant of "edg"
-    "ts":     "technical specification",     # "per TS surveillance"
-    "ot":     "outage",             # outage (telegraphic style)
-    "wo":     "work order",         # work order (shorter than "wco")
-    "surv":   "surveillance",       # technical-specification surveillance
-    "func":   "functional",         # functional test
-    "maint":  "maintenance",        # generic maintenance
-    "prev":   "preventive",         # preventive maintenance
-    "corr":   "corrective",         # corrective maintenance
-    "ops":    "operations",         # operations department
-    "mech":   "mechanical",         # mechanical discipline
-    "elec":   "electrical",         # electrical discipline
-    "instru": "instrumentation",    # instrumentation
-    "i&c":    "instrumentation and controls",
+    "prev":   "preventive",
+    "corr":   "corrective",
+    "func":   "functional",
+    "adj":    "adjust",
+    "si":     "safety injection",
+    "rp":     "radiation protection",
+    "dg":     "diesel generator",
+    "wo":     "work order",
+    "ts":     "technical specification",
+    "ot":     "outage",
+    "mn":     "main",
 }

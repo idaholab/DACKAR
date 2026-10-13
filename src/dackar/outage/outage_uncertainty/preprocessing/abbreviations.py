@@ -28,11 +28,12 @@ class AbbreviationResolver:
     The resolver applies abbreviations in the following priority order
     (highest priority last, so later entries override earlier ones):
 
-    1. **Excel file** (``abbreviations_file``) — 654-entry general engineering
-       vocabulary loaded via ``dackar.text_processing.Abbreviation``.
+    1. **Excel file** (``abbreviations_file``) — shared DACKAR engineering and
+       nuclear vocabulary loaded via ``dackar.text_processing.Abbreviation``.
     2. **Nuclear outage supplement** (:data:`NUCLEAR_OUTAGE_ABBREVIATIONS`) —
-       built-in, applied unconditionally.  Overrides wrong duplicate
-       resolutions in the Excel file and fills nuclear-specific gaps.
+       built-in, applied unconditionally.  A small set of outage-context
+       overrides and context-only shorthand that must not live in the shared
+       Excel file (they would mis-expand text for other DACKAR consumers).
        Always active; requires no external dependencies.
     3. **Caller-supplied extras** (``extra_abbreviations``) — highest priority;
        overrides both the Excel file and the nuclear supplement.
