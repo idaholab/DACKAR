@@ -1229,8 +1229,8 @@ def _tukey_filter(
 ) -> Tuple[List[Tuple[int, JsonDict]], int]:
     """Fallback Tukey IQR fence when OutlierHandler is not injected.
 
-    Uses the same linear-interpolation quartile method as
-    ``OutlierHandler._interpolated_percentile`` so that the fence value is
+    Uses the same linear-interpolation (Type-7) quartile method as
+    ``OutlierHandler._iqr`` (``np.percentile``) so that the fence value is
     consistent with the primary path.  The previous nearest-rank approach
     (``sorted_d[n // 4]`` / ``sorted_d[(3 * n) // 4]``) set q3 = max(data)
     for n == 4, making the fence unreachable and silently skipping all

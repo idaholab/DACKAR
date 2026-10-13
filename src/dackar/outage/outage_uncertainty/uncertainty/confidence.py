@@ -59,6 +59,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
 from dackar.outage.outage_uncertainty.domain.activity import ActivityCase
 from dackar.outage.outage_uncertainty.domain.result_types import SimilarityMatch
 from dackar.outage.outage_uncertainty.uncertainty.outlier_handler import OutlierSeparation
@@ -301,11 +303,11 @@ class ConfidenceEstimator:
         """Coefficient of variation of the routine duration pool."""
         if len(routine) < 2:
             return 0.0
-        mu = sum(routine) / len(routine)
+        arr = np.asarray(routine, dtype=float)
+        mu = arr.mean()
         if mu <= 0.0:
             return 0.0
-        var = sum((x - mu) ** 2 for x in routine) / (len(routine) - 1)
-        return (var ** 0.5) / mu
+        return float(arr.std(ddof=1) / mu)
 
     @staticmethod
     def _classify_uncertainty(

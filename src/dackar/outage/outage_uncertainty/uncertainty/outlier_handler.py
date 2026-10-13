@@ -45,6 +45,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 # Separation is unreliable below this sample count — fall back to keep_all
@@ -201,35 +203,19 @@ class OutlierHandler:
         w = _normalise([p[1] for p in kept])
         return OutlierSeparation(routine=d, routine_weights=w, method="trim_symmetric")
 
-    @staticmethod
-    def _interpolated_percentile(sorted_vals: list[float], q: float) -> float:
-        """Linear-interpolation percentile on a pre-sorted list."""
-        n = len(sorted_vals)
-        if n == 1:
-            return sorted_vals[0]
-        pos = (n - 1) * q
-        lo = int(pos)
-        hi = min(lo + 1, n - 1)
-        frac = pos - lo
-        return sorted_vals[lo] * (1.0 - frac) + sorted_vals[hi] * frac
-
     def _iqr(self, durations: list[float], weights: list[float]) -> OutlierSeparation:
-        sorted_d = sorted(durations)
-        q1 = self._interpolated_percentile(sorted_d, 0.25)
-        q3 = self._interpolated_percentile(sorted_d, 0.75)
+        q1, q3 = np.percentile(durations, [25.0, 75.0])
         iqr = q3 - q1
         fence = q3 + self.iqr_multiplier * iqr
 
-        return self._split_at(durations, weights, fence, method="iqr")
+        return self._split_at(durations, weights, float(fence), method="iqr")
 
     def _mad(self, durations: list[float], weights: list[float]) -> OutlierSeparation:
-        sorted_d = sorted(durations)
-        median = self._interpolated_percentile(sorted_d, 0.50)
-        abs_devs = sorted(abs(d - median) for d in sorted_d)
-        mad = self._interpolated_percentile(abs_devs, 0.50)
+        median = np.median(durations)
+        mad = np.median(np.abs(np.asarray(durations, dtype=float) - median))
         fence = median + self.mad_scale * mad
 
-        return self._split_at(durations, weights, fence, method="mad")
+        return self._split_at(durations, weights, float(fence), method="mad")
 
     @staticmethod
     def _split_at(
