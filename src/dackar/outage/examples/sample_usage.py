@@ -1,5 +1,5 @@
-from outage_uncertainty.api.facade import build_duration_uncertainty_service
-from outage_uncertainty.services.explanation_service import ExplanationService
+from dackar.outage.outage_uncertainty.api.facade import build_duration_uncertainty_service
+from dackar.outage.outage_uncertainty.services.explanation_service import ExplanationService
 
 
 def run_demo() -> None:

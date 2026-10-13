@@ -34,7 +34,7 @@ activities that were hard to predict.
 
 Usage::
 
-    from workflows.completion_feedback_workflow import CompletionFeedbackWorkflow
+    from dackar.outage.workflows.completion_feedback_workflow import CompletionFeedbackWorkflow
 
     workflow = CompletionFeedbackWorkflow(orchestrator=orchestrator)
     receipt = workflow.ingest(

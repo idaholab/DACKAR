@@ -20,8 +20,8 @@ interpolated percentile.
 """
 from __future__ import annotations
 
-from outage_uncertainty.domain.duration import DurationDistribution
-from outage_uncertainty.uncertainty.outlier_handler import OutlierSeparation
+from dackar.outage.outage_uncertainty.domain.duration import DurationDistribution
+from dackar.outage.outage_uncertainty.uncertainty.outlier_handler import OutlierSeparation
 
 
 class DistributionFitter:

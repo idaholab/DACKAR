@@ -47,7 +47,7 @@ from __future__ import annotations
 
 import math
 
-from outage_uncertainty.domain.activity import ActivityCase
+from dackar.outage.outage_uncertainty.domain.activity import ActivityCase
 
 # Partial credit for structurally related but non-identical roles.
 # Both orderings are checked automatically; only one direction is listed here.

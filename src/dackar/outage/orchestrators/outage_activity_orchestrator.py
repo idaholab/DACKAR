@@ -169,7 +169,7 @@ class OutageActivityOrchestrator:
 
     Minimal wiring example (all no-ops)::
 
-        from outage.orchestrators.protocols import (
+        from dackar.outage.orchestrators.protocols import (
             NoOpSchemaValidator, FileArtifactStore, OutageOrchestratorConfig,
         )
 
@@ -218,7 +218,7 @@ class OutageActivityOrchestrator:
 
     Typical wiring::
 
-        from stages.completion_feedback import CompletionFeedbackWriter, CsvAnalogPersister
+        from dackar.outage.stages.completion_feedback import CompletionFeedbackWriter, CsvAnalogPersister
 
         orchestrator = OutageActivityOrchestrator(
             ...
@@ -482,16 +482,10 @@ class OutageActivityOrchestrator:
             )
             # Return a minimal no-op object so callers can check .index_updated
             # without an isinstance guard.
-            try:
-                from dackar.outage.stages.completion_feedback import (
-                    CompletionRecord,
-                    _utcnow_iso as _fb_utcnow,
-                )
-            except ImportError:
-                from stages.completion_feedback import (  # type: ignore[no-redef]
-                    CompletionRecord,
-                    _utcnow_iso as _fb_utcnow,
-                )
+            from dackar.outage.stages.completion_feedback import (
+                CompletionRecord,
+                _utcnow_iso as _fb_utcnow,
+            )
             return CompletionRecord(
                 activity_id=activity_id,
                 run_id=run_id,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from outage_uncertainty.domain.result_types import ActivityEstimate
+from dackar.outage.outage_uncertainty.domain.result_types import ActivityEstimate
 
 
 class ExplanationService:

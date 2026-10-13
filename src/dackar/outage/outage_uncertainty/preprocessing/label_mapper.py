@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import re
 
-from outage_uncertainty.domain.activity import ActivityCase
-from outage_uncertainty.preprocessing.default_taxonomy import DEFAULT_TAXONOMY_RULES
+from dackar.outage.outage_uncertainty.domain.activity import ActivityCase
+from dackar.outage.outage_uncertainty.preprocessing.default_taxonomy import DEFAULT_TAXONOMY_RULES
 
 
 class TaskLabelMapper:

@@ -50,8 +50,8 @@ from __future__ import annotations
 import logging
 from difflib import get_close_matches
 
-from outage_uncertainty.preprocessing.default_taxonomy import DEFAULT_TAXONOMY_RULES
-from outage_uncertainty.preprocessing.nuclear_abbreviations import (
+from dackar.outage.outage_uncertainty.preprocessing.default_taxonomy import DEFAULT_TAXONOMY_RULES
+from dackar.outage.outage_uncertainty.preprocessing.nuclear_abbreviations import (
     NUCLEAR_OUTAGE_ABBREVIATIONS,
 )
 

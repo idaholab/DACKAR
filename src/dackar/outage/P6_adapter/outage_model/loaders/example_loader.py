@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from outage_model.transforms.p6_csv import P6CsvTransformer
+from dackar.outage.P6_adapter.outage_model.transforms.p6_csv import P6CsvTransformer
 
 
 DEFAULT_OUTAGE_ID = "RFO-2026-U1"

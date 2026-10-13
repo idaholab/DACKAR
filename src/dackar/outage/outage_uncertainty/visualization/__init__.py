@@ -1,5 +1,5 @@
 """Visualization utilities for outage uncertainty analysis."""
-from outage_uncertainty.visualization.plots import (
+from dackar.outage.outage_uncertainty.visualization.plots import (
     plot_finish_distribution,
     plot_activity_risk_ranking,
     plot_cp_path_heatmap,

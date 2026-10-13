@@ -44,7 +44,7 @@ JsonDict = Dict[str, Any]
 # _clean_description() and _expand_abbreviations() don't re-try on every call.
 # ---------------------------------------------------------------------------
 try:
-    from outage_uncertainty.preprocessing.cleaners import (
+    from dackar.outage.outage_uncertainty.preprocessing.cleaners import (
         ComponentIdRemover as _ComponentIdRemover,
         TextacyPreprocessor as _TextacyPreprocessor,
         IdentityTransform as _IdentityTransform,
@@ -54,7 +54,7 @@ except ImportError:
     _CLEANERS_AVAILABLE = False
 
 try:
-    from outage_uncertainty.preprocessing.abbreviations import (
+    from dackar.outage.outage_uncertainty.preprocessing.abbreviations import (
         AbbreviationResolver as _AbbreviationResolver,
     )
     _ABBR_RESOLVER_AVAILABLE = True

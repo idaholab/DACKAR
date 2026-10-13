@@ -22,11 +22,11 @@ Usage
 -----
 ::
 
-    from outage_uncertainty.services.trend_analysis_service import TrendAnalysisService
-    from outage_uncertainty.services.causal_scoring_service import CausalScoringService
-    from outage_uncertainty.schedule_risk.historical_float_analyzer import HistoricalFloatAnalyzer
-    from outage_uncertainty.services.risk_tier_service import RiskTierService
-    from outage_uncertainty.workflows.pre_outage_risk_workflow import PreOutageRiskWorkflow
+    from dackar.outage.outage_uncertainty.services.trend_analysis_service import TrendAnalysisService
+    from dackar.outage.outage_uncertainty.services.causal_scoring_service import CausalScoringService
+    from dackar.outage.outage_uncertainty.schedule_risk.historical_float_analyzer import HistoricalFloatAnalyzer
+    from dackar.outage.outage_uncertainty.services.risk_tier_service import RiskTierService
+    from dackar.outage.outage_uncertainty.workflows.pre_outage_risk_workflow import PreOutageRiskWorkflow
 
     workflow = PreOutageRiskWorkflow(
         trend_service=TrendAnalysisService(),
@@ -63,10 +63,10 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set
 
-from outage_uncertainty.schedule_risk.historical_float_analyzer import HistoricalFloatAnalyzer
-from outage_uncertainty.services.causal_scoring_service import CausalScoringService
-from outage_uncertainty.services.risk_tier_service import RiskTierService, TIER_PRIORITY
-from outage_uncertainty.services.trend_analysis_service import TrendAnalysisService
+from dackar.outage.outage_uncertainty.schedule_risk.historical_float_analyzer import HistoricalFloatAnalyzer
+from dackar.outage.outage_uncertainty.services.causal_scoring_service import CausalScoringService
+from dackar.outage.outage_uncertainty.services.risk_tier_service import RiskTierService, TIER_PRIORITY
+from dackar.outage.outage_uncertainty.services.trend_analysis_service import TrendAnalysisService
 
 JsonDict = Dict[str, Any]
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from outage_uncertainty.domain.activity import ActivityCase
+from dackar.outage.outage_uncertainty.domain.activity import ActivityCase
 
 
 class PandasActivityRepository:

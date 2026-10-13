@@ -3,7 +3,7 @@ Public factory for the outage duration-uncertainty service.
 
 Usage (minimal)::
 
-    from outage_uncertainty.api.facade import build_duration_uncertainty_service
+    from dackar.outage.outage_uncertainty.api.facade import build_duration_uncertainty_service
 
     service = build_duration_uncertainty_service()
     estimate = service.estimate_activity(query_row={...}, historical_rows=[...])
@@ -16,40 +16,40 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from outage_uncertainty.adapters.pandas_repository import PandasActivityRepository
-from outage_uncertainty.api.config import AppConfig
-from outage_uncertainty.preprocessing.abbreviations import AbbreviationResolver
-from outage_uncertainty.preprocessing.cleaners import (
+from dackar.outage.outage_uncertainty.adapters.pandas_repository import PandasActivityRepository
+from dackar.outage.outage_uncertainty.api.config import AppConfig
+from dackar.outage.outage_uncertainty.preprocessing.abbreviations import AbbreviationResolver
+from dackar.outage.outage_uncertainty.preprocessing.cleaners import (
     ActivityCleaner,
     ComponentIdRemover,
     IdentityTransform,
     TextacyPreprocessor,
 )
-from outage_uncertainty.preprocessing.ollama_disambiguator import LLMAbbreviationDisambiguator
-from outage_uncertainty.preprocessing.ollama_embedder import OllamaEmbedder
-from outage_uncertainty.preprocessing.spell_checker import DomainSpellChecker
-from outage_uncertainty.retrieval.semantic_similarity import (
+from dackar.outage.outage_uncertainty.preprocessing.ollama_disambiguator import LLMAbbreviationDisambiguator
+from dackar.outage.outage_uncertainty.preprocessing.ollama_embedder import OllamaEmbedder
+from dackar.outage.outage_uncertainty.preprocessing.spell_checker import DomainSpellChecker
+from dackar.outage.outage_uncertainty.retrieval.semantic_similarity import (
     EmbeddingSemanticScorer,
     SemanticSimilarityScorer,
 )
-from outage_uncertainty.preprocessing.feature_builder import ActivityFeatureBuilder
-from outage_uncertainty.preprocessing.label_mapper import TaskLabelMapper
-from outage_uncertainty.preprocessing.validators import ActivityValidator
-from outage_uncertainty.retrieval.context_similarity import ContextSimilarityScorer
-from outage_uncertainty.retrieval.dependency_similarity import DependencyPatternScorer
-from outage_uncertainty.retrieval.lexical_similarity import LexicalSimilarityScorer
-from outage_uncertainty.retrieval.neighbor_selector import NeighborSelector
-from outage_uncertainty.retrieval.retrieval_index import HistoricalActivityIndex, LexicalContextPrescorer
-from outage_uncertainty.retrieval.semantic_similarity import SemanticSimilarityScorer
-from outage_uncertainty.retrieval.similarity_engine import SimilarityAggregator, SimilarityEngine
-from outage_uncertainty.services.duration_service import DurationUncertaintyService
-from outage_uncertainty.uncertainty.confidence import ConfidenceEstimator
-from outage_uncertainty.uncertainty.distribution_fitter import DistributionFitter
-from outage_uncertainty.uncertainty.duration_estimator import DurationEstimator
-from outage_uncertainty.uncertainty.fallback_policy import FallbackPolicy
-from outage_uncertainty.uncertainty.outlier_handler import OutlierHandler
-from outage_uncertainty.workflows.activity_ingestion_workflow import ActivityIngestionWorkflow
-from outage_uncertainty.workflows.similarity_assessment_workflow import SimilarityAssessmentWorkflow
+from dackar.outage.outage_uncertainty.preprocessing.feature_builder import ActivityFeatureBuilder
+from dackar.outage.outage_uncertainty.preprocessing.label_mapper import TaskLabelMapper
+from dackar.outage.outage_uncertainty.preprocessing.validators import ActivityValidator
+from dackar.outage.outage_uncertainty.retrieval.context_similarity import ContextSimilarityScorer
+from dackar.outage.outage_uncertainty.retrieval.dependency_similarity import DependencyPatternScorer
+from dackar.outage.outage_uncertainty.retrieval.lexical_similarity import LexicalSimilarityScorer
+from dackar.outage.outage_uncertainty.retrieval.neighbor_selector import NeighborSelector
+from dackar.outage.outage_uncertainty.retrieval.retrieval_index import HistoricalActivityIndex, LexicalContextPrescorer
+from dackar.outage.outage_uncertainty.retrieval.semantic_similarity import SemanticSimilarityScorer
+from dackar.outage.outage_uncertainty.retrieval.similarity_engine import SimilarityAggregator, SimilarityEngine
+from dackar.outage.outage_uncertainty.services.duration_service import DurationUncertaintyService
+from dackar.outage.outage_uncertainty.uncertainty.confidence import ConfidenceEstimator
+from dackar.outage.outage_uncertainty.uncertainty.distribution_fitter import DistributionFitter
+from dackar.outage.outage_uncertainty.uncertainty.duration_estimator import DurationEstimator
+from dackar.outage.outage_uncertainty.uncertainty.fallback_policy import FallbackPolicy
+from dackar.outage.outage_uncertainty.uncertainty.outlier_handler import OutlierHandler
+from dackar.outage.outage_uncertainty.workflows.activity_ingestion_workflow import ActivityIngestionWorkflow
+from dackar.outage.outage_uncertainty.workflows.similarity_assessment_workflow import SimilarityAssessmentWorkflow
 
 # Default path: <DACKAR project root>/data/abbreviations.xlsx
 # Resolved relative to this file's location so it works regardless of cwd.

@@ -6,9 +6,9 @@ from typing import Iterable
 
 import pandas as pd
 
-from outage_model.dataset import OutageDataset
-from outage_model.schema import PANDAS_PHYSICAL_SCHEMA
-from outage_model.transforms.common import build_canonical_id, ensure_columns, normalize_name
+from dackar.outage.P6_adapter.outage_model.dataset import OutageDataset
+from dackar.outage.P6_adapter.outage_model.schema import PANDAS_PHYSICAL_SCHEMA
+from dackar.outage.P6_adapter.outage_model.transforms.common import build_canonical_id, ensure_columns, normalize_name
 
 
 SECTION_TABLE = "%T"

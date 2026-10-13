@@ -35,7 +35,7 @@ This context is then threaded through both Stage D and Stage E:
 
 Typical wiring in the orchestrator::
 
-    from stages.insertion_point_determiner import InsertionPointDeterminer
+    from dackar.outage.stages.insertion_point_determiner import InsertionPointDeterminer
 
     determiner = InsertionPointDeterminer(
         schedule_loader=my_loader,

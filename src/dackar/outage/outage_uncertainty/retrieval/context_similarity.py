@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 
-from outage_uncertainty.domain.activity import ActivityCase
+from dackar.outage.outage_uncertainty.domain.activity import ActivityCase
 
 logger = logging.getLogger(__name__)
 

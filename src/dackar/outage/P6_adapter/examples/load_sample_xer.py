@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from outage_model.loaders.xer_loader import load_xer_dataset
+from dackar.outage.P6_adapter.outage_model.loaders.xer_loader import load_xer_dataset
 
 
 if __name__ == "__main__":

@@ -34,8 +34,8 @@ from __future__ import annotations
 
 import logging
 
-from outage_uncertainty.domain.activity import ActivityCase
-from outage_uncertainty.preprocessing.ollama_embedder import cosine_similarity
+from dackar.outage.outage_uncertainty.domain.activity import ActivityCase
+from dackar.outage.outage_uncertainty.preprocessing.ollama_embedder import cosine_similarity
 
 logger = logging.getLogger(__name__)
 

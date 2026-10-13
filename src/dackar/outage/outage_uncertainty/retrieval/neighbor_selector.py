@@ -34,7 +34,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 
-from outage_uncertainty.domain.result_types import SimilarityMatch
+from dackar.outage.outage_uncertainty.domain.result_types import SimilarityMatch
 
 logger = logging.getLogger(__name__)
 

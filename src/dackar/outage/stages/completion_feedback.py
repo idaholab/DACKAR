@@ -14,7 +14,7 @@ This module provides:
 
 Typical wiring::
 
-    from stages.completion_feedback import CompletionFeedbackWriter, CsvAnalogPersister
+    from dackar.outage.stages.completion_feedback import CompletionFeedbackWriter, CsvAnalogPersister
 
     writer = CompletionFeedbackWriter(
         index=analog_index,          # same HistoricalActivityIndex used by Stage D
@@ -278,10 +278,7 @@ class CompletionFeedbackWriter:
         is constructed from the provided kwargs so the persister can still
         store it for the next ``build()`` cycle.
         """
-        try:
-            from dackar.outage.outage_uncertainty.domain.activity import ActivityCase
-        except ImportError:
-            from outage_uncertainty.domain.activity import ActivityCase  # type: ignore[no-redef]
+        from dackar.outage.outage_uncertainty.domain.activity import ActivityCase
 
         # Try to retrieve the existing record from the index
         existing = None

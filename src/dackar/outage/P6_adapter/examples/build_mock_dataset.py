@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from outage_model.loaders.example_loader import load_mock_dataset
+from dackar.outage.P6_adapter.outage_model.loaders.example_loader import load_mock_dataset
 
 
 if __name__ == "__main__":

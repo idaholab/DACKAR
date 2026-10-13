@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from outage_uncertainty.domain.activity import ActivityCase
-from outage_uncertainty.domain.result_types import ActivityEstimate
+from dackar.outage.outage_uncertainty.domain.activity import ActivityCase
+from dackar.outage.outage_uncertainty.domain.result_types import ActivityEstimate
 
 
 class SimilarityAssessmentWorkflow:

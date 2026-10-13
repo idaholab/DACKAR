@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 
-from outage_uncertainty.preprocessing.nuclear_abbreviations import NUCLEAR_OUTAGE_ABBREVIATIONS
+from dackar.outage.outage_uncertainty.preprocessing.nuclear_abbreviations import NUCLEAR_OUTAGE_ABBREVIATIONS
 
 logger = logging.getLogger(__name__)
 

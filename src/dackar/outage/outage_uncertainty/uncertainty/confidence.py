@@ -59,9 +59,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from outage_uncertainty.domain.activity import ActivityCase
-from outage_uncertainty.domain.result_types import SimilarityMatch
-from outage_uncertainty.uncertainty.outlier_handler import OutlierSeparation
+from dackar.outage.outage_uncertainty.domain.activity import ActivityCase
+from dackar.outage.outage_uncertainty.domain.result_types import SimilarityMatch
+from dackar.outage.outage_uncertainty.uncertainty.outlier_handler import OutlierSeparation
 
 
 @dataclass
@@ -221,7 +221,7 @@ class ConfidenceEstimator:
 
         Prefer :meth:`classify` in new code.
         """
-        from outage_uncertainty.uncertainty.outlier_handler import OutlierSeparation
+        from dackar.outage.outage_uncertainty.uncertainty.outlier_handler import OutlierSeparation
         n = len(durations)
         sep = OutlierSeparation(
             routine=durations,

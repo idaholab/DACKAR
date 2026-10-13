@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from outage_model.dataset import OutageDataset
-from outage_model.transforms.p6_xer import P6XERTransformer
+from dackar.outage.P6_adapter.outage_model.dataset import OutageDataset
+from dackar.outage.P6_adapter.outage_model.transforms.p6_xer import P6XERTransformer
 
 
 def load_xer_dataset(

@@ -41,9 +41,9 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from outage_uncertainty.domain.activity import ActivityCase
-from outage_uncertainty.domain.duration import DurationDistribution
-from outage_uncertainty.domain.result_types import ActivityEstimate
+from dackar.outage.outage_uncertainty.domain.activity import ActivityCase
+from dackar.outage.outage_uncertainty.domain.duration import DurationDistribution
+from dackar.outage.outage_uncertainty.domain.result_types import ActivityEstimate
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +172,7 @@ class HierarchicalFallbackPolicy:
         level_name: str,
         n_matched: int,
     ) -> ActivityEstimate:
-        from outage_uncertainty.uncertainty.distribution_fitter import (
+        from dackar.outage.outage_uncertainty.uncertainty.distribution_fitter import (
             DistributionFitter,
             _weighted_percentile,
         )
