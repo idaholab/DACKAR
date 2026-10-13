@@ -182,31 +182,6 @@ class AppConfig:
     """
 
     # ------------------------------------------------------------------
-    # LLM abbreviation disambiguation (#2)
-    # ------------------------------------------------------------------
-    llm_disambiguation_enabled: bool = False
-    """
-    When ``True`` the :class:`LLMAbbreviationDisambiguator` is applied after
-    rule-based abbreviation expansion to resolve residual uppercase tokens
-    using a local Ollama LLM.  Default ``False`` — the rule-based resolver
-    alone handles the vast majority of P6 abbreviations.
-    """
-
-    llm_model: str = "mistral:latest"
-    """
-    Ollama generative model used for abbreviation disambiguation.
-    ``"mistral:latest"`` (7B) is recommended over ``"llama3.2:latest"`` (3B)
-    for nuclear-specific abbreviations.
-    """
-
-    llm_disambiguation_cache_path: str | None = None
-    """
-    Optional path to a JSON file caching (token → expansion) pairs resolved
-    by the LLM.  Avoids redundant calls for abbreviations seen in previous
-    runs.  ``None`` means in-memory only.
-    """
-
-    # ------------------------------------------------------------------
     # Spell checking
     # ------------------------------------------------------------------
     spell_check_enabled: bool = True

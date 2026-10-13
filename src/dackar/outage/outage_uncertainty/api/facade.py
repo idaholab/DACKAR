@@ -25,7 +25,6 @@ from dackar.outage.outage_uncertainty.preprocessing.cleaners import (
     IdentityTransform,
     TextacyPreprocessor,
 )
-from dackar.outage.outage_uncertainty.preprocessing.ollama_disambiguator import LLMAbbreviationDisambiguator
 from dackar.outage.outage_uncertainty.preprocessing.ollama_embedder import OllamaEmbedder
 from dackar.outage.outage_uncertainty.preprocessing.spell_checker import DomainSpellChecker
 from dackar.outage.outage_uncertainty.retrieval.semantic_similarity import (
@@ -114,19 +113,9 @@ def build_duration_uncertainty_service(
     # ------------------------------------------------------------------
     # Text cleaning pipeline
     # ------------------------------------------------------------------
-    base_resolver = AbbreviationResolver(
+    abbreviation_expander = AbbreviationResolver(
         abbreviations_file=abbr_file if abbr_file != "" else None,
         extra_abbreviations=config.abbreviations or None,
-    )
-    abbreviation_expander = (
-        LLMAbbreviationDisambiguator(
-            abbreviation_resolver=base_resolver,
-            model=config.llm_model,
-            base_url=config.ollama_base_url,
-            cache_path=config.llm_disambiguation_cache_path,
-        )
-        if config.llm_disambiguation_enabled
-        else base_resolver
     )
 
     cleaner = ActivityCleaner(
