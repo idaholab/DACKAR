@@ -12,6 +12,8 @@ RelationshipType = Literal["FS", "SS", "FF", "SF"]
 
 
 class Outage(BaseModel):
+    """A planned or in-progress plant outage."""
+
     outage_id: str
     plant_id: Optional[str] = None
     unit_id: Optional[str] = None
@@ -26,6 +28,8 @@ class Outage(BaseModel):
 
 
 class OutagePhase(BaseModel):
+    """A named phase (sub-interval) within an outage."""
+
     phase_id: str
     outage_id: str
     phase_name: str
@@ -37,6 +41,8 @@ class OutagePhase(BaseModel):
 
 
 class ScheduleVersion(BaseModel):
+    """A specific version of an outage schedule (baseline, working, as-run, ...)."""
+
     schedule_version_id: str
     outage_id: str
     version_name: str
@@ -49,6 +55,8 @@ class ScheduleVersion(BaseModel):
 
 
 class WBS(BaseModel):
+    """A work-breakdown-structure node within a schedule version."""
+
     wbs_id: str
     outage_id: str
     schedule_version_id: str
@@ -60,6 +68,8 @@ class WBS(BaseModel):
 
 
 class ScheduleTask(BaseModel):
+    """A single scheduled activity within a schedule version."""
+
     task_id: str
     outage_id: str
     schedule_version_id: str
@@ -89,6 +99,8 @@ class ScheduleTask(BaseModel):
 
 
 class Dependency(BaseModel):
+    """A precedence relationship between two scheduled tasks."""
+
     dependency_id: str
     schedule_version_id: str
     predecessor_task_id: str
@@ -101,6 +113,8 @@ class Dependency(BaseModel):
 
 
 class Resource(BaseModel):
+    """A labor, crew, or equipment resource that can be assigned to tasks."""
+
     resource_id: str
     resource_code: Optional[str] = None
     resource_name: str
@@ -112,6 +126,8 @@ class Resource(BaseModel):
 
 
 class ResourceAssignment(BaseModel):
+    """An assignment of a resource to a task, with planned and actual units."""
+
     assignment_id: str
     schedule_version_id: str
     task_id: str
@@ -125,6 +141,8 @@ class ResourceAssignment(BaseModel):
 
 
 class Calendar(BaseModel):
+    """A working-time calendar referenced by tasks and resources."""
+
     calendar_id: str
     calendar_name: str
     calendar_type: Optional[str] = None
@@ -133,6 +151,8 @@ class Calendar(BaseModel):
 
 
 class ActivityCode(BaseModel):
+    """A categorization code value that can be applied to tasks."""
+
     activity_code_id: str
     code_type: str
     code_value: str
@@ -140,11 +160,15 @@ class ActivityCode(BaseModel):
 
 
 class TaskActivityCode(BaseModel):
+    """A link between a task and an activity code (many-to-many join)."""
+
     task_id: str
     activity_code_id: str
 
 
 class TaskConstraint(BaseModel):
+    """A date or scheduling constraint imposed on a task."""
+
     task_constraint_id: str
     task_id: str
     constraint_type: str
@@ -154,6 +178,8 @@ class TaskConstraint(BaseModel):
 
 
 class WorkPackage(BaseModel):
+    """A bundle of work scoped to an outage, with discipline and approval state."""
+
     work_package_id: str
     outage_id: str
     package_code: Optional[str] = None
@@ -165,6 +191,8 @@ class WorkPackage(BaseModel):
 
 
 class ScopeChangeEvent(BaseModel):
+    """A recorded change to outage scope (task added, removed, or modified)."""
+
     scope_change_id: str
     outage_id: str
     task_id: Optional[str] = None
@@ -176,6 +204,8 @@ class ScopeChangeEvent(BaseModel):
 
 
 class DelayEvent(BaseModel):
+    """A recorded delay affecting one or more tasks, with cause and impact."""
+
     delay_event_id: str
     outage_id: str
     task_id: Optional[str] = None
@@ -188,6 +218,8 @@ class DelayEvent(BaseModel):
 
 
 class WorkWindow(BaseModel):
+    """A time window during which particular work is permitted."""
+
     work_window_id: str
     outage_id: str
     window_type: Optional[str] = None
@@ -197,6 +229,8 @@ class WorkWindow(BaseModel):
 
 
 class Clearance(BaseModel):
+    """A safety clearance (tag-out) on a system during the outage."""
+
     clearance_id: str
     outage_id: str
     clearance_code: Optional[str] = None
