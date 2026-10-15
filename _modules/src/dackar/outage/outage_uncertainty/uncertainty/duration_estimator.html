@@ -1,0 +1,358 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Duration estimator — orchestrates the full uncertainty pipeline.</span>
+
+<span class="sd">Data flow</span>
+<span class="sd">---------</span>
+<span class="sd">1. Extract ``(duration, relevance_weight)`` pairs from the neighbour list,</span>
+<span class="sd">   keeping only matches that have an actual duration.  Weights are</span>
+<span class="sd">   re-normalised after filtering so they continue to sum to 1.0.</span>
+
+<span class="sd">2. ``OutlierHandler.separate(durations, weights)`` → ``OutlierSeparation``</span>
+<span class="sd">   Separates the routine execution cluster from disruption-driven outliers.</span>
+<span class="sd">   The separation preserves weight alignment so the correct weights flow to</span>
+<span class="sd">   the fitter.</span>
+
+<span class="sd">3. ``DistributionFitter.fit_from_separation(separation)``</span>
+<span class="sd">   → ``DurationDistribution``</span>
+<span class="sd">   Fits weighted percentiles on the *routine* group.  Stores</span>
+<span class="sd">   ``extended_fraction`` in ``distribution.parameters`` as a disruption</span>
+<span class="sd">   risk signal.</span>
+
+<span class="sd">4. ``ConfidenceEstimator.classify(query, matches, separation)``</span>
+<span class="sd">   → ``ConfidenceResult(score, tier, rationale)``</span>
+<span class="sd">   Uses power-normalised relevance weights for the similarity component.</span>
+
+<span class="sd">5. Build warnings from tier, extended_fraction, and neighbour coverage.</span>
+
+<span class="sd">6. Return ``ActivityEstimate`` with all fields populated.</span>
+
+<span class="sd">Fallback path</span>
+<span class="sd">-------------</span>
+<span class="sd">If *matches* is empty or all matched neighbours have ``None`` actual</span>
+<span class="sd">durations, the ``HierarchicalFallbackPolicy`` is invoked with access to</span>
+<span class="sd">the full ``historical_activities`` list so it can apply the 4-level</span>
+<span class="sd">relaxed-matching strategy.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.domain.activity</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActivityCase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.domain.result_types</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActivityEstimate</span><span class="p">,</span> <span class="n">SimilarityMatch</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/duration_estimator/index.html#src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="c1"># Threshold: log a warning when extended_fraction exceeds this</span>
+<div class="viewcode-block" id="_HIGH_DISRUPTION_FRACTION">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/duration_estimator/index.html#src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator._HIGH_DISRUPTION_FRACTION">[docs]</a>
+<span class="n">_HIGH_DISRUPTION_FRACTION</span> <span class="o">=</span> <span class="mf">0.30</span></div>
+
+
+
+<div class="viewcode-block" id="DurationEstimator">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/duration_estimator/index.html#src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator.DurationEstimator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DurationEstimator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Orchestrate outlier separation, distribution fitting, and confidence.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        outlier_handler: :class:`~outage_uncertainty.uncertainty.outlier_handler.OutlierHandler`</span>
+<span class="sd">        fitter: :class:`~outage_uncertainty.uncertainty.distribution_fitter.DistributionFitter`</span>
+<span class="sd">        confidence_estimator: :class:`~outage_uncertainty.uncertainty.confidence.ConfidenceEstimator`</span>
+<span class="sd">        fallback_policy: :class:`~outage_uncertainty.uncertainty.fallback_policy.HierarchicalFallbackPolicy`</span>
+<span class="sd">        low_coverage_threshold: Best-match similarity below which the estimate</span>
+<span class="sd">            is flagged as low-coverage.  Mirrors ``NeighborSelector.warn_below``;</span>
+<span class="sd">            keep the two in sync so the warning fires at the same threshold as</span>
+<span class="sd">            the selector's low-coverage flag.  Default 0.4.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">outlier_handler</span><span class="p">,</span>
+        <span class="n">fitter</span><span class="p">,</span>
+        <span class="n">confidence_estimator</span><span class="p">,</span>
+        <span class="n">fallback_policy</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">low_coverage_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.4</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="DurationEstimator.outlier_handler">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/duration_estimator/index.html#src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator.DurationEstimator.outlier_handler">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">outlier_handler</span> <span class="o">=</span> <span class="n">outlier_handler</span></div>
+
+<div class="viewcode-block" id="DurationEstimator.fitter">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/duration_estimator/index.html#src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator.DurationEstimator.fitter">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fitter</span> <span class="o">=</span> <span class="n">fitter</span></div>
+
+<div class="viewcode-block" id="DurationEstimator.confidence_estimator">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/duration_estimator/index.html#src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator.DurationEstimator.confidence_estimator">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">confidence_estimator</span> <span class="o">=</span> <span class="n">confidence_estimator</span></div>
+
+<div class="viewcode-block" id="DurationEstimator.fallback_policy">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/duration_estimator/index.html#src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator.DurationEstimator.fallback_policy">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fallback_policy</span> <span class="o">=</span> <span class="n">fallback_policy</span></div>
+
+        <span class="c1"># Mirrors NeighborSelector.warn_below — keep in sync when constructing</span>
+        <span class="c1"># the pipeline so the warning fires at the same threshold as the</span>
+        <span class="c1"># low-coverage flag set by the selector.</span>
+<div class="viewcode-block" id="DurationEstimator.low_coverage_threshold">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/duration_estimator/index.html#src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator.DurationEstimator.low_coverage_threshold">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">low_coverage_threshold</span> <span class="o">=</span> <span class="n">low_coverage_threshold</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Public interface</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="DurationEstimator.estimate">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/duration_estimator/index.html#src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator.DurationEstimator.estimate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">estimate</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">query</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">,</span>
+        <span class="n">matches</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">SimilarityMatch</span><span class="p">],</span>
+        <span class="n">historical_activities</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">ActivityCase</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ActivityEstimate</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Produce a :class:`ActivityEstimate` for *query* given *matches*.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            query: The planned activity being estimated.</span>
+<span class="sd">            matches: Top-k neighbours from</span>
+<span class="sd">                :class:`~outage_uncertainty.retrieval.neighbor_selector.NeighborSelector`.</span>
+<span class="sd">                May be empty.</span>
+<span class="sd">            historical_activities: Full historical corpus.  Passed to the</span>
+<span class="sd">                fallback policy so it can apply relaxed matching when the</span>
+<span class="sd">                primary search yields no usable durations.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            :class:`ActivityEstimate` with distribution, confidence, and</span>
+<span class="sd">            warnings.</span>
+<span class="sd">        """</span>
+        <span class="c1"># ---- Step 1: extract (duration, weight) pairs -------------------</span>
+        <span class="n">pairs</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">candidate_duration_hours</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">relevance_weight</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">matches</span>
+            <span class="k">if</span> <span class="n">m</span><span class="o">.</span><span class="n">candidate_duration_hours</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="p">]</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">pairs</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">"DurationEstimator: no durations in matches for '</span><span class="si">%s</span><span class="s2">'; "</span>
+                <span class="s2">"invoking fallback"</span><span class="p">,</span>
+                <span class="n">query</span><span class="o">.</span><span class="n">activity_id</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">fallback_policy</span><span class="o">.</span><span class="n">estimate</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">historical_activities</span><span class="p">)</span>
+
+        <span class="n">durations</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pairs</span><span class="p">]</span>
+        <span class="n">raw_weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pairs</span><span class="p">]</span>
+
+        <span class="c1"># Re-normalise weights after filtering (some matches may have been dropped)</span>
+        <span class="n">total_w</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">raw_weights</span><span class="p">)</span>
+        <span class="n">weights</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">[</span><span class="n">w</span> <span class="o">/</span> <span class="n">total_w</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">raw_weights</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">total_w</span> <span class="o">&gt;</span> <span class="mf">0.0</span>
+            <span class="k">else</span> <span class="p">[</span><span class="mf">1.0</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">raw_weights</span><span class="p">)]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">raw_weights</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="c1"># ---- Step 2: outlier separation ---------------------------------</span>
+        <span class="n">separation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">outlier_handler</span><span class="o">.</span><span class="n">separate</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="n">weights</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">separation</span><span class="o">.</span><span class="n">n_routine</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># All durations were classified as extended outliers — treat as no data</span>
+            <span class="n">estimate</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fallback_policy</span><span class="o">.</span><span class="n">estimate</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">historical_activities</span><span class="p">)</span>
+            <span class="n">estimate</span><span class="o">.</span><span class="n">warnings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"All </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">durations</span><span class="p">)</span><span class="si">}</span><span class="s2"> matched durations were classified as outliers "</span>
+                <span class="sa">f</span><span class="s2">"(extended pool). Fallback estimate used; consider reviewing the "</span>
+                <span class="sa">f</span><span class="s2">"outlier threshold or expanding the historical dataset."</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">estimate</span>
+
+        <span class="c1"># ---- Step 3: fit distribution on routine group ------------------</span>
+        <span class="n">distribution</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fitter</span><span class="o">.</span><span class="n">fit_from_separation</span><span class="p">(</span><span class="n">separation</span><span class="p">)</span>
+
+        <span class="c1"># ---- Step 4: confidence tier ------------------------------------</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">confidence_estimator</span><span class="o">.</span><span class="n">classify</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">matches</span><span class="p">,</span> <span class="n">separation</span><span class="p">)</span>
+        <span class="n">distribution</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">"confidence_tier"</span><span class="p">]</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">tier</span>
+
+        <span class="c1"># ---- Step 5: build warnings -------------------------------------</span>
+        <span class="n">warnings</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_warnings</span><span class="p">(</span>
+            <span class="n">result</span><span class="p">,</span> <span class="n">separation</span><span class="p">,</span> <span class="n">matches</span><span class="p">,</span>
+            <span class="n">low_coverage_threshold</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">low_coverage_threshold</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># ---- Step 6: assemble estimate ----------------------------------</span>
+        <span class="k">return</span> <span class="n">ActivityEstimate</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">activity_id</span><span class="p">,</span>
+            <span class="n">estimated_distribution</span><span class="o">=</span><span class="n">distribution</span><span class="p">,</span>
+            <span class="n">confidence_score</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">score</span><span class="p">,</span>
+            <span class="n">confidence_tier</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">tier</span><span class="p">,</span>
+            <span class="n">support_count</span><span class="o">=</span><span class="n">separation</span><span class="o">.</span><span class="n">n_routine</span><span class="p">,</span>
+            <span class="n">matched_cases</span><span class="o">=</span><span class="n">matches</span><span class="p">,</span>
+            <span class="n">warnings</span><span class="o">=</span><span class="n">warnings</span><span class="p">,</span>
+            <span class="n">uncertainty_type</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">uncertainty_type</span><span class="p">,</span>
+            <span class="n">recommended_action</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">recommended_action</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Private helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="DurationEstimator._build_warnings">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/duration_estimator/index.html#src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator.DurationEstimator._build_warnings">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_warnings</span><span class="p">(</span>
+        <span class="n">result</span><span class="p">,</span>
+        <span class="n">separation</span><span class="p">,</span>
+        <span class="n">matches</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">low_coverage_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.4</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="n">warnings</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># Confidence tier</span>
+        <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">tier</span> <span class="o">==</span> <span class="s2">"low"</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Low-confidence estimate. </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">rationale</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">result</span><span class="o">.</span><span class="n">tier</span> <span class="o">==</span> <span class="s2">"medium"</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Medium-confidence estimate. </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">rationale</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+        <span class="c1"># Disruption-driven tail</span>
+        <span class="k">if</span> <span class="n">separation</span><span class="o">.</span><span class="n">extended_fraction</span> <span class="o">&gt;=</span> <span class="n">_HIGH_DISRUPTION_FRACTION</span><span class="p">:</span>
+            <span class="n">pct</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">separation</span><span class="o">.</span><span class="n">extended_fraction</span> <span class="o">*</span> <span class="mi">100</span><span class="p">)</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">pct</span><span class="si">}</span><span class="s2">% of historical analogues showed disrupted execution "</span>
+                <span class="sa">f</span><span class="s2">"(above the </span><span class="si">{</span><span class="n">separation</span><span class="o">.</span><span class="n">method</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2"> fence). "</span>
+                <span class="s2">"Consider scheduling contingency."</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Low routine support after separation</span>
+        <span class="k">if</span> <span class="n">separation</span><span class="o">.</span><span class="n">n_routine</span> <span class="o">&lt;</span> <span class="mi">5</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Only </span><span class="si">{</span><span class="n">separation</span><span class="o">.</span><span class="n">n_routine</span><span class="si">}</span><span class="s2"> routine analogue(s) available "</span>
+                <span class="s2">"after outlier separation; distribution may be unreliable."</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Low-coverage flag — threshold must match NeighborSelector.warn_below</span>
+        <span class="c1"># used when building the match list so both checks fire at the same point.</span>
+        <span class="k">if</span> <span class="n">matches</span> <span class="ow">and</span> <span class="nb">max</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">total_score</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">matches</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">low_coverage_threshold</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Best analogue similarity is below </span><span class="si">{</span><span class="n">low_coverage_threshold</span><span class="si">:</span><span class="s2">.2g</span><span class="si">}</span><span class="s2">. "</span>
+                <span class="s2">"The retrieved cases may not be representative."</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">warnings</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

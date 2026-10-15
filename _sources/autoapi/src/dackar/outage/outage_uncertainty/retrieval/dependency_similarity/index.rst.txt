@@ -1,0 +1,124 @@
+src.dackar.outage.outage_uncertainty.retrieval.dependency_similarity
+====================================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.retrieval.dependency_similarity
+
+.. autoapi-nested-parse::
+
+   Dependency pattern similarity scorer for outage activities.
+
+   Compares activities based on their structural position in the schedule
+   network (predecessor/successor topology) rather than content.  The PDF
+   allocates 20% of composite similarity weight to schedule neighbourhood /
+   dependency pattern similarity.
+
+   Two activities that both serve as merge points (multiple predecessors
+   converging before a downstream milestone) share execution characteristics —
+   coordination overhead, waiting time, resource contention — regardless of
+   whether their text descriptions match.
+
+   Structural features
+   -------------------
+   Topological role
+       Derived from in-degree (``len(predecessor_ids)``) and out-degree
+       (``len(successor_ids)``):
+
+       =========  =========  ==========  ===================================
+       in-degree  out-degree  role        typical outage example
+       =========  =========  ==========  ===================================
+       0          0           isolated    standalone, no network links
+       0          >0          source      outage start / kickoff activity
+       >0         0           sink        outage end / final completion
+       1          1           chain       sequential work step
+       >1         ≤1          merge       pre-milestone convergence point
+       ≤1         >1          burst       work-package split / parallel start
+       >1         >1          internal    complex node (fan-in and fan-out)
+       =========  =========  ==========  ===================================
+
+   Degree similarity
+       Exponential decay on ``|deg_a − deg_b|`` so activities with similar
+       fan-in / fan-out patterns score higher:
+       ``deg_sim(a, b) = exp(−|a − b| / degree_scale)``
+
+   Score formula
+       ``score = role_weight × role_sim + (1 − role_weight) × degree_sim``
+       where ``degree_sim = 0.5 × in_deg_sim + 0.5 × out_deg_sim``.
+
+   When both activities have empty adjacency lists they are both ``isolated``,
+   giving ``role_sim = 1.0`` and ``degree_sim = 1.0``.  Activities without
+   dependency information are therefore treated as structurally equivalent —
+   they are not penalised for missing data.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.retrieval.dependency_similarity._PARTIAL_CREDIT
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.retrieval.dependency_similarity.DependencyPatternScorer
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.retrieval.dependency_similarity.topological_role
+   src.dackar.outage.outage_uncertainty.retrieval.dependency_similarity._role_similarity
+
+
+Module Contents
+---------------
+
+.. py:data:: _PARTIAL_CREDIT
+   :type:  dict[tuple[str, str], float]
+
+.. py:function:: topological_role(activity)
+
+   Classify an activity's structural role from its adjacency lists.
+
+   Returns one of: ``"isolated"``, ``"source"``, ``"sink"``, ``"chain"``,
+   ``"merge"``, ``"burst"``, ``"internal"``.
+
+
+.. py:class:: DependencyPatternScorer(role_weight = 0.5, degree_scale = 2.0)
+
+   Score schedule-structural similarity between two activities.
+
+   :param role_weight: Weight given to topological role comparison.  The
+                       complementary weight goes to degree similarity.  Default 0.5.
+   :param degree_scale: Exponential-decay scale for degree difference.  At
+                        scale = 2.0, a difference of 2 predecessors gives
+                        ``exp(−1) ≈ 0.37``.  Default 2.0.
+
+
+   .. py:attribute:: role_weight
+      :value: 0.5
+
+
+
+   .. py:attribute:: degree_scale
+      :value: 2.0
+
+
+
+   .. py:method:: score(a, b)
+
+      Return a dependency-pattern similarity score in ``[0, 1]``.
+
+
+
+   .. py:method:: _degree_sim(deg_a, deg_b)
+
+
+.. py:function:: _role_similarity(role_a, role_b)
+

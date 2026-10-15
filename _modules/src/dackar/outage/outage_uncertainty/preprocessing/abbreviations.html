@@ -1,0 +1,290 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.preprocessing.abbreviations &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.preprocessing.abbreviations</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.preprocessing.abbreviations</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Abbreviation resolution for outage activity descriptions.</span>
+
+<span class="sd">Loads the curated nuclear-outage and P6 abbreviations from the shared DACKAR</span>
+<span class="sd">Excel file and expands them one whole token at a time.  Whole-token expansion</span>
+<span class="sd">(rather than the substring/suffix matching in</span>
+<span class="sd">``dackar.text_processing.Abbreviation.abbreviationSub``) keeps an abbreviation</span>
+<span class="sd">that is also a substring of a longer word from leaking into ordinary text</span>
+<span class="sd">(``2pm`` must stay ``2pm``, not become "2 preventive maintenance").</span>
+
+<span class="sd">Sources (lowest priority first; later entries override earlier ones)</span>
+<span class="sd">--------------------------------------------------------------------</span>
+<span class="sd">1. DACKAR Excel file (``abbreviations_file``)</span>
+<span class="sd">2. Nuclear-outage supplement (:data:`NUCLEAR_OUTAGE_ABBREVIATIONS`)</span>
+<span class="sd">3. Extra-abbreviations dict supplied directly by the caller</span>
+
+<span class="sd">Negations (:data:`_NEVER_EXPAND`) are dropped from the final map regardless of</span>
+<span class="sd">source so a token like ``no`` is never rewritten to "number".  If the Excel</span>
+<span class="sd">file cannot be read the supplement and caller extras still apply; an empty map</span>
+<span class="sd">means pass-through (no expansion).</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.preprocessing.nuclear_abbreviations</span><span class="w"> </span><span class="kn">import</span> <span class="n">NUCLEAR_OUTAGE_ABBREVIATIONS</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/abbreviations/index.html#src.dackar.outage.outage_uncertainty.preprocessing.abbreviations.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="c1"># Tokens that must never be expanded in an outage description even when they</span>
+<span class="c1"># are present in the shared abbreviation sheet.  ``no`` -&gt; "number" lives in</span>
+<span class="c1"># abbreviations.xlsx for general engineering text, but dropping a negation</span>
+<span class="c1"># changes the meaning of a P6 description ("no leak found" -&gt; "number leak</span>
+<span class="c1"># found") for both retrieval and the LabelMapper keyword flags.</span>
+<div class="viewcode-block" id="_NEVER_EXPAND">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/abbreviations/index.html#src.dackar.outage.outage_uncertainty.preprocessing.abbreviations._NEVER_EXPAND">[docs]</a>
+<span class="n">_NEVER_EXPAND</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">"no"</span><span class="p">,</span> <span class="s2">"not"</span><span class="p">,</span> <span class="s2">"non"</span><span class="p">,</span> <span class="s2">"nil"</span><span class="p">,</span> <span class="s2">"none"</span><span class="p">,</span> <span class="s2">"never"</span><span class="p">})</span></div>
+
+
+
+<div class="viewcode-block" id="AbbreviationResolver">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/abbreviations/index.html#src.dackar.outage.outage_uncertainty.preprocessing.abbreviations.AbbreviationResolver">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AbbreviationResolver</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Expands abbreviations found in outage activity descriptions.</span>
+
+<span class="sd">    The resolver applies abbreviations in the following priority order</span>
+<span class="sd">    (highest priority last, so later entries override earlier ones):</span>
+
+<span class="sd">    1. **Excel file** (``abbreviations_file``) — shared DACKAR engineering and</span>
+<span class="sd">       nuclear vocabulary loaded via ``dackar.text_processing.Abbreviation``.</span>
+<span class="sd">    2. **Nuclear outage supplement** (:data:`NUCLEAR_OUTAGE_ABBREVIATIONS`) —</span>
+<span class="sd">       built-in, applied unconditionally.  A small set of outage-context</span>
+<span class="sd">       overrides and context-only shorthand that must not live in the shared</span>
+<span class="sd">       Excel file (they would mis-expand text for other DACKAR consumers).</span>
+<span class="sd">       Always active; requires no external dependencies.</span>
+<span class="sd">    3. **Caller-supplied extras** (``extra_abbreviations``) — highest priority;</span>
+<span class="sd">       overrides both the Excel file and the nuclear supplement.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        abbreviations_file: Path to the abbreviations Excel file (.xlsx).</span>
+<span class="sd">            The file must have columns ``Abbreviation`` and ``Full``.</span>
+<span class="sd">            Defaults to ``None``; the nuclear supplement and</span>
+<span class="sd">            ``extra_abbreviations`` still apply.</span>
+<span class="sd">        extra_abbreviations: Additional ``{abbr: full}`` pairs</span>
+<span class="sd">            (case-insensitive keys). Merged on top of everything else.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">abbreviations_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">extra_abbreviations</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Build effective extras: nuclear supplement first so caller-supplied</span>
+        <span class="c1"># extra_abbreviations can still override individual entries.</span>
+        <span class="n">effective_extra</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="o">**</span><span class="n">NUCLEAR_OUTAGE_ABBREVIATIONS</span><span class="p">,</span>
+            <span class="o">**</span><span class="p">(</span><span class="n">extra_abbreviations</span> <span class="ow">or</span> <span class="p">{}),</span>
+        <span class="p">}</span>
+
+        <span class="c1"># Single whole-token expansion map, keyed by lowercase token.</span>
+        <span class="c1"># Resolution order (lowest priority first): shared Excel file, then the</span>
+        <span class="c1"># nuclear supplement, then caller extras.  Expansion is applied token by</span>
+        <span class="c1"># token (see transform) rather than via the shared handler's</span>
+        <span class="c1"># abbreviationSub, which also rewrites the suffix after '-' or a digit</span>
+        <span class="c1"># ('2pm' -&gt; 'preventive maintenance', 'pump-ts' -&gt; '... technical</span>
+        <span class="c1"># specification') — meaning-changing for P6 descriptions.</span>
+<div class="viewcode-block" id="AbbreviationResolver._token_map">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/abbreviations/index.html#src.dackar.outage.outage_uncertainty.preprocessing.abbreviations.AbbreviationResolver._token_map">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_token_map</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+        <span class="k">if</span> <span class="n">abbreviations_file</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_token_map</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_load_sheet</span><span class="p">(</span><span class="n">abbreviations_file</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">effective_extra</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_token_map</span><span class="p">[</span><span class="n">k</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+        <span class="c1"># Negations are never expanded regardless of source (see _NEVER_EXPAND).</span>
+        <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">_NEVER_EXPAND</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_token_map</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">"AbbreviationResolver: </span><span class="si">%d</span><span class="s2"> whole-token entries (</span><span class="si">%d</span><span class="s2"> nuclear supplement)"</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_token_map</span><span class="p">),</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">NUCLEAR_OUTAGE_ABBREVIATIONS</span><span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Public interface expected by ActivityCleaner</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="AbbreviationResolver.transform">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/abbreviations/index.html#src.dackar.outage.outage_uncertainty.preprocessing.abbreviations.AbbreviationResolver.transform">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return *text* with whole-token abbreviations expanded.</span>
+
+<span class="sd">        Only complete whitespace-delimited tokens are matched, so an</span>
+<span class="sd">        abbreviation that is also a substring of a longer word (``pm`` inside</span>
+<span class="sd">        ``2pm``, ``ts`` inside ``pump-ts``) is left untouched.  Negations in</span>
+<span class="sd">        :data:`_NEVER_EXPAND` are never expanded.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">text</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_token_map</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">text</span>
+        <span class="k">return</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_token_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">token</span><span class="o">.</span><span class="n">lower</span><span class="p">(),</span> <span class="n">token</span><span class="p">)</span> <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Private helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="AbbreviationResolver._load_sheet">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/abbreviations/index.html#src.dackar.outage.outage_uncertainty.preprocessing.abbreviations.AbbreviationResolver._load_sheet">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_load_sheet</span><span class="p">(</span><span class="n">abbreviations_file</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Read ``{abbreviation: full}`` pairs from the Excel file.</span>
+
+<span class="sd">        Keys and values are lower-cased and stripped.  Returns an empty dict</span>
+<span class="sd">        on any failure (missing file, missing pandas, bad columns) so the</span>
+<span class="sd">        nuclear supplement and caller extras still apply.</span>
+<span class="sd">        """</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+            <span class="n">abbrList</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_excel</span><span class="p">(</span><span class="n">abbreviations_file</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">"Abbreviation"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">abbrList</span><span class="o">.</span><span class="n">columns</span> <span class="ow">or</span> <span class="s2">"Full"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">abbrList</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"Expected columns ['Abbreviation', 'Full'] in </span><span class="si">{</span><span class="n">abbreviations_file</span><span class="si">}</span><span class="s2">; "</span>
+                    <span class="sa">f</span><span class="s2">"found </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">abbrList</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+                <span class="p">)</span>
+
+            <span class="n">token_map</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+                <span class="nb">zip</span><span class="p">(</span>
+                    <span class="n">abbrList</span><span class="p">[</span><span class="s2">"Abbreviation"</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">str</span><span class="p">)</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span>
+                    <span class="n">abbrList</span><span class="p">[</span><span class="s2">"Full"</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">str</span><span class="p">)</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">"AbbreviationResolver: loaded </span><span class="si">%d</span><span class="s2"> entries from </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">token_map</span><span class="p">),</span>
+                <span class="n">abbreviations_file</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">token_map</span>
+
+        <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"AbbreviationResolver: file not found: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">abbreviations_file</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"AbbreviationResolver: pandas unavailable (</span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"AbbreviationResolver: failed to load (</span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{}</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

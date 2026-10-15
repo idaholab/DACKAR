@@ -1,0 +1,289 @@
+src.dackar.outage.outage_uncertainty.uncertainty.confidence
+===========================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.uncertainty.confidence
+
+.. autoapi-nested-parse::
+
+   Three-tier confidence estimation for duration estimates.
+
+   The PDF distinguishes two uncertainty types:
+
+     Aleatory  — genuine execution-time variability (can be modelled)
+     Epistemic — lack of knowledge from too few / too dissimilar analogues
+
+   The confidence tier captures the *epistemic* dimension: it signals how much
+   trust the planner should place in the estimate regardless of how wide the
+   distribution is.
+
+   Tiers
+   -----
+   high    Strong historical analogue coverage; estimate is reliable.
+           Reserve this tier for situations where a planner could act on the
+           P80 interval without further review.
+
+   medium  Moderate coverage; usable but flag for planner awareness.
+           Appropriate when the estimate informs scheduling decisions but
+           a contingency buffer is advisable.
+
+   low     Weak or no analogues; expert review required before committing
+           to schedule assumptions based on this estimate.
+
+   Score formula
+   -------------
+   The scalar confidence score uses the relevance_weights from Phase 2
+   (power-normalised) rather than a raw average so that the closest analogues
+   dominate:
+
+       weighted_sim   = Σ(relevance_weight_i × total_score_i)
+       support_factor = min(n_routine / 20, 1.0)
+       score          = 0.6 × weighted_sim + 0.4 × support_factor
+
+   The 0.6 / 0.4 split reflects that similarity quality matters more than raw
+   count but both are necessary for a high-confidence estimate.
+
+   Tier thresholds (all conditions must hold simultaneously)
+   ---------------------------------------------------------
+   high   : score ≥ 0.70  AND  n_routine ≥ 10  AND  best_match ≥ 0.70
+            AND  outages_represented ≥ high_outage_threshold  (when provided)
+   medium : score ≥ 0.45  AND  n_routine ≥  5  AND  best_match ≥ 0.50
+            AND  outages_represented ≥ medium_outage_threshold  (when provided)
+   low    : otherwise
+
+   Outage diversity gate
+   ---------------------
+   Patterns learned from a single outage reflect within-outage variance, not
+   the genuine between-outage variability that defines execution uncertainty.
+   When ``outages_represented`` is passed to :meth:`classify` (value > 0), the
+   evidence tier is computed first (from score / support / best-match) and then
+   capped by how many distinct outages the analogue pool spans.  The final tier
+   is ``min(evidence_tier, diversity_cap)``, so the cap applies uniformly at every
+   tier (it is not skipped for ``"medium"``):
+
+       outages_represented == 0  →  gate not applied (backward-compatible default)
+       outages_represented  < medium_outage_threshold  →  cap = ``"low"``
+       outages_represented  < high_outage_threshold    →  cap = ``"medium"``
+       outages_represented ≥ high_outage_threshold     →  cap = ``"high"`` (no effect)
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.uncertainty.confidence._HIGH_SCORE
+   src.dackar.outage.outage_uncertainty.uncertainty.confidence._HIGH_SUPPORT
+   src.dackar.outage.outage_uncertainty.uncertainty.confidence._HIGH_BEST
+   src.dackar.outage.outage_uncertainty.uncertainty.confidence._MED_SCORE
+   src.dackar.outage.outage_uncertainty.uncertainty.confidence._MED_SUPPORT
+   src.dackar.outage.outage_uncertainty.uncertainty.confidence._MED_BEST
+   src.dackar.outage.outage_uncertainty.uncertainty.confidence._HIGH_OUTAGES
+   src.dackar.outage.outage_uncertainty.uncertainty.confidence._MED_OUTAGES
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceResult
+   src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceEstimator
+
+
+Module Contents
+---------------
+
+.. py:class:: ConfidenceResult
+
+   Result of confidence estimation.
+
+   .. attribute:: score
+
+      Scalar in [0, 1].
+
+   .. attribute:: tier
+
+      Qualitative tier: ``"high"``, ``"medium"``, or ``"low"``.
+
+   .. attribute:: rationale
+
+      Human-readable explanation of the tier assignment.
+
+   .. attribute:: uncertainty_type
+
+      Gap 2: dominant uncertainty source.
+
+      * ``"epistemic"`` – weak analogue coverage; the estimate is uncertain
+        because we lack data, not because the task is inherently variable.
+        Action: SME review / better work-package definition.
+      * ``"aleatory"`` – well-characterised natural execution variability.
+        Action: add schedule float proportional to P90–P50 spread.
+      * ``"mixed"`` – both signals present (moderate coverage *and* high
+        disruption rate or spread).  Action: contingency buffer + awareness.
+
+   .. attribute:: recommended_action
+
+      Plain-language scheduling guidance derived from ``uncertainty_type``
+      and the tier.
+
+
+   .. py:attribute:: score
+      :type:  float
+
+
+   .. py:attribute:: tier
+      :type:  str
+
+
+   .. py:attribute:: rationale
+      :type:  str
+
+
+   .. py:attribute:: uncertainty_type
+      :type:  str
+      :value: 'unknown'
+
+
+
+   .. py:attribute:: recommended_action
+      :type:  str
+      :value: ''
+
+
+
+.. py:data:: _HIGH_SCORE
+   :value: 0.7
+
+
+.. py:data:: _HIGH_SUPPORT
+   :value: 10
+
+
+.. py:data:: _HIGH_BEST
+   :value: 0.7
+
+
+.. py:data:: _MED_SCORE
+   :value: 0.45
+
+
+.. py:data:: _MED_SUPPORT
+   :value: 5
+
+
+.. py:data:: _MED_BEST
+   :value: 0.5
+
+
+.. py:data:: _HIGH_OUTAGES
+   :value: 3
+
+
+.. py:data:: _MED_OUTAGES
+   :value: 2
+
+
+.. py:class:: ConfidenceEstimator(similarity_weight = 0.6, support_saturation = 20, high_score_threshold = _HIGH_SCORE, high_support_threshold = _HIGH_SUPPORT, high_best_match_threshold = _HIGH_BEST, medium_score_threshold = _MED_SCORE, medium_support_threshold = _MED_SUPPORT, medium_best_match_threshold = _MED_BEST, high_outage_threshold = _HIGH_OUTAGES, medium_outage_threshold = _MED_OUTAGES)
+
+   Compute a scalar confidence score and tier for a duration estimate.
+
+   :param similarity_weight: Weight given to the similarity component of the
+                             score (the rest goes to support count).  Default 0.6.
+   :param support_saturation: Number of routine samples at which the support
+                              factor saturates at 1.0.  Default 20.
+   :param high_score_threshold: Minimum score for the ``"high"`` tier.
+   :param high_support_threshold: Minimum routine-sample count for ``"high"``.
+   :param high_best_match_threshold: Minimum best-match score for ``"high"``.
+   :param medium_score_threshold: Minimum score for the ``"medium"`` tier.
+   :param medium_support_threshold: Minimum routine-sample count for
+                                    ``"medium"``.
+   :param medium_best_match_threshold: Minimum best-match score for
+                                       ``"medium"``.
+
+
+   .. py:attribute:: _sim_w
+      :value: 0.6
+
+
+
+   .. py:attribute:: _sup_sat
+      :value: 20
+
+
+
+   .. py:attribute:: _high
+
+
+   .. py:attribute:: _med
+
+
+   .. py:attribute:: _high_outages
+      :value: 3
+
+
+
+   .. py:attribute:: _med_outages
+      :value: 2
+
+
+
+   .. py:method:: classify(query, matches, separation, outages_represented = 0)
+
+      Return a :class:`ConfidenceResult` for the given evidence.
+
+      :param query: The planned activity being estimated (reserved for future
+                    query-level adjustments).
+      :param matches: Neighbours selected by
+                      :class:`~outage_uncertainty.retrieval.neighbor_selector.NeighborSelector`.
+      :param separation: Outlier separation result from
+                         :class:`~outage_uncertainty.uncertainty.outlier_handler.OutlierHandler`.
+      :param outages_represented: Number of distinct outages the analogue pool
+                                  spans.  When ``0`` (default) the outage diversity gate is not
+                                  applied, preserving backward compatibility.  Pass the value
+                                  from ``retrieval_summary["outages_represented"]`` in Stage D to
+                                  enable the gate.
+
+      :returns: :class:`ConfidenceResult` with scalar score, tier, and rationale.
+
+
+
+   .. py:method:: score(query, matches, durations)
+
+      Return confidence score as a plain float (legacy interface).
+
+      Prefer :meth:`classify` in new code.
+
+
+
+   .. py:method:: _compute_score(matches, n_routine)
+
+
+   .. py:method:: _classify_tier(score, n_routine, best_match, outages_represented = 0)
+
+
+   .. py:method:: _compute_cv(routine)
+      :staticmethod:
+
+
+      Coefficient of variation of the routine duration pool.
+
+
+
+   .. py:method:: _classify_uncertainty(tier, cv, extended_fraction)
+      :staticmethod:
+
+
+      Map confidence signals to an uncertainty type and recommended action.
+
+      Decision logic (in priority order):
+      1. Low tier → epistemic regardless of spread (not enough data to
+         characterise variability reliably).
+      2. High disruption fraction (≥ 25 %) → mixed (even if confidence is
+         high, the process is not under control).
+      3. High CV (≥ 0.5) → aleatory (genuine execution variability).
+      4. Medium tier → mixed (moderate coverage, moderate spread).
+      5. High tier + low CV + low disruption → aleatory (well-characterised).
+
+
+

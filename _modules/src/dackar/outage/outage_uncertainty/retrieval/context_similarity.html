@@ -1,0 +1,329 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.retrieval.context_similarity &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.retrieval.context_similarity</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.retrieval.context_similarity</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Context similarity scorer for outage activities.</span>
+
+<span class="sd">Scores how similar two activities are based on structured metadata — the</span>
+<span class="sd">"case" dimensions beyond the free-text description.  This implements the</span>
+<span class="sd">case-based similarity philosophy from the PDF: task descriptions alone are</span>
+<span class="sd">insufficient; discipline, component family, plant context, and execution</span>
+<span class="sd">mode all carry independent similarity signal.</span>
+
+<span class="sd">Key design choices</span>
+<span class="sd">------------------</span>
+<span class="sd">Weight redistribution for missing fields</span>
+<span class="sd">    When a field is ``None`` on either activity, it is skipped and the</span>
+<span class="sd">    remaining applicable weights are re-normalised to sum to 1.0.  This</span>
+<span class="sd">    means unknown taxonomy labels do not penalise the score — the result is</span>
+<span class="sd">    "similarity based on available evidence."</span>
+
+<span class="sd">    Contrast with the original stub where ``_same(None, None)`` → 0.0,</span>
+<span class="sd">    which incorrectly treated "both unlabelled" as "confirmed different."</span>
+
+<span class="sd">Partial credit for related values</span>
+<span class="sd">    Exact string equality gives 1.0.  A configurable ``partial_credit`` dict</span>
+<span class="sd">    allows domain-specific partial scores for values that are related but not</span>
+<span class="sd">    identical (e.g. ``("task_family", "valve_inspection", "valve_replacement")</span>
+<span class="sd">    → 0.3``).  Both orderings of the pair are checked automatically.</span>
+
+<span class="sd">    This is intentionally left sparse by default — the Phase 4 taxonomy work</span>
+<span class="sd">    will populate it with outage-domain knowledge.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.domain.activity</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActivityCase</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/context_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.context_similarity.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="c1"># Default weights.  Must be non-negative; they are *not* required to sum to</span>
+<span class="c1"># 1.0 because redistribution re-normalises on the fly.</span>
+<div class="viewcode-block" id="_DEFAULT_WEIGHTS">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/context_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.context_similarity._DEFAULT_WEIGHTS">[docs]</a>
+<span class="n">_DEFAULT_WEIGHTS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"discipline"</span><span class="p">:</span> <span class="mf">0.25</span><span class="p">,</span>          <span class="c1"># mechanical / I&amp;C / electrical / civil …</span>
+    <span class="s2">"task_family"</span><span class="p">:</span> <span class="mf">0.30</span><span class="p">,</span>         <span class="c1"># inspection / replacement / calibration …</span>
+    <span class="s2">"component_family"</span><span class="p">:</span> <span class="mf">0.20</span><span class="p">,</span>    <span class="c1"># valve / transmitter / pump …</span>
+    <span class="s2">"plant_id"</span><span class="p">:</span> <span class="mf">0.10</span><span class="p">,</span>            <span class="c1"># same plant → stronger analogy</span>
+    <span class="s2">"is_emergent"</span><span class="p">:</span> <span class="mf">0.10</span><span class="p">,</span>         <span class="c1"># emergent work has structurally different durations</span>
+    <span class="s2">"outage_phase"</span><span class="p">:</span> <span class="mf">0.05</span><span class="p">,</span>        <span class="c1"># pre-outage / forced / planned maintenance</span>
+    <span class="c1"># Gap 3: execution mode flags — strong duration-variance predictors</span>
+    <span class="s2">"has_rp_hold"</span><span class="p">:</span> <span class="mf">0.08</span><span class="p">,</span>         <span class="c1"># RP hold points add waiting time regardless of task type</span>
+    <span class="s2">"requires_scaffold"</span><span class="p">:</span> <span class="mf">0.07</span><span class="p">,</span>   <span class="c1"># scaffold erection/removal drives setup time</span>
+    <span class="s2">"has_clearance"</span><span class="p">:</span> <span class="mf">0.05</span><span class="p">,</span>       <span class="c1"># electrical/mechanical clearances add coordination overhead</span>
+    <span class="s2">"is_vendor_supported"</span><span class="p">:</span> <span class="mf">0.05</span><span class="p">,</span> <span class="c1"># vendor mobilisation and schedule dependency</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># Partial-credit pairs shipped with the package as a starter set.</span>
+<span class="c1"># Format: (field_name, value_a, value_b) → score in (0, 1).</span>
+<span class="c1"># Both orderings are checked, so only one direction is needed here.</span>
+<div class="viewcode-block" id="_DEFAULT_PARTIAL_CREDIT">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/context_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.context_similarity._DEFAULT_PARTIAL_CREDIT">[docs]</a>
+<span class="n">_DEFAULT_PARTIAL_CREDIT</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1"># Within task_family: same broad action, different scope</span>
+    <span class="p">(</span><span class="s2">"task_family"</span><span class="p">,</span> <span class="s2">"inspection"</span><span class="p">,</span> <span class="s2">"surveillance"</span><span class="p">):</span>        <span class="mf">0.4</span><span class="p">,</span>
+    <span class="p">(</span><span class="s2">"task_family"</span><span class="p">,</span> <span class="s2">"replacement"</span><span class="p">,</span> <span class="s2">"refurbishment"</span><span class="p">):</span>      <span class="mf">0.4</span><span class="p">,</span>
+    <span class="p">(</span><span class="s2">"task_family"</span><span class="p">,</span> <span class="s2">"calibration"</span><span class="p">,</span> <span class="s2">"testing"</span><span class="p">):</span>            <span class="mf">0.3</span><span class="p">,</span>
+    <span class="p">(</span><span class="s2">"task_family"</span><span class="p">,</span> <span class="s2">"disassembly"</span><span class="p">,</span> <span class="s2">"replacement"</span><span class="p">):</span>        <span class="mf">0.3</span><span class="p">,</span>
+    <span class="p">(</span><span class="s2">"task_family"</span><span class="p">,</span> <span class="s2">"restoration"</span><span class="p">,</span> <span class="s2">"replacement"</span><span class="p">):</span>        <span class="mf">0.25</span><span class="p">,</span>
+    <span class="c1"># Within component_family: same equipment class, different sub-type</span>
+    <span class="p">(</span><span class="s2">"component_family"</span><span class="p">,</span> <span class="s2">"valve"</span><span class="p">,</span> <span class="s2">"actuator"</span><span class="p">):</span>            <span class="mf">0.35</span><span class="p">,</span>
+    <span class="p">(</span><span class="s2">"component_family"</span><span class="p">,</span> <span class="s2">"transmitter"</span><span class="p">,</span> <span class="s2">"sensor"</span><span class="p">):</span>        <span class="mf">0.35</span><span class="p">,</span>
+    <span class="p">(</span><span class="s2">"component_family"</span><span class="p">,</span> <span class="s2">"pump"</span><span class="p">,</span> <span class="s2">"motor"</span><span class="p">):</span>                <span class="mf">0.30</span><span class="p">,</span>
+    <span class="p">(</span><span class="s2">"component_family"</span><span class="p">,</span> <span class="s2">"breaker"</span><span class="p">,</span> <span class="s2">"switchgear"</span><span class="p">):</span>        <span class="mf">0.30</span><span class="p">,</span>
+    <span class="p">(</span><span class="s2">"component_family"</span><span class="p">,</span> <span class="s2">"heat_exchanger"</span><span class="p">,</span> <span class="s2">"condenser"</span><span class="p">):</span>  <span class="mf">0.25</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_normalise_pc">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/context_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.context_similarity._normalise_pc">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalise_pc</span><span class="p">(</span>
+    <span class="n">pc</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Return a copy of *pc* with string value components lowercased.</span>
+
+<span class="sd">    ``_compare`` looks up keys as ``(field, norm_a, norm_b)`` where</span>
+<span class="sd">    ``norm_a``/``norm_b`` are already ``str.lower()``-ed.  If a caller</span>
+<span class="sd">    passes keys with mixed-case values (e.g.</span>
+<span class="sd">    ``("task_family", "Replacement", "Refurbishment")``), the lookup</span>
+<span class="sd">    would silently miss and return 0.0.  Normalising at ingestion time</span>
+<span class="sd">    makes the constraint transparent rather than a footgun.</span>
+<span class="sd">    """</span>
+    <span class="n">out</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">score</span> <span class="ow">in</span> <span class="n">pc</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">field</span><span class="p">,</span> <span class="n">va</span><span class="p">,</span> <span class="n">vb</span> <span class="o">=</span> <span class="n">key</span>
+            <span class="n">norm_key</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">field</span><span class="p">,</span>
+                <span class="n">va</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">va</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">va</span><span class="p">,</span>
+                <span class="n">vb</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">vb</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">vb</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">norm_key</span> <span class="o">=</span> <span class="n">key</span>
+        <span class="n">out</span><span class="p">[</span><span class="n">norm_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">score</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+
+<div class="viewcode-block" id="ContextSimilarityScorer">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/context_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.context_similarity.ContextSimilarityScorer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ContextSimilarityScorer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Score contextual (metadata-level) similarity between two activities.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        weights: Per-field weight dict.  Missing-field redistribution means</span>
+<span class="sd">            the absolute values matter only relative to each other, not their</span>
+<span class="sd">            sum.  Defaults to :data:`_DEFAULT_WEIGHTS`.</span>
+<span class="sd">        partial_credit: ``{(field, val_a, val_b): score}`` dict for related</span>
+<span class="sd">            but non-identical values.  Merged on top of the built-in starter</span>
+<span class="sd">            set unless ``replace_defaults=True``.  String value components</span>
+<span class="sd">            are lowercased automatically on ingestion so callers do not need</span>
+<span class="sd">            to match the exact case used in ``_compare``'s normalisation.</span>
+<span class="sd">        replace_defaults: When ``True``, the supplied ``partial_credit`` dict</span>
+<span class="sd">            completely replaces the built-in one instead of extending it.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">weights</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">partial_credit</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">replace_defaults</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="ContextSimilarityScorer.weights">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/context_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.context_similarity.ContextSimilarityScorer.weights">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">weights</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">weights</span> <span class="ow">or</span> <span class="nb">dict</span><span class="p">(</span><span class="n">_DEFAULT_WEIGHTS</span><span class="p">)</span></div>
+
+
+        <span class="k">if</span> <span class="n">replace_defaults</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_partial</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">_normalise_pc</span><span class="p">(</span><span class="n">partial_credit</span> <span class="ow">or</span> <span class="p">{})</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_partial</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">_DEFAULT_PARTIAL_CREDIT</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">partial_credit</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_partial</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">_normalise_pc</span><span class="p">(</span><span class="n">partial_credit</span><span class="p">))</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Public interface expected by SimilarityEngine</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="ContextSimilarityScorer.score">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/context_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.context_similarity.ContextSimilarityScorer.score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return a context similarity score in [0, 1].</span>
+
+<span class="sd">        Only fields where *both* activities carry a non-None value contribute</span>
+<span class="sd">        to the score.  The contributing weights are re-normalised so the</span>
+<span class="sd">        result always reflects the full available evidence.</span>
+<span class="sd">        """</span>
+        <span class="n">applicable</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>   <span class="c1"># field → applicable weight</span>
+        <span class="n">raw</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>           <span class="c1"># field → raw similarity</span>
+
+        <span class="k">for</span> <span class="n">field</span><span class="p">,</span> <span class="n">weight</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">weights</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">val_a</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">val_b</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">val_a</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">val_b</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># One or both sides unknown: skip, redistribute weight</span>
+                <span class="k">continue</span>
+
+            <span class="n">applicable</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="o">=</span> <span class="n">weight</span>
+            <span class="n">raw</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compare</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">val_a</span><span class="p">,</span> <span class="n">val_b</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">applicable</span><span class="p">:</span>
+            <span class="c1"># No field has data on both sides — can't say anything</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+
+        <span class="n">total_weight</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">applicable</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">total_weight</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="c1"># All applicable weights are zero (e.g. caller passed a fully-zero</span>
+            <span class="c1"># weight dict).  Avoid division by zero; return 0 — no evidence.</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+        <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="n">applicable</span><span class="p">[</span><span class="n">f</span><span class="p">]</span> <span class="o">/</span> <span class="n">total_weight</span> <span class="o">*</span> <span class="n">raw</span><span class="p">[</span><span class="n">f</span><span class="p">]</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">applicable</span><span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Private helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="ContextSimilarityScorer._compare">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/context_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.context_similarity.ContextSimilarityScorer._compare">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compare</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">val_a</span><span class="p">,</span> <span class="n">val_b</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return similarity for a single field pair.</span>
+
+<span class="sd">        Returns 1.0 for exact match, a partial-credit value for related pairs,</span>
+<span class="sd">        or 0.0 for unrelated values.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">val_a</span> <span class="o">==</span> <span class="n">val_b</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">1.0</span>
+
+        <span class="c1"># Normalise strings for comparison (strip, lowercase) to avoid</span>
+        <span class="c1"># penalising trivial formatting differences</span>
+        <span class="n">norm_a</span> <span class="o">=</span> <span class="n">val_a</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val_a</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">val_a</span>
+        <span class="n">norm_b</span> <span class="o">=</span> <span class="n">val_b</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val_b</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">val_b</span>
+
+        <span class="k">if</span> <span class="n">norm_a</span> <span class="o">==</span> <span class="n">norm_b</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">1.0</span>
+
+        <span class="c1"># Look up partial credit (try both orderings)</span>
+        <span class="n">pc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_partial</span><span class="o">.</span><span class="n">get</span><span class="p">((</span><span class="n">field</span><span class="p">,</span> <span class="n">norm_a</span><span class="p">,</span> <span class="n">norm_b</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">pc</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">pc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_partial</span><span class="o">.</span><span class="n">get</span><span class="p">((</span><span class="n">field</span><span class="p">,</span> <span class="n">norm_b</span><span class="p">,</span> <span class="n">norm_a</span><span class="p">))</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">pc</span><span class="p">)</span> <span class="k">if</span> <span class="n">pc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.0</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

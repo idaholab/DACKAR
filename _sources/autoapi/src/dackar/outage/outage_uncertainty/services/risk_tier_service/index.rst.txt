@@ -1,0 +1,127 @@
+src.dackar.outage.outage_uncertainty.services.risk_tier_service
+===============================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.services.risk_tier_service
+
+.. autoapi-nested-parse::
+
+   Risk tier assignment and evidence chain service for pre-outage risk prediction.
+
+   Provides two responsibilities consumed by the recommendation synthesis stage:
+
+   1. **Tier assignment** — maps (causal_score, trend_label, component_id) to a
+      confidence tier and an explanatory reason code.
+
+   2. **Evidence chain builder** — assembles a chronologically-ordered list of
+      condition-report and work-order records for a given component, used to
+      populate the evidence section of a recommendation card.
+
+   Tier definitions
+   ----------------
+   ``data_supported``
+       Strong causal evidence: emergent work recurred in most training outages
+       and was on the critical path.
+
+   ``sme_informed``
+       Partial causal evidence, or an escalating trend with no emergent precedent,
+       or a component-class override by SME (e.g. progressive degradation
+       mechanisms where the causal model under-weights historical CRs).
+
+   ``low_confidence_watch``
+       Weak trend signal only — monitor but do not proactively allocate schedule
+       reserve.
+
+   ``None``
+       No actionable signal — true negative.
+
+   Tier assignment rules (applied in priority order)
+   --------------------------------------------------
+   1. ``causal_score >= 1.5`` AND ``component_id in sme_override_ids``
+      → ``sme_informed``, ``sme_override_predictable_progressive_degradation``
+   2. ``causal_score >= 1.5``
+      → ``data_supported``, ``strong_causal_evidence``
+   3. ``causal_score > 0``
+      → ``sme_informed``, ``partial_causal_evidence``
+   4. ``causal_score == 0.0`` AND ``trend_label == "escalating"``
+      → ``sme_informed``, ``escalating_trend_no_emergent_precedent``
+   5. ``trend_label == "moderate"``
+      → ``low_confidence_watch``, ``weak_trend_signal``
+   6. else → ``None``, ``None``
+
+   Intended caller
+   ---------------
+   :class:`~outage_uncertainty.workflows.pre_outage_risk_workflow.PreOutageRiskWorkflow`
+   (Stage G).
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.services.risk_tier_service.JsonDict
+   src.dackar.outage.outage_uncertainty.services.risk_tier_service.TIER_PRIORITY
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.services.risk_tier_service.RiskTierService
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:data:: TIER_PRIORITY
+   :type:  Dict[Optional[str], int]
+
+.. py:class:: RiskTierService(sme_override_ids = None)
+
+   Assign confidence tiers and build evidence chains for flagged components.
+
+   :param sme_override_ids: Optional set of component IDs for which the SME-override rule (rule 1)
+                            fires when ``causal_score >= 1.5``.  Pass ``None`` to disable the
+                            override for all components.
+
+
+   .. py:attribute:: _sme_overrides
+      :type:  Set[str]
+
+
+   .. py:method:: assign_tier(component_id, causal_score, trend_label)
+
+      Return ``(tier, tier_reason)`` for the given component signals.
+
+      :param component_id: Canonical component identifier (used for SME override lookup).
+      :param causal_score: Output of :class:`~outage_uncertainty.services.causal_scoring_service.CausalScoringService`.
+      :param trend_label: Output of :class:`~outage_uncertainty.services.trend_analysis_service.TrendAnalysisService`.
+
+      :returns: * Tuple of ``(tier_name, reason_code)`` or ``(None, None)`` when no
+                * *actionable signal is present.*
+
+
+
+   .. py:method:: build_evidence_chain(component_id, component_histories)
+
+      Build a chronologically-ordered evidence list for *component_id*.
+
+      Each record in the returned list is one of:
+
+      * ``{"record_id", "record_type": "condition_report", "outage_cycle",
+           "cr_category", "description"}``
+      * ``{"record_id", "record_type": "work_order", "outage_cycle",
+           "wo_type", "description"}``
+
+      :param component_id: Component to build evidence for.
+      :param component_histories: Full component histories mapping (same dict passed to the
+                                  scoring services).
+
+      :rtype: List of evidence dicts, sorted by ``outage_cycle`` (lexicographic).
+
+
+

@@ -1,0 +1,240 @@
+src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler
+================================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler
+
+.. autoapi-nested-parse::
+
+   Outlier separation for historical activity durations.
+
+   The core insight from the PDF: outage task duration distributions are often
+   bimodal — a "routine execution" cluster plus a lower-probability
+   "disruption-driven" tail caused by unexpected findings, rework, or emergent
+   coordination issues.  Pooling both modes into a single distribution inflates
+   the P80/P90 for tasks that almost always run cleanly, and can underestimate
+   when the disruption mode is frequent.
+
+   This module separates the two populations so downstream components can:
+     - Fit the main distribution on the *routine* group
+     - Report the *extended_fraction* as a risk signal
+     - Optionally model the disruption mode separately (future work)
+
+   Separation strategies
+   ---------------------
+   keep_all
+       No separation; all durations are treated as routine.  Safe fallback for
+       very small samples (n < ``MIN_SAMPLES_FOR_SEPARATION``).
+
+   trim_symmetric
+       Symmetric percentage trim.  Removes the top and bottom ``trim_pct``
+       fraction.  Useful when both tails are noise; rarely appropriate for
+       duration data which is naturally right-skewed.
+
+   iqr
+       Upper-fence IQR separation: fence = Q3 + 1.5 × IQR.  Durations above
+       the fence go to the *extended* group.  No lower fence — very short
+       executions are genuine and should not be removed.
+
+   mad
+       Median + k × MAD upper threshold (default k = 3.0).  More robust than
+       IQR for small samples (n ≥ 4) and strongly skewed distributions because
+       the MAD is insensitive to extreme values.
+
+   Weight alignment
+   ----------------
+   Durations and their relevance_weights (from NeighborSelector) are processed
+   as aligned pairs so that the separation preserves the correct weight for each
+   retained duration.  Weights are re-normalised within each group.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.logger
+   src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.MIN_SAMPLES_FOR_SEPARATION
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierSeparation
+   src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierHandler
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler._normalise
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: MIN_SAMPLES_FOR_SEPARATION
+   :value: 4
+
+
+.. py:class:: OutlierSeparation
+
+   Result of separating routine from disruption-driven durations.
+
+   .. attribute:: routine, routine_weights
+
+      Durations (and their re-normalised relevance weights) that fall
+      within the normal execution range.
+
+   .. attribute:: extended, extended_weights
+
+      Durations classified as disruption-driven (above the fence).
+
+   .. attribute:: extended_fraction
+
+      Fraction of the total sample that was classified as extended.
+
+   .. attribute:: method
+
+      Which strategy produced this separation.
+
+   .. attribute:: threshold
+
+      The computed upper fence value (``None`` for keep_all / trim).
+
+
+   .. py:attribute:: routine
+      :type:  list[float]
+      :value: []
+
+
+
+   .. py:attribute:: routine_weights
+      :type:  list[float]
+      :value: []
+
+
+
+   .. py:attribute:: extended
+      :type:  list[float]
+      :value: []
+
+
+
+   .. py:attribute:: extended_weights
+      :type:  list[float]
+      :value: []
+
+
+
+   .. py:attribute:: method
+      :type:  str
+      :value: 'keep_all'
+
+
+
+   .. py:attribute:: threshold
+      :type:  float | None
+      :value: None
+
+
+
+   .. py:property:: extended_fraction
+      :type: float
+
+
+      Fraction of the routine+extended sample classified as extended.
+
+
+   .. py:property:: n_routine
+      :type: int
+
+
+      Number of durations in the routine group.
+
+
+   .. py:property:: n_total
+      :type: int
+
+
+      Combined count of routine and extended durations.
+
+
+.. py:class:: OutlierHandler(strategy = 'iqr', trim_pct = 0.1, mad_scale = 3.0, iqr_multiplier = 1.5)
+
+   Separate routine durations from disruption-driven outliers.
+
+   :param strategy: One of ``'keep_all'``, ``'trim_symmetric'``, ``'iqr'``,
+                    ``'mad'``.  Default ``'iqr'``.
+   :param trim_pct: Fraction to remove from each tail when
+                    ``strategy='trim_symmetric'``.  Default 0.10 (10 %).
+   :param mad_scale: Multiplier k for the MAD upper threshold
+                     (threshold = median + k × MAD).  Default 3.0.
+
+
+   .. py:attribute:: VALID_STRATEGIES
+
+
+   .. py:attribute:: strategy
+      :value: 'iqr'
+
+
+
+   .. py:attribute:: trim_pct
+      :value: 0.1
+
+
+
+   .. py:attribute:: mad_scale
+      :value: 3.0
+
+
+
+   .. py:attribute:: iqr_multiplier
+      :value: 1.5
+
+
+
+   .. py:method:: separate(durations, weights = None)
+
+      Separate *durations* into routine and extended groups.
+
+      :param durations: List of historical actual durations (hours).
+      :param weights: Corresponding relevance weights from
+                      :class:`~outage_uncertainty.retrieval.neighbor_selector.NeighborSelector`.
+                      If ``None``, uniform weights are used.
+
+      :returns: :class:`OutlierSeparation` with both groups and their weights.
+
+
+
+   .. py:method:: _keep_all(durations, weights)
+      :staticmethod:
+
+
+
+   .. py:method:: _trim_symmetric(durations, weights)
+
+
+   .. py:method:: _iqr(durations, weights)
+
+
+   .. py:method:: _mad(durations, weights)
+
+
+   .. py:method:: _split_at(durations, weights, fence, method)
+      :staticmethod:
+
+
+
+.. py:function:: _normalise(weights)
+
+   Return weights normalised to sum to 1.0; uniform if all zero.
+
+

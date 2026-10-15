@@ -1,0 +1,362 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.preprocessing.cleaners &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.preprocessing.cleaners</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.preprocessing.cleaners</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Text cleaning pipeline for outage activity descriptions.</span>
+
+<span class="sd">Outage schedules (especially those exported from Primavera P6) contain</span>
+<span class="sd">descriptions that are notoriously noisy: equipment tag numbers, work-order</span>
+<span class="sd">codes, abbreviations, spelling errors, and irregular whitespace all compete</span>
+<span class="sd">with the signal words needed for similarity matching.</span>
+
+<span class="sd">This module provides four composable stages:</span>
+
+<span class="sd">ComponentIdRemover</span>
+<span class="sd">    Strips P6-style instrument/equipment tags and work-order codes using</span>
+<span class="sd">    regular expressions so they don't pollute token-overlap metrics.</span>
+
+<span class="sd">TextacyPreprocessor</span>
+<span class="sd">    Normalises whitespace, unicode, accents, and selective punctuation via</span>
+<span class="sd">    the ``dackar.text_processing.Preprocessing`` textacy pipeline.  Falls</span>
+<span class="sd">    back to minimal regex cleaning when the dependency is absent.</span>
+
+<span class="sd">AbbreviationResolver  (imported from .abbreviations — not here)</span>
+<span class="sd">    Expands domain abbreviations using the DACKAR Excel database.</span>
+
+<span class="sd">IdentityTransform</span>
+<span class="sd">    Pass-through no-op used to skip a stage.</span>
+
+<span class="sd">ActivityCleaner</span>
+<span class="sd">    Orchestrates all four stages in the correct order.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.domain.activity</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActivityCase</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Outage-specific textacy preprocessor list (lighter than the DACKAR default)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># We omit URL/email/hashtag/phone-number removal (they never appear in P6</span>
+<span class="c1"># descriptions) and numerize (duration numbers are meaningful).  We keep the</span>
+<span class="c1"># operations that genuinely help: whitespace, unicode, accents, selective</span>
+<span class="c1"># punctuation, and hyphenated-word merging.</span>
+<div class="viewcode-block" id="_OUTAGE_PREPROCESSOR_LIST">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners._OUTAGE_PREPROCESSOR_LIST">[docs]</a>
+<span class="n">_OUTAGE_PREPROCESSOR_LIST</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">"hyphenated_words"</span><span class="p">,</span>   <span class="c1"># merge hyphenated compounds before tokenisation</span>
+    <span class="s2">"whitespace"</span><span class="p">,</span>         <span class="c1"># collapse tabs/newlines/multiple spaces</span>
+    <span class="s2">"unicode"</span><span class="p">,</span>            <span class="c1"># NFKC normalisation (removes zero-width chars etc.)</span>
+    <span class="s2">"accents"</span><span class="p">,</span>            <span class="c1"># strip diacritic marks</span>
+    <span class="s2">"punctuation"</span><span class="p">,</span>        <span class="c1"># remove noise punctuation (keep hyphens/slashes)</span>
+<span class="p">]</span></div>
+
+<div class="viewcode-block" id="_OUTAGE_PREPROCESSOR_OPTIONS">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners._OUTAGE_PREPROCESSOR_OPTIONS">[docs]</a>
+<span class="n">_OUTAGE_PREPROCESSOR_OPTIONS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"unicode"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"form"</span><span class="p">:</span> <span class="s2">"NFKC"</span><span class="p">},</span>
+    <span class="s2">"accents"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"fast"</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+    <span class="c1"># Keep hyphens (component tags), forward slashes (valve codes), and</span>
+    <span class="c1"># parentheses; remove everything else in the "only" list.  Periods are NOT</span>
+    <span class="c1"># removed: stripping "." splits decimal measurements ("pump 1.5 in" -&gt;</span>
+    <span class="c1"># "pump 1 5 in"), which corrupts a similarity-bearing token.</span>
+    <span class="s2">"punctuation"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"only"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"*"</span><span class="p">,</span> <span class="s2">"+"</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="s2">"="</span><span class="p">,</span> <span class="s2">"</span><span class="se">\\</span><span class="s2">"</span><span class="p">,</span> <span class="s2">"^"</span><span class="p">,</span> <span class="s2">"_"</span><span class="p">,</span> <span class="s2">"|"</span><span class="p">,</span> <span class="s2">"~"</span><span class="p">]},</span>
+<span class="p">}</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Stages</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="IdentityTransform">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners.IdentityTransform">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">IdentityTransform</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Pass-through: returns text unchanged.  Used to disable a pipeline stage."""</span>
+
+<div class="viewcode-block" id="IdentityTransform.transform">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners.IdentityTransform.transform">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return *text* unchanged."""</span>
+        <span class="k">return</span> <span class="n">text</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="ComponentIdRemover">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners.ComponentIdRemover">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ComponentIdRemover</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Strips P6 equipment/instrument tags and work-order codes from descriptions.</span>
+
+<span class="sd">    These codes appear frequently at the start of activity descriptions</span>
+<span class="sd">    (e.g. ``"PT-1234 CALIBRATE PRESSURE TRANSMITTER"``) or inline and carry</span>
+<span class="sd">    no similarity signal — two activities on completely different systems can</span>
+<span class="sd">    share the same text except for the tag number.</span>
+
+<span class="sd">    Patterns removed</span>
+<span class="sd">    ----------------</span>
+<span class="sd">    - Instrument / equipment tags:</span>
+<span class="sd">        1–4 uppercase letters, a hyphen, 2–7 digits, optional trailing letter</span>
+<span class="sd">        Examples: ``PT-123``, ``MOV-4567A``, ``FCV-001``</span>
+<span class="sd">    - Work-order / work-code prefixes:</span>
+<span class="sd">        ``WO`` or ``WC`` optionally followed by separator and 4+ digits</span>
+<span class="sd">        Examples: ``WO-12345``, ``WC 98765``, ``WO#20001``</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="ComponentIdRemover._PATTERNS">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners.ComponentIdRemover._PATTERNS">[docs]</a>
+    <span class="n">_PATTERNS</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">re</span><span class="o">.</span><span class="n">Pattern</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b[A-Z]{1,4}-\d{2,7}[A-Z]?\b"</span><span class="p">),</span>         <span class="c1"># PT-123, FCV-4567B</span>
+        <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bW[OC]\s*[-#]?\s*\d{4,}\b"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span>     <span class="c1"># WO-12345, WC 98765</span>
+    <span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="ComponentIdRemover.transform">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners.ComponentIdRemover.transform">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return *text* with equipment/instrument tags and WO codes removed</span>
+<span class="sd">        and whitespace collapsed."""</span>
+        <span class="k">for</span> <span class="n">pattern</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_PATTERNS</span><span class="p">:</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="n">pattern</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="s2">""</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\s+"</span><span class="p">,</span> <span class="s2">" "</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="TextacyPreprocessor">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners.TextacyPreprocessor">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">TextacyPreprocessor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Normalises text using the DACKAR textacy-based preprocessing pipeline.</span>
+
+<span class="sd">    Wraps ``dackar.text_processing.Preprocessing`` with a reduced operation</span>
+<span class="sd">    list tuned for outage activity descriptions (see module-level constants).</span>
+
+<span class="sd">    Falls back to minimal regex cleaning (whitespace collapse only) when</span>
+<span class="sd">    ``dackar.text_processing`` or ``textacy`` is not installed.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        preprocessor_list: Override the default list of textacy operations.</span>
+<span class="sd">        preprocessor_options: Override the default per-operation options.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">preprocessor_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">preprocessor_options</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="TextacyPreprocessor._pipeline">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners.TextacyPreprocessor._pipeline">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pipeline</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+        <span class="n">pl</span> <span class="o">=</span> <span class="n">preprocessor_list</span> <span class="k">if</span> <span class="n">preprocessor_list</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">_OUTAGE_PREPROCESSOR_LIST</span>
+        <span class="n">po</span> <span class="o">=</span> <span class="n">preprocessor_options</span> <span class="k">if</span> <span class="n">preprocessor_options</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">_OUTAGE_PREPROCESSOR_OPTIONS</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">dackar.text_processing.Preprocessing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Preprocessing</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pipeline</span> <span class="o">=</span> <span class="n">Preprocessing</span><span class="p">(</span><span class="n">preprocessorList</span><span class="o">=</span><span class="n">pl</span><span class="p">,</span> <span class="n">preprocessorOptions</span><span class="o">=</span><span class="n">po</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"TextacyPreprocessor: dackar textacy pipeline ready"</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"TextacyPreprocessor: dackar.text_processing unavailable (</span><span class="si">%s</span><span class="s2">); "</span>
+                <span class="s2">"using whitespace-collapse fallback"</span><span class="p">,</span>
+                <span class="n">exc</span><span class="p">,</span>
+            <span class="p">)</span>
+
+<div class="viewcode-block" id="TextacyPreprocessor.transform">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners.TextacyPreprocessor.transform">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return *text* normalised by the textacy pipeline, or whitespace-</span>
+<span class="sd">        collapsed when the pipeline dependency is unavailable."""</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">text</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pipeline</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pipeline</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="c1"># Minimal fallback: collapse whitespace and normalise case</span>
+        <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\s+"</span><span class="p">,</span> <span class="s2">" "</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Main cleaner</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="ActivityCleaner">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners.ActivityCleaner">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ActivityCleaner</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Cleans a raw activity description through a four-stage pipeline.</span>
+
+<span class="sd">    Stage order</span>
+<span class="sd">    -----------</span>
+<span class="sd">    1. ``component_id_remover`` — strips instrument tags and WO codes</span>
+<span class="sd">    2. ``preprocessor``         — textacy normalisation (whitespace, unicode …)</span>
+<span class="sd">    3. ``abbreviation_expander``— expands domain abbreviations</span>
+<span class="sd">    4. ``spell_checker``        — corrects residual misspellings (Phase 2)</span>
+
+<span class="sd">    Each stage must expose ``transform(text: str) -&gt; str``.</span>
+<span class="sd">    Pass ``IdentityTransform()`` to skip a stage entirely.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        component_id_remover: Removes equipment/WO codes. Defaults to</span>
+<span class="sd">            :class:`ComponentIdRemover`.</span>
+<span class="sd">        preprocessor: Normalises text. Defaults to :class:`TextacyPreprocessor`.</span>
+<span class="sd">        abbreviation_expander: Expands abbreviations. Defaults to</span>
+<span class="sd">            :class:`IdentityTransform` (pass-through); wire in</span>
+<span class="sd">            :class:`~outage_uncertainty.preprocessing.abbreviations.AbbreviationResolver`</span>
+<span class="sd">            from the facade.</span>
+<span class="sd">        spell_checker: Corrects spelling. Defaults to :class:`IdentityTransform`.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">component_id_remover</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">preprocessor</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">abbreviation_expander</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">spell_checker</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="ActivityCleaner.component_id_remover">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners.ActivityCleaner.component_id_remover">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">component_id_remover</span> <span class="o">=</span> <span class="n">component_id_remover</span> <span class="ow">or</span> <span class="n">ComponentIdRemover</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="ActivityCleaner.preprocessor">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners.ActivityCleaner.preprocessor">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">preprocessor</span> <span class="o">=</span> <span class="n">preprocessor</span> <span class="ow">or</span> <span class="n">TextacyPreprocessor</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="ActivityCleaner.abbreviation_expander">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners.ActivityCleaner.abbreviation_expander">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">abbreviation_expander</span> <span class="o">=</span> <span class="n">abbreviation_expander</span> <span class="ow">or</span> <span class="n">IdentityTransform</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="ActivityCleaner.spell_checker">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners.ActivityCleaner.spell_checker">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">spell_checker</span> <span class="o">=</span> <span class="n">spell_checker</span> <span class="ow">or</span> <span class="n">IdentityTransform</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="ActivityCleaner.clean">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/cleaners/index.html#src.dackar.outage.outage_uncertainty.preprocessing.cleaners.ActivityCleaner.clean">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">clean</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ActivityCase</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Run the cleaning pipeline and store the result in ``cleaned_description``."""</span>
+        <span class="n">text</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">activity</span><span class="o">.</span><span class="n">raw_description</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">component_id_remover</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">preprocessor</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">abbreviation_expander</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spell_checker</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="n">activity</span><span class="o">.</span><span class="n">cleaned_description</span> <span class="o">=</span> <span class="n">text</span>
+        <span class="k">return</span> <span class="n">activity</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

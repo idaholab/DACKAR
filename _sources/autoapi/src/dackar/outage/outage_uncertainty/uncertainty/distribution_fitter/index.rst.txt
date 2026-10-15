@@ -1,0 +1,121 @@
+src.dackar.outage.outage_uncertainty.uncertainty.distribution_fitter
+====================================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.uncertainty.distribution_fitter
+
+.. autoapi-nested-parse::
+
+   Empirical distribution fitter with weighted percentile support.
+
+   Weighted percentiles
+   --------------------
+   Each duration in the routine group carries a ``relevance_weight`` assigned by
+   :class:`~outage_uncertainty.retrieval.neighbor_selector.NeighborSelector`.
+   High-similarity neighbours receive proportionally more weight, so the P50/P80
+   estimate is dominated by the closest historical analogs rather than treating
+   all matches as equally informative.
+
+   Algorithm (weighted Hazen / midpoint percentile)
+       1. Sort ``(duration, weight)`` pairs by duration.
+       2. Build a weighted CDF placing each point at its midpoint position
+          ``(cumulative_weight_before + 0.5 * weight) / total``.
+       3. Interpolate linearly between adjacent points to find the value at
+          quantile *q*.
+
+   With uniform weights this reduces to NumPy's Hazen percentile
+   (``np.percentile(..., method="hazen")``), i.e. plotting position
+   ``(i + 0.5) / n`` — **not** the default linear/Type-7 method.  For uniform
+   1..10 this gives P90 = 9.5 and P10 = 1.5 (vs 9.1 / 1.9 for Type-7); the
+   midpoint convention is deliberate so the tail quantiles are not pulled inward
+   by the small historical-analog samples typical here.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.uncertainty.distribution_fitter.logger
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.uncertainty.distribution_fitter.DistributionFitter
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.uncertainty.distribution_fitter._weighted_percentile
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:class:: DistributionFitter(percentiles = (0.1, 0.5, 0.8, 0.9))
+
+   Fit an empirical :class:`DurationDistribution` from a sample.
+
+   :param percentiles: Quantile levels to compute.  Default ``(0.10, 0.50,
+                       0.80, 0.90)``.
+
+
+   .. py:attribute:: percentiles
+      :value: (0.1, 0.5, 0.8, 0.9)
+
+
+
+   .. py:method:: fit(durations, weights = None)
+
+      Fit a distribution from *durations* with optional *weights*.
+
+      :param durations: Duration values (hours).
+      :param weights: Relevance weights for each duration.  If ``None``,
+                      uniform weights are assumed.
+
+      :returns: A :class:`DurationDistribution` with ``distribution_type``
+                ``"empirical"`` and weighted p10/p50/p80/p90 percentiles.
+
+
+
+   .. py:method:: fit_from_separation(separation)
+
+      Fit a two-component mixture distribution from an :class:`OutlierSeparation`.
+
+      The routine group drives the primary percentile estimates (``p10`` …
+      ``p90``).  When an extended group is also present:
+
+      * ``dist.extended_samples`` and ``dist.mixture_weight`` are populated so
+        that :meth:`~DurationDistribution.sample`, :meth:`~DurationDistribution.mean`,
+        and :meth:`~DurationDistribution.variance` reflect the full mixture.
+      * Mixture-aware ``p80`` / ``p90`` (combining both pools with their
+        respective mixture weights) are stored under
+        ``parameters["mixture_p80"]`` / ``"mixture_p90"]`` for planners who
+        want a single tail quantile that accounts for disrupted executions.
+
+
+
+.. py:function:: _weighted_percentile(values, weights, q)
+
+   Compute the *q*-th weighted percentile of *values*.
+
+   Uses linear interpolation between adjacent CDF points placed at midpoint
+   positions ``(cumulative_before + 0.5 * w) / total``.  With uniform weights
+   this is NumPy's Hazen percentile (``method="hazen"``), not the default
+   Type-7 method.
+
+   :param values: Data points.
+   :param weights: Non-negative weights (need not sum to 1).
+   :param q: Quantile in [0, 1].
+
+   :returns: Interpolated percentile value.
+
+

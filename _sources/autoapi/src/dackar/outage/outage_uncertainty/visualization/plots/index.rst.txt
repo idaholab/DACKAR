@@ -1,0 +1,192 @@
+src.dackar.outage.outage_uncertainty.visualization.plots
+========================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.visualization.plots
+
+.. autoapi-nested-parse::
+
+   outage_uncertainty.visualization.plots — Reusable plot functions for outage uncertainty analysis.
+
+   All functions follow a consistent signature:
+       plot_*(data, ..., *, title=None, ax=None or figsize=None) -> (fig, axes)
+
+   They can be used standalone (fig created internally) or composed into a
+   larger figure by passing an existing axes object.
+
+   Functions
+   ---------
+   plot_finish_distribution        Histogram of MC project durations + percentile lines
+   plot_activity_risk_ranking      3-panel bar chart: criticality / drag / CP sensitivity
+   plot_cp_path_heatmap            Frequency heatmap of top-N critical-path routes
+   plot_duration_distributions     Grid of per-activity duration histograms
+   plot_analog_scatter             Planned vs actual duration scatter coloured by overrun
+   plot_duration_summary_bars      Horizontal bars: planned vs p50 ± p80 for all activities
+   plot_preprocessing_benchmark    NED and exact-match bar chart from the cleaning benchmark
+   plot_routine_vs_disruption      Two-panel: routine vs disruption histograms + CDF comparison
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.visualization.plots._BLUE
+   src.dackar.outage.outage_uncertainty.visualization.plots._GREEN
+   src.dackar.outage.outage_uncertainty.visualization.plots._ORANGE
+   src.dackar.outage.outage_uncertainty.visualization.plots._RED
+   src.dackar.outage.outage_uncertainty.visualization.plots._DARK
+   src.dackar.outage.outage_uncertainty.visualization.plots._GREY
+   src.dackar.outage.outage_uncertainty.visualization.plots._TIER_COLORS
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.visualization.plots._fig_ax
+   src.dackar.outage.outage_uncertainty.visualization.plots.plot_finish_distribution
+   src.dackar.outage.outage_uncertainty.visualization.plots.plot_activity_risk_ranking
+   src.dackar.outage.outage_uncertainty.visualization.plots.plot_cp_path_heatmap
+   src.dackar.outage.outage_uncertainty.visualization.plots.plot_duration_distributions
+   src.dackar.outage.outage_uncertainty.visualization.plots.plot_analog_scatter
+   src.dackar.outage.outage_uncertainty.visualization.plots.plot_duration_summary_bars
+   src.dackar.outage.outage_uncertainty.visualization.plots.plot_preprocessing_benchmark
+   src.dackar.outage.outage_uncertainty.visualization.plots.plot_routine_vs_disruption
+
+
+Module Contents
+---------------
+
+.. py:data:: _BLUE
+   :value: '#4C72B0'
+
+
+.. py:data:: _GREEN
+   :value: '#27ae60'
+
+
+.. py:data:: _ORANGE
+   :value: '#e67e22'
+
+
+.. py:data:: _RED
+   :value: '#e74c3c'
+
+
+.. py:data:: _DARK
+   :value: '#2c3e50'
+
+
+.. py:data:: _GREY
+   :value: '#95a5a6'
+
+
+.. py:data:: _TIER_COLORS
+
+.. py:function:: _fig_ax(ax, figsize)
+
+   Return (fig, ax): create new figure when ax is None.
+
+
+.. py:function:: plot_finish_distribution(cp_times, risk, baseline_cp, *, title = None, ax=None)
+
+   Histogram of Monte Carlo project durations with baseline / percentile lines.
+
+   :param cp_times:
+   :type cp_times: raw list of sampled project durations (hours)
+   :param risk: p50_finish, p80_finish, p90_finish, robustness
+   :type risk: schedule-risk dict with keys
+   :param baseline_cp:
+   :type baseline_cp: deterministic baseline critical-path duration (hours)
+
+
+.. py:function:: plot_activity_risk_ranking(risk, activity_ids, *, title = None, figsize = None)
+
+   Three-panel bar chart: criticality index / expected drag / CP sensitivity.
+
+   :param risk: criticality_index, expected_drag, cp_sensitivity
+   :type risk: schedule-risk dict with keys
+   :param activity_ids:
+   :type activity_ids: ordered list of activity IDs to include
+
+
+.. py:function:: plot_cp_path_heatmap(cp_paths, *, title = None, top_n = 6, ax=None)
+
+   Frequency heatmap of the top-N most common critical-path routes.
+
+   :param cp_paths: for one simulation iteration (sim_result.cp_paths)
+   :type cp_paths: list of lists, each being the ordered activity IDs on the CP
+   :param top_n:
+   :type top_n: how many routes to show
+
+
+.. py:function:: plot_duration_distributions(activities, results, *, max_cols = 3, title = None)
+
+   Grid of histograms showing sampled duration distributions.
+
+   :param activities: planned_duration_hours)
+   :type activities: list of planned activity dicts (must have activity_id,
+   :param results: service.estimate_activity); activities with no samples
+                   (est.estimated_distribution is None) are skipped.
+   :type results: parallel list of ActivityDurationEstimate objects (from
+   :param max_cols:
+   :type max_cols: columns in the subplot grid
+
+
+.. py:function:: plot_analog_scatter(activities, results, *, title = None, ax=None)
+
+   Planned vs P50 estimated duration, coloured by confidence tier.
+
+   X-axis: planned_duration_hours
+   Y-axis: estimated p50 duration (median of analog samples)
+   Color:  confidence tier
+
+
+.. py:function:: plot_duration_summary_bars(activities, results, *, title = None, figsize = None)
+
+   Horizontal bar chart: planned duration vs P50 estimate ± P80 band.
+
+   Each activity row shows:
+     - grey bar   : planned duration
+     - coloured bar: P50 estimate (coloured by confidence tier)
+     - error bar  : P50 → P80 uncertainty band
+
+
+.. py:function:: plot_preprocessing_benchmark(benchmark_rows, *, title = None, figsize = None)
+
+   NED and exact-match rates before/after cleaning, broken down by category.
+
+   :param benchmark_rows: contaminated_description, category
+   :type benchmark_rows: list of dicts with keys clean_description,
+
+
+.. py:function:: plot_routine_vs_disruption(dist, activity_id = '', *, planned_hours = None, title = None, figsize = None)
+
+   Two-panel figure visualising routine vs. disruption-driven execution modes.
+
+   This corresponds to Slide 6 step 3: *'Separate routine execution (typical
+   cases) from disruption-driven outliers (scope expansions, rework, parts
+   delays).'*
+
+   Left panel
+       Overlaid histograms — routine pool (blue) and disruption-driven pool
+       (red), with vertical marker lines for the planned baseline, routine
+       P50, routine P80, and mixture-aware P80.  The IQR separation fence is
+       annotated when available.
+
+   Right panel
+       Empirical CDF curves comparing the routine-only distribution against
+       the full mixture (sampled from both pools with ``mixture_weight``
+       probability for the disruption mode).  The gap between the two P80
+       lines is the contingency underestimate when disruption is ignored.
+
+   :param dist: ``extended_samples`` and ``mixture_weight``.
+   :type dist: DurationDistribution with ``samples``, optionally
+   :param activity_id:
+   :type activity_id: Label shown in the title.
+   :param planned_hours:
+   :type planned_hours: Baseline planned duration to mark as a vertical line.
+
+

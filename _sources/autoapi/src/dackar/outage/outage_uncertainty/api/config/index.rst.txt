@@ -1,0 +1,267 @@
+src.dackar.outage.outage_uncertainty.api.config
+===============================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.api.config
+
+.. autoapi-nested-parse::
+
+   Application configuration for the outage uncertainty service.
+
+   All fields have sensible defaults so the service can be constructed with
+   ``AppConfig()`` and work out of the box (using fallback implementations
+   where heavy dependencies are absent).
+
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.api.config.AppConfig
+
+
+Module Contents
+---------------
+
+.. py:class:: AppConfig
+
+   .. py:attribute:: prescorer_top_k
+      :type:  int
+      :value: 200
+
+
+      Number of candidates returned by the cheap pre-filter before the
+      expensive full SimilarityEngine runs.  Higher values improve recall
+      at the cost of more WordNet calls.
+
+
+   .. py:attribute:: prescorer_text_weight
+      :type:  float
+      :value: 0.5
+
+
+      Share of the pre-filter score attributed to text (token Jaccard).
+      The complementary share goes to context (exact-match field average).
+
+
+   .. py:attribute:: similarity_top_k
+      :type:  int
+      :value: 30
+
+
+      Maximum number of neighbours returned after full scoring.
+
+
+   .. py:attribute:: similarity_min_score
+      :type:  float
+      :value: 0.0
+
+
+      Hard score floor applied before the top-k cut.  Default 0.0 (disabled).
+      Prefer ``similarity_warn_below`` for soft signalling.
+
+
+   .. py:attribute:: similarity_warn_below
+      :type:  float
+      :value: 0.4
+
+
+      If the best match total_score is below this threshold the selector
+      flags low coverage, which the estimator surfaces as a warning on the
+      ActivityEstimate.
+
+
+   .. py:attribute:: similarity_weight_exponent
+      :type:  float
+      :value: 2.0
+
+
+      weight ∝ score^α.
+      Higher values give stronger preference to top matches (α=1 → linear,
+      α→∞ → winner-takes-all).
+
+      :type: α for power-normalised relevance weights
+
+
+   .. py:attribute:: monte_carlo_samples
+      :type:  int
+      :value: 1000
+
+
+      Number of simulation runs for schedule risk analysis.
+
+
+   .. py:attribute:: taxonomy_rules
+      :type:  dict[str, dict[str, str]]
+
+      Keyword-to-taxonomy mapping used by TaskLabelMapper.
+      Format::
+
+          {
+              "transmitter": {"discipline": "I&C", "task_family": "calibration",
+                              "component_family": "transmitter"},
+              ...
+          }
+
+      These rules are merged *on top of* the built-in vocabulary (when
+      ``taxonomy_use_defaults=True``) and take precedence.
+
+
+   .. py:attribute:: taxonomy_use_defaults
+      :type:  bool
+      :value: True
+
+
+      When ``True`` (default) the built-in nuclear-outage taxonomy vocabulary
+      (``DEFAULT_TAXONOMY_RULES``) is loaded automatically.  User-supplied
+      ``taxonomy_rules`` are merged on top and always take precedence.
+      Set to ``False`` to use only the rules in ``taxonomy_rules``.
+
+
+   .. py:attribute:: abbreviations_file
+      :type:  str | None
+      :value: None
+
+
+      Path to the abbreviations Excel file (.xlsx) with columns
+      ['Abbreviation', 'Full'].  When ``None`` the facade uses the default
+      DACKAR data path (``<project_root>/data/abbreviations.xlsx``).
+      Set to an empty string ``""`` to disable file-based loading entirely.
+
+
+   .. py:attribute:: abbreviations
+      :type:  dict[str, str]
+
+      full} pairs merged on top of the Excel file.
+      Useful for testing or for plant-specific additions not in the master file.
+
+      :type: Extra {abbr
+
+
+   .. py:attribute:: semantic_disambiguation_method
+      :type:  str
+      :value: 'simple_lesk'
+
+
+      Word-sense disambiguation method passed to
+      ``dackar.similarity.SentenceSimilarity``.
+      Options: ``'simple_lesk'`` (default), ``'original_lesk'``,
+      ``'cosine_lesk'``, ``'adapted_lesk'``, ``'max_similarity'``.
+
+
+   .. py:attribute:: semantic_similarity_method
+      :type:  str
+      :value: 'semantic_similarity_synsets'
+
+
+      Synset comparison method passed to ``SentenceSimilarity``.
+      Default uses harmonic mean of WordNet path similarity and Wu-Palmer.
+
+
+   .. py:attribute:: outlier_strategy
+      :type:  str
+      :value: 'iqr'
+
+
+      Strategy used by :class:`OutlierHandler` to separate routine durations
+      from extended/disrupted ones.  Options:
+
+      * ``'iqr'`` – upper fence = Q3 + 1.5 × IQR (default).
+      * ``'mad'`` – fence = median + ``outlier_mad_scale`` × MAD.
+      * ``'trim_symmetric'`` – discard top and bottom ``outlier_trim_pct``
+        of samples.
+      * ``'keep_all'`` – no separation (single-pool fitting).
+
+
+   .. py:attribute:: outlier_mad_scale
+      :type:  float
+      :value: 3.0
+
+
+      Number of MADs above the median used as the outlier fence when
+      ``outlier_strategy='mad'``.
+
+
+   .. py:attribute:: outlier_trim_pct
+      :type:  float
+      :value: 0.1
+
+
+      Fraction of extreme samples removed from each tail when
+      ``outlier_strategy='trim_symmetric'``.
+
+
+   .. py:attribute:: ollama_base_url
+      :type:  str
+      :value: 'http://localhost:11434'
+
+
+      Base URL of the local Ollama HTTP API server.
+
+
+   .. py:attribute:: embedding_enabled
+      :type:  bool
+      :value: False
+
+
+      When ``True`` the :class:`EmbeddingSemanticScorer` (cosine similarity on
+      dense vectors) replaces the default WordNet/Pawar-Mago scorer.  Requires
+      a locally running Ollama server at ``ollama_base_url``.  Default ``False``
+      so the service remains functional without Ollama.
+
+
+   .. py:attribute:: embedding_model
+      :type:  str
+      :value: 'nomic-embed-text:latest'
+
+
+      Ollama embedding model.  Benchmarked options:
+
+      * ``"nomic-embed-text:latest"`` — best discrimination ratio (1.415), 274 MB,
+        fastest.  Recommended default.
+      * ``"mxbai-embed-large:latest"`` — best Precision@5/10 (0.648/0.556),
+        669 MB.  Preferred when retrieval ranking quality is the top priority.
+
+
+   .. py:attribute:: embedding_cache_path
+      :type:  str | None
+      :value: None
+
+
+      Optional path to a JSON file for persistent embedding cache.  When set,
+      embeddings computed during ingestion are saved to disk and reloaded on the
+      next cold start — avoiding redundant Ollama calls for a stable historical
+      corpus.  ``None`` means in-memory only.
+
+
+   .. py:attribute:: spell_check_enabled
+      :type:  bool
+      :value: True
+
+
+      When ``True`` (default) the :class:`DomainSpellChecker` is applied
+      after abbreviation expansion to fix residual typos in activity
+      descriptions before similarity search.  Set to ``False`` to disable.
+
+
+   .. py:attribute:: spell_check_cutoff
+      :type:  float
+      :value: 0.85
+
+
+      Minimum SequenceMatcher ratio required for a spell correction to be
+      accepted.  Default 0.85.  Lower values increase recall at the cost of
+      more false corrections; values below 0.80 are not recommended.
+
+
+   .. py:attribute:: fallback_min_support
+      :type:  int
+      :value: 3
+
+
+      Minimum number of historical analogues required at each fallback level
+      before the level is accepted.  If no level meets this threshold the
+      service falls back to planned duration as the prior.
+
+

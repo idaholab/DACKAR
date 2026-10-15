@@ -1,0 +1,125 @@
+src.dackar.outage.outage_uncertainty.retrieval.context_similarity
+=================================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.retrieval.context_similarity
+
+.. autoapi-nested-parse::
+
+   Context similarity scorer for outage activities.
+
+   Scores how similar two activities are based on structured metadata — the
+   "case" dimensions beyond the free-text description.  This implements the
+   case-based similarity philosophy from the PDF: task descriptions alone are
+   insufficient; discipline, component family, plant context, and execution
+   mode all carry independent similarity signal.
+
+   Key design choices
+   ------------------
+   Weight redistribution for missing fields
+       When a field is ``None`` on either activity, it is skipped and the
+       remaining applicable weights are re-normalised to sum to 1.0.  This
+       means unknown taxonomy labels do not penalise the score — the result is
+       "similarity based on available evidence."
+
+       Contrast with the original stub where ``_same(None, None)`` → 0.0,
+       which incorrectly treated "both unlabelled" as "confirmed different."
+
+   Partial credit for related values
+       Exact string equality gives 1.0.  A configurable ``partial_credit`` dict
+       allows domain-specific partial scores for values that are related but not
+       identical (e.g. ``("task_family", "valve_inspection", "valve_replacement")
+       → 0.3``).  Both orderings of the pair are checked automatically.
+
+       This is intentionally left sparse by default — the Phase 4 taxonomy work
+       will populate it with outage-domain knowledge.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.retrieval.context_similarity.logger
+   src.dackar.outage.outage_uncertainty.retrieval.context_similarity._DEFAULT_WEIGHTS
+   src.dackar.outage.outage_uncertainty.retrieval.context_similarity._DEFAULT_PARTIAL_CREDIT
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.retrieval.context_similarity.ContextSimilarityScorer
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.retrieval.context_similarity._normalise_pc
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: _DEFAULT_WEIGHTS
+   :type:  dict[str, float]
+
+.. py:data:: _DEFAULT_PARTIAL_CREDIT
+   :type:  dict[tuple, float]
+
+.. py:function:: _normalise_pc(pc)
+
+   Return a copy of *pc* with string value components lowercased.
+
+   ``_compare`` looks up keys as ``(field, norm_a, norm_b)`` where
+   ``norm_a``/``norm_b`` are already ``str.lower()``-ed.  If a caller
+   passes keys with mixed-case values (e.g.
+   ``("task_family", "Replacement", "Refurbishment")``), the lookup
+   would silently miss and return 0.0.  Normalising at ingestion time
+   makes the constraint transparent rather than a footgun.
+
+
+.. py:class:: ContextSimilarityScorer(weights = None, partial_credit = None, replace_defaults = False)
+
+   Score contextual (metadata-level) similarity between two activities.
+
+   :param weights: Per-field weight dict.  Missing-field redistribution means
+                   the absolute values matter only relative to each other, not their
+                   sum.  Defaults to :data:`_DEFAULT_WEIGHTS`.
+   :param partial_credit: ``{(field, val_a, val_b): score}`` dict for related
+                          but non-identical values.  Merged on top of the built-in starter
+                          set unless ``replace_defaults=True``.  String value components
+                          are lowercased automatically on ingestion so callers do not need
+                          to match the exact case used in ``_compare``'s normalisation.
+   :param replace_defaults: When ``True``, the supplied ``partial_credit`` dict
+                            completely replaces the built-in one instead of extending it.
+
+
+   .. py:attribute:: weights
+      :type:  dict[str, float]
+
+
+   .. py:method:: score(a, b)
+
+      Return a context similarity score in [0, 1].
+
+      Only fields where *both* activities carry a non-None value contribute
+      to the score.  The contributing weights are re-normalised so the
+      result always reflects the full available evidence.
+
+
+
+   .. py:method:: _compare(field, val_a, val_b)
+
+      Return similarity for a single field pair.
+
+      Returns 1.0 for exact match, a partial-credit value for related pairs,
+      or 0.0 for unrelated values.
+
+
+

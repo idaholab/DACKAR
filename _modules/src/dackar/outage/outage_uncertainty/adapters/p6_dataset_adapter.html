@@ -1,0 +1,654 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">P6 dataset adapter — bridges ``OutageDataset`` → ``Iterable[dict]`` for</span>
+<span class="sd">``ActivityIngestionWorkflow``.</span>
+
+<span class="sd">``OutageDataset`` (from ``P6_adapter``) contains DataFrames for all tables in</span>
+<span class="sd">the P6 schedule model.  This adapter converts those DataFrames into the</span>
+<span class="sd">``Iterable[dict]`` format expected by</span>
+<span class="sd">``PandasActivityRepository.load_activities()`` — the existing ingestion entry</span>
+<span class="sd">point.  Nothing inside ``outage_uncertainty`` knows whether the dicts came from</span>
+<span class="sd">a P6 XER file, a CSV export, or a test fixture.</span>
+
+<span class="sd">Field sourcing strategy</span>
+<span class="sd">-----------------------</span>
+<span class="sd">Sourced directly:</span>
+<span class="sd">    ``activity_id``, ``outage_id``, ``raw_description``, timestamps,</span>
+<span class="sd">    ``planned_duration_hours``</span>
+
+<span class="sd">Computed in adapter:</span>
+<span class="sd">    ``actual_duration_hours``  (``actual_finish − actual_start`` in hours)</span>
+
+<span class="sd">Joined from related tables:</span>
+<span class="sd">    ``plant_id``, ``unit_id``          — from the ``Outage`` object (caller-supplied)</span>
+<span class="sd">    ``predecessor_ids``, ``successor_ids`` — ``Dependency`` table</span>
+<span class="sd">    ``is_vendor_supported``, ``crew_size`` — ``ResourceAssignment`` ⋈ ``Resource``</span>
+<span class="sd">    ``contractor_flag``                — ``Resource.org_unit`` membership (opt-in)</span>
+<span class="sd">    ``is_emergent``, ``is_rework``     — ``ScopeChangeEvent.change_type``</span>
+<span class="sd">    ``outage_phase``                   — time-window overlap with ``OutagePhase``</span>
+
+<span class="sd">Delegated to ``LabelMapper`` NLP:</span>
+<span class="sd">    ``discipline``, ``task_family``, ``component_family``,</span>
+<span class="sd">    ``has_rp_hold``, ``requires_scaffold``, ``has_clearance``</span>
+<span class="sd">    (all emitted as ``None`` / ``False`` by this adapter)</span>
+
+<span class="sd">Stashed in ``metadata["p6"]``:</span>
+<span class="sd">    ``task_code``, ``task_type``, ``critical_flag``, ``total_float_hours``,</span>
+<span class="sd">    ``scope_origin``, ``wbs_id``, ``schedule_version_id``</span>
+<span class="sd">    — preserved for audit and downstream use without polluting ``ActivityCase``</span>
+<span class="sd">      fields.</span>
+
+<span class="sd">Performance contract</span>
+<span class="sd">--------------------</span>
+<span class="sd">All DataFrame joins are pre-indexed into Python dicts/sets during</span>
+<span class="sd">``_build_indices()`` at the start of ``iter_activity_rows()`` /</span>
+<span class="sd">``get_activity_row()``.  Per-task lookup is O(1).  Indices are rebuilt for</span>
+<span class="sd">each call (i.e. each ``OutageDataset``); no stale state across datasets.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Iterable</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="c1"># Normalise change_type strings to this set to detect emergent scope additions.</span>
+<div class="viewcode-block" id="_DEFAULT_EMERGENT_TYPES">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter._DEFAULT_EMERGENT_TYPES">[docs]</a>
+<span class="n">_DEFAULT_EMERGENT_TYPES</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">"emergent"</span><span class="p">,</span> <span class="s2">"scope_addition"</span><span class="p">})</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Value-coercion helpers — handle pd.NA, pd.NaT, float("nan"), None uniformly</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_na">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter._na">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_na</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return True when *v* is any variety of missing value."""</span>
+    <span class="k">if</span> <span class="n">v</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">isna</span><span class="p">(</span><span class="n">v</span><span class="p">))</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">False</span></div>
+
+
+
+<div class="viewcode-block" id="_to_float">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter._to_float">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_to_float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">_na</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_to_str">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter._to_str">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_to_str</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">_na</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">s</span> <span class="ow">or</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_to_bool">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter._to_bool">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_to_bool</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">default</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">_na</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">default</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">v</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">default</span></div>
+
+
+
+<div class="viewcode-block" id="_to_datetime">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter._to_datetime">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_to_datetime</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">datetime</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">_na</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">datetime</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">v</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">ts</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">ts</span> <span class="ow">is</span> <span class="n">pd</span><span class="o">.</span><span class="n">NaT</span> <span class="k">else</span> <span class="n">ts</span><span class="o">.</span><span class="n">to_pydatetime</span><span class="p">()</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Main adapter</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="P6DatasetAdapter">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter.P6DatasetAdapter">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">P6DatasetAdapter</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Convert a P6 ``OutageDataset`` into ``Iterable[dict]`` for ingestion.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    emergent_change_types:</span>
+<span class="sd">        Set of ``ScopeChangeEvent.change_type`` values (lowercased) that signal</span>
+<span class="sd">        emergent work.  Defaults to ``{"emergent", "scope_addition"}``.</span>
+<span class="sd">    contractor_org_units:</span>
+<span class="sd">        Set of ``Resource.org_unit`` values (lowercased) that indicate a</span>
+<span class="sd">        contractor resource.  When empty (default) ``contractor_flag`` is left</span>
+<span class="sd">        as ``None`` (unknown) for all tasks — opt-in only.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_change_types</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">contractor_org_units</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="P6DatasetAdapter._emergent_types">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter.P6DatasetAdapter._emergent_types">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_emergent_types</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="nb">frozenset</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">emergent_change_types</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">emergent_change_types</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="n">_DEFAULT_EMERGENT_TYPES</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="P6DatasetAdapter._contractor_orgs">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter.P6DatasetAdapter._contractor_orgs">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_contractor_orgs</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="nb">frozenset</span><span class="p">(</span><span class="n">o</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">contractor_org_units</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">contractor_org_units</span>
+            <span class="k">else</span> <span class="nb">frozenset</span><span class="p">()</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Public interface</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="P6DatasetAdapter.iter_activity_rows">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter.P6DatasetAdapter.iter_activity_rows">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">iter_activity_rows</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">dataset</span><span class="p">,</span>   <span class="c1"># OutageDataset</span>
+        <span class="n">outage</span><span class="p">,</span>    <span class="c1"># outage_model.models.Outage</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">skip_milestones</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Yield one ``ActivityCase``-compatible dict per ``ScheduleTask``.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        dataset:</span>
+<span class="sd">            A populated ``OutageDataset`` (from ``P6_adapter``).</span>
+<span class="sd">        outage:</span>
+<span class="sd">            The ``Outage`` record that owns this dataset — provides</span>
+<span class="sd">            ``plant_id`` and ``unit_id``, which are not on ``ScheduleTask``.</span>
+<span class="sd">        skip_milestones:</span>
+<span class="sd">            When ``True`` (default), tasks with ``milestone_flag = True`` are</span>
+<span class="sd">            omitted.  Milestones have zero duration by definition and would</span>
+<span class="sd">            corrupt the duration distribution in the analog index.</span>
+
+<span class="sd">        Yields</span>
+<span class="sd">        ------</span>
+<span class="sd">        dict</span>
+<span class="sd">            Flat dict ready for ``PandasActivityRepository.load_activities()``.</span>
+<span class="sd">        """</span>
+        <span class="n">tasks_df</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="s2">"schedule_tasks"</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">tasks_df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"P6DatasetAdapter: schedule_tasks is empty; no rows yielded"</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="n">indices</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_indices</span><span class="p">(</span><span class="n">dataset</span><span class="p">)</span>
+        <span class="n">n_total</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">n_skipped</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">tasks_df</span><span class="o">.</span><span class="n">itertuples</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+            <span class="n">n_total</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="n">skip_milestones</span> <span class="ow">and</span> <span class="n">_to_bool</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"milestone_flag"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)):</span>
+                <span class="n">n_skipped</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">continue</span>
+            <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">_row_to_dict</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">outage</span><span class="p">,</span> <span class="n">indices</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">"P6DatasetAdapter.iter_activity_rows: </span><span class="si">%d</span><span class="s2"> tasks → </span><span class="si">%d</span><span class="s2"> yielded, </span><span class="si">%d</span><span class="s2"> milestones skipped"</span><span class="p">,</span>
+            <span class="n">n_total</span><span class="p">,</span>
+            <span class="n">n_total</span> <span class="o">-</span> <span class="n">n_skipped</span><span class="p">,</span>
+            <span class="n">n_skipped</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="P6DatasetAdapter.get_activity_row">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter.P6DatasetAdapter.get_activity_row">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_activity_row</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">task_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">dataset</span><span class="p">,</span>   <span class="c1"># OutageDataset</span>
+        <span class="n">outage</span><span class="p">,</span>    <span class="c1"># outage_model.models.Outage</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return a single ``ActivityCase``-compatible dict for *task_id*.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        task_id:</span>
+<span class="sd">            The ``ScheduleTask.task_id`` to retrieve.</span>
+<span class="sd">        dataset:</span>
+<span class="sd">            A populated ``OutageDataset``.</span>
+<span class="sd">        outage:</span>
+<span class="sd">            The owning ``Outage`` record.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        KeyError</span>
+<span class="sd">            If *task_id* is not found in ``dataset.schedule_tasks``.</span>
+<span class="sd">        """</span>
+        <span class="n">tasks_df</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="s2">"schedule_tasks"</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">tasks_df</span><span class="o">.</span><span class="n">empty</span> <span class="ow">or</span> <span class="s2">"task_id"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">tasks_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"P6DatasetAdapter: task_id '</span><span class="si">{</span><span class="n">task_id</span><span class="si">}</span><span class="s2">' not found — schedule_tasks is empty"</span><span class="p">)</span>
+
+        <span class="n">matching</span> <span class="o">=</span> <span class="n">tasks_df</span><span class="p">[</span><span class="n">tasks_df</span><span class="p">[</span><span class="s2">"task_id"</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">str</span><span class="p">)</span> <span class="o">==</span> <span class="nb">str</span><span class="p">(</span><span class="n">task_id</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="n">matching</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"P6DatasetAdapter: task_id '</span><span class="si">{</span><span class="n">task_id</span><span class="si">}</span><span class="s2">' not found in schedule_tasks"</span><span class="p">)</span>
+
+        <span class="n">indices</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_indices</span><span class="p">(</span><span class="n">dataset</span><span class="p">)</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">matching</span><span class="o">.</span><span class="n">itertuples</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_row_to_dict</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">outage</span><span class="p">,</span> <span class="n">indices</span><span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Index building</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="P6DatasetAdapter._build_indices">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter.P6DatasetAdapter._build_indices">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_indices</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dataset</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Pre-index all join tables for O(1) per-task lookup.</span>
+
+<span class="sd">        Returns a plain dict of index structures so the adapter has no</span>
+<span class="sd">        mutable state between calls — each call to ``iter_activity_rows`` /</span>
+<span class="sd">        ``get_activity_row`` gets a fresh set of indices built from the</span>
+<span class="sd">        supplied ``dataset``.</span>
+<span class="sd">        """</span>
+        <span class="n">pred_index</span><span class="p">,</span> <span class="n">succ_index</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_dependency_index</span><span class="p">(</span>
+            <span class="nb">getattr</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="s2">"dependencies"</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">())</span>
+        <span class="p">)</span>
+        <span class="n">vendor_tasks</span><span class="p">,</span> <span class="n">contractor_tasks</span><span class="p">,</span> <span class="n">crew_sizes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_resource_indices</span><span class="p">(</span>
+            <span class="nb">getattr</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="s2">"resource_assignments"</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()),</span>
+            <span class="nb">getattr</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="s2">"resources"</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()),</span>
+        <span class="p">)</span>
+        <span class="n">emergent_tasks</span><span class="p">,</span> <span class="n">rework_tasks</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_scope_change_index</span><span class="p">(</span>
+            <span class="nb">getattr</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="s2">"scope_change_events"</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">())</span>
+        <span class="p">)</span>
+        <span class="n">phase_windows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_phase_windows</span><span class="p">(</span>
+            <span class="nb">getattr</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="s2">"outage_phases"</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">())</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"pred"</span><span class="p">:</span> <span class="n">pred_index</span><span class="p">,</span>
+            <span class="s2">"succ"</span><span class="p">:</span> <span class="n">succ_index</span><span class="p">,</span>
+            <span class="s2">"vendor"</span><span class="p">:</span> <span class="n">vendor_tasks</span><span class="p">,</span>
+            <span class="s2">"contractor"</span><span class="p">:</span> <span class="n">contractor_tasks</span><span class="p">,</span>
+            <span class="s2">"crew"</span><span class="p">:</span> <span class="n">crew_sizes</span><span class="p">,</span>
+            <span class="s2">"emergent"</span><span class="p">:</span> <span class="n">emergent_tasks</span><span class="p">,</span>
+            <span class="s2">"rework"</span><span class="p">:</span> <span class="n">rework_tasks</span><span class="p">,</span>
+            <span class="s2">"phases"</span><span class="p">:</span> <span class="n">phase_windows</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="P6DatasetAdapter._build_dependency_index">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter.P6DatasetAdapter._build_dependency_index">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_dependency_index</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">deps_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]:</span>
+<span class="w">        </span><span class="sd">"""Return (predecessor_index, successor_index) keyed by task_id."""</span>
+        <span class="n">pred</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>  <span class="c1"># succ → [preds]</span>
+        <span class="n">succ</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>  <span class="c1"># pred → [succs]</span>
+
+        <span class="k">if</span> <span class="n">deps_df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">pred</span><span class="p">,</span> <span class="n">succ</span>
+
+        <span class="n">req</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"predecessor_task_id"</span><span class="p">,</span> <span class="s2">"successor_task_id"</span><span class="p">}</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">req</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="n">deps_df</span><span class="o">.</span><span class="n">columns</span><span class="p">):</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"P6DatasetAdapter: dependencies missing columns </span><span class="si">%s</span><span class="s2">; skipping"</span><span class="p">,</span> <span class="n">req</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">deps_df</span><span class="o">.</span><span class="n">columns</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">pred</span><span class="p">,</span> <span class="n">succ</span>
+
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">deps_df</span><span class="o">.</span><span class="n">itertuples</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+            <span class="n">p</span> <span class="o">=</span> <span class="n">_to_str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"predecessor_task_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="n">_to_str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"successor_task_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">p</span> <span class="ow">and</span> <span class="n">s</span><span class="p">:</span>
+                <span class="n">pred</span><span class="p">[</span><span class="n">s</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+                <span class="n">succ</span><span class="p">[</span><span class="n">p</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="n">pred</span><span class="p">),</span> <span class="nb">dict</span><span class="p">(</span><span class="n">succ</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="P6DatasetAdapter._build_resource_indices">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter.P6DatasetAdapter._build_resource_indices">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_resource_indices</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">assignments_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+        <span class="n">resources_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Return (vendor_task_ids, contractor_task_ids, crew_sizes_by_task)."""</span>
+        <span class="n">vendor_tasks</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">contractor_tasks</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">crew_sizes</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="k">if</span> <span class="n">assignments_df</span><span class="o">.</span><span class="n">empty</span> <span class="ow">or</span> <span class="s2">"task_id"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">assignments_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">vendor_tasks</span><span class="p">,</span> <span class="n">contractor_tasks</span><span class="p">,</span> <span class="n">crew_sizes</span>
+
+        <span class="c1"># Crew size: count of distinct resources assigned to each task.</span>
+        <span class="k">if</span> <span class="s2">"resource_id"</span> <span class="ow">in</span> <span class="n">assignments_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">task_id</span><span class="p">,</span> <span class="n">grp</span> <span class="ow">in</span> <span class="n">assignments_df</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s2">"task_id"</span><span class="p">):</span>
+                <span class="n">tid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">task_id</span><span class="p">)</span>
+                <span class="n">crew_sizes</span><span class="p">[</span><span class="n">tid</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">grp</span><span class="p">[</span><span class="s2">"resource_id"</span><span class="p">]</span><span class="o">.</span><span class="n">nunique</span><span class="p">())</span>
+
+        <span class="k">if</span> <span class="n">resources_df</span><span class="o">.</span><span class="n">empty</span> <span class="ow">or</span> <span class="s2">"resource_id"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">resources_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">vendor_tasks</span><span class="p">,</span> <span class="n">contractor_tasks</span><span class="p">,</span> <span class="n">crew_sizes</span>
+
+        <span class="c1"># Join assignments to resources for vendor / contractor detection.</span>
+        <span class="n">res_cols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"resource_id"</span><span class="p">]</span>
+        <span class="k">if</span> <span class="s2">"vendor"</span> <span class="ow">in</span> <span class="n">resources_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">res_cols</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"vendor"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="s2">"org_unit"</span> <span class="ow">in</span> <span class="n">resources_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">res_cols</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"org_unit"</span><span class="p">)</span>
+
+        <span class="n">merged</span> <span class="o">=</span> <span class="n">assignments_df</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span>
+            <span class="n">resources_df</span><span class="p">[</span><span class="n">res_cols</span><span class="p">],</span>
+            <span class="n">on</span><span class="o">=</span><span class="s2">"resource_id"</span><span class="p">,</span>
+            <span class="n">how</span><span class="o">=</span><span class="s2">"left"</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">task_id</span><span class="p">,</span> <span class="n">grp</span> <span class="ow">in</span> <span class="n">merged</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s2">"task_id"</span><span class="p">):</span>
+            <span class="n">tid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">task_id</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="s2">"vendor"</span> <span class="ow">in</span> <span class="n">grp</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">vendors</span> <span class="o">=</span> <span class="n">grp</span><span class="p">[</span><span class="s2">"vendor"</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span>
+                <span class="n">non_empty</span> <span class="o">=</span> <span class="n">vendors</span><span class="p">[</span><span class="n">vendors</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">str</span><span class="p">)</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="o">!=</span> <span class="s2">""</span><span class="p">]</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">non_empty</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+                    <span class="n">vendor_tasks</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="s2">"org_unit"</span> <span class="ow">in</span> <span class="n">grp</span><span class="o">.</span><span class="n">columns</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_contractor_orgs</span><span class="p">:</span>
+                <span class="n">orgs</span> <span class="o">=</span> <span class="n">grp</span><span class="p">[</span><span class="s2">"org_unit"</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">str</span><span class="p">)</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">orgs</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_contractor_orgs</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+                    <span class="n">contractor_tasks</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">vendor_tasks</span><span class="p">,</span> <span class="n">contractor_tasks</span><span class="p">,</span> <span class="n">crew_sizes</span></div>
+
+
+<div class="viewcode-block" id="P6DatasetAdapter._build_scope_change_index">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter.P6DatasetAdapter._build_scope_change_index">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_scope_change_index</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">scope_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Return (emergent_task_ids, rework_task_ids)."""</span>
+        <span class="n">emergent</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">rework</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">scope_df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">emergent</span><span class="p">,</span> <span class="n">rework</span>
+
+        <span class="n">req</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"task_id"</span><span class="p">,</span> <span class="s2">"change_type"</span><span class="p">}</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">req</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="n">scope_df</span><span class="o">.</span><span class="n">columns</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">emergent</span><span class="p">,</span> <span class="n">rework</span>
+
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">scope_df</span><span class="o">.</span><span class="n">itertuples</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+            <span class="n">tid</span> <span class="o">=</span> <span class="n">_to_str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"task_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+            <span class="n">ct</span> <span class="o">=</span> <span class="n">_to_str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"change_type"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">tid</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">ct</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">ct_lower</span> <span class="o">=</span> <span class="n">ct</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">ct_lower</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emergent_types</span><span class="p">:</span>
+                <span class="n">emergent</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ct_lower</span> <span class="o">==</span> <span class="s2">"rework"</span><span class="p">:</span>
+                <span class="n">rework</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">emergent</span><span class="p">,</span> <span class="n">rework</span></div>
+
+
+<div class="viewcode-block" id="P6DatasetAdapter._build_phase_windows">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter.P6DatasetAdapter._build_phase_windows">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_phase_windows</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">phases_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Return list of (start, end, phase_name) sorted by phase sequence."""</span>
+        <span class="n">windows</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">if</span> <span class="n">phases_df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">windows</span>
+
+        <span class="n">req</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"phase_name"</span><span class="p">,</span> <span class="s2">"start_planned"</span><span class="p">,</span> <span class="s2">"finish_planned"</span><span class="p">}</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">req</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="n">phases_df</span><span class="o">.</span><span class="n">columns</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">windows</span>
+
+        <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">phases_df</span><span class="o">.</span><span class="n">itertuples</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="n">_to_datetime</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"start_planned"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+            <span class="n">end</span> <span class="o">=</span> <span class="n">_to_datetime</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"finish_planned"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">_to_str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"phase_name"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+            <span class="n">seq</span> <span class="o">=</span> <span class="n">_to_float</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"sequence"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span> <span class="ow">or</span> <span class="mf">0.0</span>
+            <span class="k">if</span> <span class="n">start</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">end</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">name</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">seq</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">name</span><span class="p">))</span>
+
+        <span class="n">rows</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">return</span> <span class="p">[(</span><span class="n">s</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">]</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Per-row conversion</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="P6DatasetAdapter._row_to_dict">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/adapters/p6_dataset_adapter/index.html#src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter.P6DatasetAdapter._row_to_dict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_row_to_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">row</span><span class="p">,</span> <span class="n">outage</span><span class="p">,</span> <span class="n">indices</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Convert one ``ScheduleTask`` itertuples row to an ActivityCase dict."""</span>
+        <span class="n">task_id</span> <span class="o">=</span> <span class="n">_to_str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"task_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span> <span class="ow">or</span> <span class="s2">""</span>
+
+        <span class="c1"># Timestamps</span>
+        <span class="n">planned_start</span> <span class="o">=</span> <span class="n">_to_datetime</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"planned_start"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+        <span class="n">planned_finish</span> <span class="o">=</span> <span class="n">_to_datetime</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"planned_finish"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+        <span class="n">actual_start</span> <span class="o">=</span> <span class="n">_to_datetime</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"actual_start"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+        <span class="n">actual_finish</span> <span class="o">=</span> <span class="n">_to_datetime</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"actual_finish"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+
+        <span class="c1"># Compute actual duration from timestamps (more reliable than a stored field)</span>
+        <span class="n">actual_duration</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">actual_start</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">actual_finish</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">delta</span> <span class="o">=</span> <span class="n">actual_finish</span> <span class="o">-</span> <span class="n">actual_start</span>
+            <span class="n">actual_duration</span> <span class="o">=</span> <span class="n">delta</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">/</span> <span class="mf">3600.0</span>
+            <span class="k">if</span> <span class="n">actual_duration</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">"P6DatasetAdapter: task '</span><span class="si">%s</span><span class="s2">' has actual_finish &lt; actual_start; "</span>
+                    <span class="s2">"setting actual_duration_hours = None"</span><span class="p">,</span>
+                    <span class="n">task_id</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">actual_duration</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Outage phase via time-window overlap</span>
+        <span class="n">outage_phase</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">planned_start</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">indices</span><span class="p">[</span><span class="s2">"phases"</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="n">start</span> <span class="o">&lt;=</span> <span class="n">planned_start</span> <span class="o">&lt;=</span> <span class="n">end</span><span class="p">:</span>
+                    <span class="n">outage_phase</span> <span class="o">=</span> <span class="n">name</span>
+                    <span class="k">break</span>
+
+        <span class="c1"># contractor_flag: True/False if contractor detection is configured,</span>
+        <span class="c1"># None if contractor_org_units was not provided (unknown, not "no").</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_contractor_orgs</span><span class="p">:</span>
+            <span class="n">contractor_flag</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">task_id</span> <span class="ow">in</span> <span class="n">indices</span><span class="p">[</span><span class="s2">"contractor"</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">contractor_flag</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="c1"># -- identity -------------------------------------------------------</span>
+            <span class="s2">"activity_id"</span><span class="p">:</span>             <span class="n">task_id</span><span class="p">,</span>
+            <span class="s2">"outage_id"</span><span class="p">:</span>               <span class="n">_to_str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"outage_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span> <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">outage</span><span class="p">,</span> <span class="s2">"outage_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+            <span class="s2">"plant_id"</span><span class="p">:</span>                <span class="nb">getattr</span><span class="p">(</span><span class="n">outage</span><span class="p">,</span> <span class="s2">"plant_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">,</span>
+            <span class="s2">"unit_id"</span><span class="p">:</span>                 <span class="nb">getattr</span><span class="p">(</span><span class="n">outage</span><span class="p">,</span> <span class="s2">"unit_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="c1"># -- description (LabelMapper will fill discipline/task_family/component_family)</span>
+            <span class="s2">"raw_description"</span><span class="p">:</span>         <span class="n">_to_str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"task_name"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">,</span>
+            <span class="c1"># -- schedule -------------------------------------------------------</span>
+            <span class="s2">"planned_start"</span><span class="p">:</span>           <span class="n">planned_start</span><span class="p">,</span>
+            <span class="s2">"planned_finish"</span><span class="p">:</span>          <span class="n">planned_finish</span><span class="p">,</span>
+            <span class="s2">"actual_start"</span><span class="p">:</span>            <span class="n">actual_start</span><span class="p">,</span>
+            <span class="s2">"actual_finish"</span><span class="p">:</span>           <span class="n">actual_finish</span><span class="p">,</span>
+            <span class="s2">"planned_duration_hours"</span><span class="p">:</span>  <span class="n">_to_float</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"planned_duration_hours"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)),</span>
+            <span class="s2">"actual_duration_hours"</span><span class="p">:</span>   <span class="n">actual_duration</span><span class="p">,</span>
+            <span class="c1"># -- taxonomy (delegated to LabelMapper NLP) ------------------------</span>
+            <span class="s2">"discipline"</span><span class="p">:</span>              <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"task_family"</span><span class="p">:</span>             <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"component_family"</span><span class="p">:</span>        <span class="kc">None</span><span class="p">,</span>
+            <span class="c1"># -- execution mode flags (text-based flags delegated to LabelMapper;</span>
+            <span class="c1">#    structural flags from joined tables set here) ------------------</span>
+            <span class="s2">"has_rp_hold"</span><span class="p">:</span>             <span class="kc">False</span><span class="p">,</span>   <span class="c1"># LabelMapper: keyword "RP hold"</span>
+            <span class="s2">"requires_scaffold"</span><span class="p">:</span>       <span class="kc">False</span><span class="p">,</span>   <span class="c1"># LabelMapper: keyword "scaffold"</span>
+            <span class="s2">"has_clearance"</span><span class="p">:</span>           <span class="kc">False</span><span class="p">,</span>   <span class="c1"># LabelMapper: keyword "clearance"</span>
+            <span class="s2">"is_vendor_supported"</span><span class="p">:</span>     <span class="n">task_id</span> <span class="ow">in</span> <span class="n">indices</span><span class="p">[</span><span class="s2">"vendor"</span><span class="p">],</span>
+            <span class="s2">"is_emergent"</span><span class="p">:</span>             <span class="n">task_id</span> <span class="ow">in</span> <span class="n">indices</span><span class="p">[</span><span class="s2">"emergent"</span><span class="p">],</span>
+            <span class="s2">"is_rework"</span><span class="p">:</span>               <span class="n">task_id</span> <span class="ow">in</span> <span class="n">indices</span><span class="p">[</span><span class="s2">"rework"</span><span class="p">],</span>
+            <span class="c1"># -- resource -------------------------------------------------------</span>
+            <span class="s2">"crew_size"</span><span class="p">:</span>               <span class="n">indices</span><span class="p">[</span><span class="s2">"crew"</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">task_id</span><span class="p">),</span>
+            <span class="s2">"contractor_flag"</span><span class="p">:</span>         <span class="n">contractor_flag</span><span class="p">,</span>
+            <span class="c1"># -- schedule context -----------------------------------------------</span>
+            <span class="s2">"outage_phase"</span><span class="p">:</span>            <span class="n">outage_phase</span><span class="p">,</span>
+            <span class="s2">"predecessor_ids"</span><span class="p">:</span>         <span class="nb">list</span><span class="p">(</span><span class="n">indices</span><span class="p">[</span><span class="s2">"pred"</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">task_id</span><span class="p">,</span> <span class="p">[])),</span>
+            <span class="s2">"successor_ids"</span><span class="p">:</span>           <span class="nb">list</span><span class="p">(</span><span class="n">indices</span><span class="p">[</span><span class="s2">"succ"</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">task_id</span><span class="p">,</span> <span class="p">[])),</span>
+            <span class="c1"># -- provenance stash (not used by UQ pipeline; preserved for audit)</span>
+            <span class="s2">"metadata"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"p6"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"task_code"</span><span class="p">:</span>             <span class="n">_to_str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"task_code"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)),</span>
+                    <span class="s2">"task_type"</span><span class="p">:</span>             <span class="n">_to_str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"task_type"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)),</span>
+                    <span class="s2">"critical_flag"</span><span class="p">:</span>         <span class="n">_to_bool</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"critical_flag"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)),</span>
+                    <span class="s2">"total_float_hours"</span><span class="p">:</span>     <span class="n">_to_float</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"total_float_hours"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)),</span>
+                    <span class="s2">"scope_origin"</span><span class="p">:</span>          <span class="n">_to_str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"scope_origin"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)),</span>
+                    <span class="s2">"wbs_id"</span><span class="p">:</span>                <span class="n">_to_str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"wbs_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)),</span>
+                    <span class="s2">"schedule_version_id"</span><span class="p">:</span>   <span class="n">_to_str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"schedule_version_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)),</span>
+                <span class="p">}</span>
+            <span class="p">},</span>
+        <span class="p">}</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

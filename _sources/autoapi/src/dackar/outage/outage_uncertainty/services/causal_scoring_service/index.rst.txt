@@ -1,0 +1,117 @@
+src.dackar.outage.outage_uncertainty.services.causal_scoring_service
+====================================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.services.causal_scoring_service
+
+.. autoapi-nested-parse::
+
+   Causal chain scoring service for pre-outage risk prediction.
+
+   Scores each component on the likelihood of generating emergent work in an
+   upcoming outage, using the formula::
+
+       causal_score = (N_outages_with_degradation_cr / N_training_outages)
+                    × (N_outages_with_degradation_cr_AND_emergent
+                       / N_outages_with_degradation_cr)
+                    × criticality_weight
+
+   The second factor is P(emergent work | a degradation CR was present), so its
+   numerator counts only outages that had **both** a degradation CR and emergent
+   work.  ``criticality_weight`` is 2.0 when emergent activities were on the
+   critical path in the majority (> 50 %) of training outages that had emergent
+   work, and 1.0 otherwise.
+
+   Expected range
+   --------------
+   Both ratios lie in ``[0, 1]``, so ``causal_score ∈ [0.0, 2.0]``: at most 1.0
+   without the criticality weight and up to 2.0 when it applies.  ``RiskTierService``
+   consumes this range.  A score of 0.0 means there is no causal chain evidence;
+   a component can still be flagged by the downstream tier service on trend
+   signal alone.
+
+   Intended caller
+   ---------------
+   :class:`~outage_uncertainty.workflows.pre_outage_risk_workflow.PreOutageRiskWorkflow`
+   (Stage E).
+
+   Input shape
+   -----------
+   ``component_histories`` — see :mod:`trend_analysis_service` for the full spec.
+
+   Each activity dict in ``activities_by_outage`` must have at least:
+       ``emergent_flag``     (bool)
+       ``on_critical_path``  (bool)
+       ``activity_id``       (str)
+
+   ``schedule_by_id`` maps ``activity_id`` → schedule record.  Each record may
+   have ``float_consumed_hrs`` (float | None) used to populate the evidence chain.
+
+   ``trend_profiles`` — output of
+   :class:`~outage_uncertainty.services.trend_analysis_service.TrendAnalysisService`.
+
+   Output shape (per component)
+   ----------------------------
+   ::
+
+       {
+           "component_id":                    str,
+           "n_training_outages":              int,
+           "n_outages_with_degradation_cr":   int,
+           "n_outages_with_emergent_activity": int,
+           "criticality_weight":              float,
+           "causal_score":                    float,
+           "causal_chain_evidence":           [
+               {
+                   "outage_id":           str,
+                   "degradation_crs":     [cr_id, ...],
+                   "emergent_activities": [activity_id, ...],
+                   "float_consumed_hrs":  float,
+               },
+               ...
+           ],
+       }
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.services.causal_scoring_service.JsonDict
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.services.causal_scoring_service.CausalScoringService
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:class:: CausalScoringService
+
+   Score each component on emergent-work likelihood for an upcoming outage.
+
+
+   .. py:method:: compute(component_histories, schedule_by_id, training_outages)
+
+      Compute causal scores for every component in *component_histories*.
+
+      :param component_histories: Mapping of ``component_id`` → history dict.
+      :param schedule_by_id: Mapping of ``activity_id`` → schedule record (used for
+                             ``float_consumed_hrs`` in the evidence chain).
+      :param training_outages: Ordered list of training outage IDs, e.g. ``["RF-20", "RF-21"]``.
+
+      :rtype: Dict mapping ``component_id`` → causal-scoring result dict.
+
+
+
+   .. py:method:: _score(component_id, history, schedule_by_id, training_outages, n_training)
+
+

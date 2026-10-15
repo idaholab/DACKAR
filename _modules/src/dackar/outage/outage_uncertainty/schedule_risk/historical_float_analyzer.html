@@ -1,0 +1,266 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.schedule_risk.historical_float_analyzer &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.schedule_risk.historical_float_analyzer</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.schedule_risk.historical_float_analyzer</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Historical float consumption analyzer for pre-outage risk prediction.</span>
+
+<span class="sd">Computes per-component empirical schedule-impact metrics derived from</span>
+<span class="sd">training-outage history, as a complement to the Monte Carlo / critical-path</span>
+<span class="sd">analysis performed by the Stage E schedule stage.</span>
+
+<span class="sd">While Stage E summarises *simulated* project-finish distributions, this module</span>
+<span class="sd">answers a different question: *how much critical-path float did emergent work</span>
+<span class="sd">historically consume for a specific component, and how often did it hit the</span>
+<span class="sd">critical path?*</span>
+
+<span class="sd">These empirical figures serve as Bayesian priors when sizing schedule reserve</span>
+<span class="sd">recommendations in the tier synthesis stage.</span>
+
+<span class="sd">Intended caller</span>
+<span class="sd">---------------</span>
+<span class="sd">:class:`~outage_uncertainty.workflows.pre_outage_risk_workflow.PreOutageRiskWorkflow`</span>
+<span class="sd">(Stage F).</span>
+
+<span class="sd">Input shape</span>
+<span class="sd">-----------</span>
+<span class="sd">``component_histories`` — see :mod:`trend_analysis_service` for the full spec.</span>
+
+<span class="sd">Each activity dict must have at least:</span>
+<span class="sd">    ``emergent_flag``     (bool)</span>
+<span class="sd">    ``activity_id``       (str)</span>
+<span class="sd">    ``on_critical_path``  (bool)</span>
+
+<span class="sd">``schedule_by_id`` maps ``activity_id`` → schedule record with</span>
+<span class="sd">``float_consumed_hrs`` (float | None).</span>
+
+<span class="sd">Output shape (per component)</span>
+<span class="sd">----------------------------</span>
+<span class="sd">::</span>
+
+<span class="sd">    {</span>
+<span class="sd">        "component_id":             str,</span>
+<span class="sd">        "historical_cp_impacts":    [</span>
+<span class="sd">            {</span>
+<span class="sd">                "outage_id":              str,</span>
+<span class="sd">                "float_consumed_hrs":     float,</span>
+<span class="sd">                "on_critical_path":       bool,</span>
+<span class="sd">                "emergent_activity_ids":  [str],</span>
+<span class="sd">            },</span>
+<span class="sd">            ...</span>
+<span class="sd">        ],</span>
+<span class="sd">        "mean_cp_float_consumed":   float,   # mean across outages with emergent work</span>
+<span class="sd">        "max_cp_float_consumed":    float,</span>
+<span class="sd">        "cp_impact_frequency":      float,   # fraction of training outages with CP impact</span>
+<span class="sd">    }</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/schedule_risk/historical_float_analyzer/index.html#src.dackar.outage.outage_uncertainty.schedule_risk.historical_float_analyzer.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="HistoricalFloatAnalyzer">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/schedule_risk/historical_float_analyzer/index.html#src.dackar.outage.outage_uncertainty.schedule_risk.historical_float_analyzer.HistoricalFloatAnalyzer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">HistoricalFloatAnalyzer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Derive empirical CP-float consumption metrics from training-outage history."""</span>
+
+<div class="viewcode-block" id="HistoricalFloatAnalyzer.compute">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/schedule_risk/historical_float_analyzer/index.html#src.dackar.outage.outage_uncertainty.schedule_risk.historical_float_analyzer.HistoricalFloatAnalyzer.compute">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">component_histories</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">schedule_by_id</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">training_outages</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Compute float-consumption metrics for every component.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        component_histories:</span>
+<span class="sd">            Mapping of ``component_id`` → history dict.</span>
+<span class="sd">        schedule_by_id:</span>
+<span class="sd">            Mapping of ``activity_id`` → schedule record.</span>
+<span class="sd">        training_outages:</span>
+<span class="sd">            Ordered list of training outage IDs, e.g. ``["RF-20", "RF-21"]``.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Dict mapping ``component_id`` → float-impact result dict.</span>
+<span class="sd">        """</span>
+        <span class="n">results</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">cid</span><span class="p">,</span> <span class="n">history</span> <span class="ow">in</span> <span class="n">component_histories</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">results</span><span class="p">[</span><span class="n">cid</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_analyze</span><span class="p">(</span>
+                <span class="n">cid</span><span class="p">,</span> <span class="n">history</span><span class="p">,</span> <span class="n">schedule_by_id</span><span class="p">,</span> <span class="n">training_outages</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">results</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Internal</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="HistoricalFloatAnalyzer._analyze">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/schedule_risk/historical_float_analyzer/index.html#src.dackar.outage.outage_uncertainty.schedule_risk.historical_float_analyzer.HistoricalFloatAnalyzer._analyze">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_analyze</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">component_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">history</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_by_id</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">training_outages</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+        <span class="n">activities_by_outage</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">]</span> <span class="o">=</span> <span class="n">history</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"activities_by_outage"</span><span class="p">,</span> <span class="p">{})</span>
+
+        <span class="n">historical_impacts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">cp_outages</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">for</span> <span class="n">oid</span> <span class="ow">in</span> <span class="n">training_outages</span><span class="p">:</span>
+            <span class="n">emergent</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">activities_by_outage</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">oid</span><span class="p">,</span> <span class="p">[])</span>
+                <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"emergent_flag"</span><span class="p">)</span>
+            <span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">emergent</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="n">float_consumed</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">schedule_by_id</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">a</span><span class="p">[</span><span class="s2">"activity_id"</span><span class="p">],</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_consumed_hrs"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">emergent</span>
+            <span class="p">)</span>
+            <span class="n">on_cp</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"on_critical_path"</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">emergent</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">on_cp</span><span class="p">:</span>
+                <span class="n">cp_outages</span> <span class="o">+=</span> <span class="mi">1</span>
+
+            <span class="n">historical_impacts</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"outage_id"</span><span class="p">:</span> <span class="n">oid</span><span class="p">,</span>
+                <span class="s2">"float_consumed_hrs"</span><span class="p">:</span> <span class="n">float_consumed</span><span class="p">,</span>
+                <span class="s2">"on_critical_path"</span><span class="p">:</span> <span class="n">on_cp</span><span class="p">,</span>
+                <span class="s2">"emergent_activity_ids"</span><span class="p">:</span> <span class="p">[</span><span class="n">a</span><span class="p">[</span><span class="s2">"activity_id"</span><span class="p">]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">emergent</span><span class="p">],</span>
+            <span class="p">})</span>
+
+        <span class="n">float_values</span> <span class="o">=</span> <span class="p">[</span><span class="n">h</span><span class="p">[</span><span class="s2">"float_consumed_hrs"</span><span class="p">]</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">historical_impacts</span><span class="p">]</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">training_outages</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">component_id</span><span class="p">,</span>
+            <span class="s2">"historical_cp_impacts"</span><span class="p">:</span> <span class="n">historical_impacts</span><span class="p">,</span>
+            <span class="s2">"mean_cp_float_consumed"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span>
+                <span class="nb">sum</span><span class="p">(</span><span class="n">float_values</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">float_values</span><span class="p">)</span> <span class="k">if</span> <span class="n">float_values</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mi">2</span>
+            <span class="p">),</span>
+            <span class="s2">"max_cp_float_consumed"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="n">float_values</span><span class="p">)</span> <span class="k">if</span> <span class="n">float_values</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+            <span class="s2">"cp_impact_frequency"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">cp_outages</span> <span class="o">/</span> <span class="n">n</span> <span class="k">if</span> <span class="n">n</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+        <span class="p">}</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

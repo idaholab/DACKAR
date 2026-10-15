@@ -1,0 +1,368 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.preprocessing.default_taxonomy &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.preprocessing.default_taxonomy</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.preprocessing.default_taxonomy</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Built-in nuclear-outage taxonomy vocabulary for :class:`TaskLabelMapper`.</span>
+
+<span class="sd">Entries map a keyword (lowercase, word-boundary matched) to a partial or</span>
+<span class="sd">complete set of the three label dimensions:</span>
+
+<span class="sd">* ``discipline``       – ``mechanical | electrical | I&amp;C | civil | nuclear``</span>
+<span class="sd">* ``task_family``      – ``inspection | replacement | maintenance | calibration |</span>
+<span class="sd">                          surveillance | testing | modification | refurbishment |</span>
+<span class="sd">                          cleaning | lubrication | disassembly | restoration``</span>
+<span class="sd">* ``component_family`` – ``valve | pump | motor | heat_exchanger | pipe |</span>
+<span class="sd">                          instrument | cable | filter | fan | compressor |</span>
+<span class="sd">                          reactor | turbine | generator | transformer |</span>
+<span class="sd">                          breaker | switchgear | relay | sensor | actuator |</span>
+<span class="sd">                          structure | condenser``</span>
+
+<span class="sd">Ordering is intentional: single-word (less specific) entries come first;</span>
+<span class="sd">multi-word phrases come last.  Because :class:`TaskLabelMapper` iterates in</span>
+<span class="sd">insertion order and later matches overwrite earlier ones (last-wins), phrase</span>
+<span class="sd">entries take precedence over their constituent single-word entries, which is</span>
+<span class="sd">the desired behaviour for specificity.</span>
+
+<span class="sd">User-supplied ``taxonomy_rules`` in :class:`AppConfig` are merged *on top* of</span>
+<span class="sd">these defaults and therefore always win.</span>
+
+<span class="sd">Relationship to ``data/tag_keywords_lists.xlsx``</span>
+<span class="sd">------------------------------------------------</span>
+<span class="sd">This module is **not** a redundant copy of DACKAR's NER keyword library</span>
+<span class="sd">(``data/tag_keywords_lists.xlsx``), and the two are not interchangeable.</span>
+<span class="sd">They partition the vocabulary for different purposes:</span>
+
+<span class="sd">* ``tag_keywords_lists.xlsx`` groups ~1900 words into **NER entity-type</span>
+<span class="sd">  categories** (``comp_mech_rot``, ``comp_elt/n``, ``ast_I&amp;C``, ``chem_cmpd``,</span>
+<span class="sd">  ``deg_mech``, ``mnt_ops`` …) so the NLP pipeline can tag *what kind of entity</span>
+<span class="sd">  a token is*.  It has no column that yields a discipline, a task family, or a</span>
+<span class="sd">  component family; its component sheets are split by fastener / rotary /</span>
+<span class="sd">  structural / electrical / hydraulic, not by the component-family values</span>
+<span class="sd">  below, and it carries no ``civil`` grouping.</span>
+<span class="sd">* This module answers a different question — *how should this activity be</span>
+<span class="sd">  classified for retrieval and scheduling* — by mapping free text onto the</span>
+<span class="sd">  three axes above.  Those three fields are load-bearing downstream: Stage D</span>
+<span class="sd">  analog retrieval scores component-family affinity, and Stages E/F use</span>
+<span class="sd">  discipline / task_family for crew inference and conflict detection.</span>
+
+<span class="sd">Adopting the NER file here would mean building and maintaining a hand-written</span>
+<span class="sd">mapping from its entity categories onto these three axes — strictly more code</span>
+<span class="sd">and more drift risk than the compact rule set in this module, and with no</span>
+<span class="sd">clean source for the component-family axis at all.  The overlap a reader may</span>
+<span class="sd">notice (both files contain equipment words) is superficial: the two assets</span>
+<span class="sd">classify those words for unrelated ends.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Single-word component keywords  (discipline + component_family)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<div class="viewcode-block" id="_COMPONENT_SINGLE">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/default_taxonomy/index.html#src.dackar.outage.outage_uncertainty.preprocessing.default_taxonomy._COMPONENT_SINGLE">[docs]</a>
+<span class="n">_COMPONENT_SINGLE</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"valve"</span><span class="p">:</span>        <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="s2">"damper"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="s2">"pump"</span><span class="p">:</span>         <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"pump"</span><span class="p">},</span>
+    <span class="s2">"impeller"</span><span class="p">:</span>     <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"pump"</span><span class="p">},</span>
+    <span class="s2">"motor"</span><span class="p">:</span>        <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"electrical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"motor"</span><span class="p">},</span>
+    <span class="s2">"exchanger"</span><span class="p">:</span>    <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"heat_exchanger"</span><span class="p">},</span>
+    <span class="s2">"condenser"</span><span class="p">:</span>    <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"condenser"</span><span class="p">},</span>
+    <span class="s2">"cooler"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"heat_exchanger"</span><span class="p">},</span>
+    <span class="s2">"heater"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"heat_exchanger"</span><span class="p">},</span>
+    <span class="s2">"pipe"</span><span class="p">:</span>         <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"pipe"</span><span class="p">},</span>
+    <span class="s2">"piping"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"pipe"</span><span class="p">},</span>
+    <span class="s2">"header"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"pipe"</span><span class="p">},</span>
+    <span class="s2">"nozzle"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"pipe"</span><span class="p">},</span>
+    <span class="s2">"transmitter"</span><span class="p">:</span>  <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"I&amp;C"</span><span class="p">,</span>         <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"instrument"</span><span class="p">},</span>
+    <span class="s2">"indicator"</span><span class="p">:</span>    <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"I&amp;C"</span><span class="p">,</span>         <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"instrument"</span><span class="p">},</span>
+    <span class="s2">"controller"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"I&amp;C"</span><span class="p">,</span>         <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"instrument"</span><span class="p">},</span>
+    <span class="s2">"recorder"</span><span class="p">:</span>     <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"I&amp;C"</span><span class="p">,</span>         <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"instrument"</span><span class="p">},</span>
+    <span class="s2">"sensor"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"I&amp;C"</span><span class="p">,</span>         <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"sensor"</span><span class="p">},</span>
+    <span class="s2">"detector"</span><span class="p">:</span>     <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"I&amp;C"</span><span class="p">,</span>         <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"sensor"</span><span class="p">},</span>
+    <span class="s2">"probe"</span><span class="p">:</span>        <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"I&amp;C"</span><span class="p">,</span>         <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"sensor"</span><span class="p">},</span>
+    <span class="s2">"thermocouple"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"I&amp;C"</span><span class="p">,</span>         <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"sensor"</span><span class="p">},</span>
+    <span class="s2">"actuator"</span><span class="p">:</span>     <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"actuator"</span><span class="p">},</span>
+    <span class="s2">"cable"</span><span class="p">:</span>        <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"electrical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"cable"</span><span class="p">},</span>
+    <span class="s2">"wiring"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"electrical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"cable"</span><span class="p">},</span>
+    <span class="s2">"conduit"</span><span class="p">:</span>      <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"electrical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"cable"</span><span class="p">},</span>
+    <span class="s2">"filter"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"filter"</span><span class="p">},</span>
+    <span class="s2">"strainer"</span><span class="p">:</span>     <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"filter"</span><span class="p">},</span>
+    <span class="s2">"screen"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"filter"</span><span class="p">},</span>
+    <span class="s2">"fan"</span><span class="p">:</span>          <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"fan"</span><span class="p">},</span>
+    <span class="s2">"blower"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"fan"</span><span class="p">},</span>
+    <span class="s2">"compressor"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"compressor"</span><span class="p">},</span>
+    <span class="s2">"reactor"</span><span class="p">:</span>      <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"nuclear"</span><span class="p">,</span>     <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"reactor"</span><span class="p">},</span>
+    <span class="s2">"turbine"</span><span class="p">:</span>      <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"turbine"</span><span class="p">},</span>
+    <span class="s2">"generator"</span><span class="p">:</span>    <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"electrical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"generator"</span><span class="p">},</span>
+    <span class="s2">"transformer"</span><span class="p">:</span>  <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"electrical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"transformer"</span><span class="p">},</span>
+    <span class="s2">"breaker"</span><span class="p">:</span>      <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"electrical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"breaker"</span><span class="p">},</span>
+    <span class="s2">"switchgear"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"electrical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"switchgear"</span><span class="p">},</span>
+    <span class="s2">"relay"</span><span class="p">:</span>        <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"electrical"</span><span class="p">,</span>  <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"relay"</span><span class="p">},</span>
+    <span class="s2">"containment"</span><span class="p">:</span>  <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"civil"</span><span class="p">,</span>       <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"structure"</span><span class="p">},</span>
+    <span class="s2">"sump"</span><span class="p">:</span>         <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"civil"</span><span class="p">,</span>       <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"structure"</span><span class="p">},</span>
+    <span class="s2">"building"</span><span class="p">:</span>     <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"civil"</span><span class="p">,</span>       <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"structure"</span><span class="p">},</span>
+    <span class="s2">"structure"</span><span class="p">:</span>    <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"civil"</span><span class="p">,</span>       <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"structure"</span><span class="p">},</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Single-word task keywords  (task_family only)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<div class="viewcode-block" id="_TASK_SINGLE">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/default_taxonomy/index.html#src.dackar.outage.outage_uncertainty.preprocessing.default_taxonomy._TASK_SINGLE">[docs]</a>
+<span class="n">_TASK_SINGLE</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1"># inspection / surveillance</span>
+    <span class="s2">"inspect"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"inspection"</span><span class="p">},</span>
+    <span class="s2">"inspection"</span><span class="p">:</span>    <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"inspection"</span><span class="p">},</span>
+    <span class="s2">"examine"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"inspection"</span><span class="p">},</span>
+    <span class="s2">"walkdown"</span><span class="p">:</span>      <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"inspection"</span><span class="p">},</span>
+    <span class="s2">"surveillance"</span><span class="p">:</span>  <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"surveillance"</span><span class="p">},</span>
+    <span class="s2">"walkthrough"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"surveillance"</span><span class="p">},</span>
+    <span class="c1"># replacement / installation</span>
+    <span class="s2">"replace"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"replacement"</span><span class="p">},</span>
+    <span class="s2">"replacement"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"replacement"</span><span class="p">},</span>
+    <span class="s2">"install"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"replacement"</span><span class="p">},</span>
+    <span class="s2">"installation"</span><span class="p">:</span>  <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"replacement"</span><span class="p">},</span>
+    <span class="s2">"swap"</span><span class="p">:</span>          <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"replacement"</span><span class="p">},</span>
+    <span class="c1"># calibration</span>
+    <span class="s2">"calibrate"</span><span class="p">:</span>     <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"calibration"</span><span class="p">},</span>
+    <span class="s2">"calibration"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"calibration"</span><span class="p">},</span>
+    <span class="c1"># testing</span>
+    <span class="s2">"test"</span><span class="p">:</span>          <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"testing"</span><span class="p">},</span>
+    <span class="s2">"testing"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"testing"</span><span class="p">},</span>
+    <span class="c1"># maintenance / repair</span>
+    <span class="s2">"repair"</span><span class="p">:</span>        <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"maintenance"</span><span class="p">},</span>
+    <span class="s2">"maintenance"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"maintenance"</span><span class="p">},</span>
+    <span class="s2">"adjust"</span><span class="p">:</span>        <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"maintenance"</span><span class="p">},</span>
+    <span class="s2">"adjustment"</span><span class="p">:</span>    <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"maintenance"</span><span class="p">},</span>
+    <span class="s2">"tighten"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"maintenance"</span><span class="p">},</span>
+    <span class="c1"># refurbishment</span>
+    <span class="s2">"overhaul"</span><span class="p">:</span>      <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"refurbishment"</span><span class="p">},</span>
+    <span class="s2">"refurbish"</span><span class="p">:</span>     <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"refurbishment"</span><span class="p">},</span>
+    <span class="s2">"rebuild"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"refurbishment"</span><span class="p">},</span>
+    <span class="s2">"recondition"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"refurbishment"</span><span class="p">},</span>
+    <span class="s2">"repack"</span><span class="p">:</span>        <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"refurbishment"</span><span class="p">},</span>
+    <span class="s2">"disassemble"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"disassembly"</span><span class="p">},</span>
+    <span class="s2">"disassembly"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"disassembly"</span><span class="p">},</span>
+    <span class="s2">"restore"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"restoration"</span><span class="p">},</span>
+    <span class="s2">"restoration"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"restoration"</span><span class="p">},</span>
+    <span class="c1"># modification</span>
+    <span class="s2">"modify"</span><span class="p">:</span>        <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"modification"</span><span class="p">},</span>
+    <span class="s2">"modification"</span><span class="p">:</span>  <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"modification"</span><span class="p">},</span>
+    <span class="s2">"upgrade"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"modification"</span><span class="p">},</span>
+    <span class="s2">"retrofit"</span><span class="p">:</span>      <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"modification"</span><span class="p">},</span>
+    <span class="c1"># cleaning</span>
+    <span class="s2">"clean"</span><span class="p">:</span>         <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"cleaning"</span><span class="p">},</span>
+    <span class="s2">"cleaning"</span><span class="p">:</span>      <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"cleaning"</span><span class="p">},</span>
+    <span class="s2">"flush"</span><span class="p">:</span>         <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"cleaning"</span><span class="p">},</span>
+    <span class="s2">"flushing"</span><span class="p">:</span>      <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"cleaning"</span><span class="p">},</span>
+    <span class="s2">"purge"</span><span class="p">:</span>         <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"cleaning"</span><span class="p">},</span>
+    <span class="s2">"decontaminate"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"cleaning"</span><span class="p">},</span>
+    <span class="s2">"descale"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"cleaning"</span><span class="p">},</span>
+    <span class="c1"># lubrication</span>
+    <span class="s2">"lube"</span><span class="p">:</span>          <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"lubrication"</span><span class="p">},</span>
+    <span class="s2">"lubricate"</span><span class="p">:</span>     <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"lubrication"</span><span class="p">},</span>
+    <span class="s2">"lubrication"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"lubrication"</span><span class="p">},</span>
+    <span class="s2">"grease"</span><span class="p">:</span>        <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"lubrication"</span><span class="p">},</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Single-word discipline-only keywords</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<div class="viewcode-block" id="_DISCIPLINE_SINGLE">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/default_taxonomy/index.html#src.dackar.outage.outage_uncertainty.preprocessing.default_taxonomy._DISCIPLINE_SINGLE">[docs]</a>
+<span class="n">_DISCIPLINE_SINGLE</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"radiation"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"nuclear"</span><span class="p">},</span>
+    <span class="s2">"radiological"</span><span class="p">:{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"nuclear"</span><span class="p">},</span>
+    <span class="s2">"nuclear"</span><span class="p">:</span>     <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"nuclear"</span><span class="p">},</span>
+    <span class="s2">"fuel"</span><span class="p">:</span>        <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"nuclear"</span><span class="p">},</span>
+    <span class="s2">"electrical"</span><span class="p">:</span>  <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"electrical"</span><span class="p">},</span>
+    <span class="s2">"mechanical"</span><span class="p">:</span>  <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">},</span>
+    <span class="s2">"structural"</span><span class="p">:</span>  <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"civil"</span><span class="p">},</span>
+    <span class="s2">"civil"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"civil"</span><span class="p">},</span>
+    <span class="s2">"instrumentation"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"I&amp;C"</span><span class="p">},</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Multi-word phrase entries  (more specific — come last, so they win)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<div class="viewcode-block" id="_PHRASE">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/default_taxonomy/index.html#src.dackar.outage.outage_uncertainty.preprocessing.default_taxonomy._PHRASE">[docs]</a>
+<span class="n">_PHRASE</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1"># ── Valve sub-types ────────────────────────────────────────────────────</span>
+    <span class="s2">"check valve"</span><span class="p">:</span>          <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="s2">"relief valve"</span><span class="p">:</span>         <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="s2">"safety valve"</span><span class="p">:</span>         <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="s2">"control valve"</span><span class="p">:</span>        <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="s2">"gate valve"</span><span class="p">:</span>           <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="s2">"ball valve"</span><span class="p">:</span>           <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="s2">"butterfly valve"</span><span class="p">:</span>      <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="s2">"globe valve"</span><span class="p">:</span>          <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="s2">"needle valve"</span><span class="p">:</span>         <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="c1"># MOV / AOV / SOV override the "motor" → electrical single-word entry</span>
+    <span class="s2">"motor operated valve"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="s2">"air operated valve"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="s2">"solenoid valve"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="s2">"pressure relief valve"</span><span class="p">:{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="s2">"safety relief valve"</span><span class="p">:</span>  <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"valve"</span><span class="p">},</span>
+    <span class="c1"># ── Pump sub-types ────────────────────────────────────────────────────</span>
+    <span class="s2">"charging pump"</span><span class="p">:</span>        <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"pump"</span><span class="p">},</span>
+    <span class="s2">"service water pump"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"pump"</span><span class="p">},</span>
+    <span class="s2">"residual heat pump"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"pump"</span><span class="p">},</span>
+    <span class="s2">"fire pump"</span><span class="p">:</span>            <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"pump"</span><span class="p">},</span>
+    <span class="c1"># ── Generator sub-types (diesel = mechanical discipline) ───────────────</span>
+    <span class="s2">"diesel generator"</span><span class="p">:</span>     <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"generator"</span><span class="p">},</span>
+    <span class="s2">"emergency diesel"</span><span class="p">:</span>     <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"generator"</span><span class="p">},</span>
+    <span class="c1"># ── Switchgear / MCC ──────────────────────────────────────────────────</span>
+    <span class="s2">"motor control center"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"electrical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"switchgear"</span><span class="p">},</span>
+    <span class="s2">"circuit breaker"</span><span class="p">:</span>      <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"electrical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"breaker"</span><span class="p">},</span>
+    <span class="s2">"power supply"</span><span class="p">:</span>         <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"electrical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"transformer"</span><span class="p">},</span>
+    <span class="s2">"battery charger"</span><span class="p">:</span>      <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"electrical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"transformer"</span><span class="p">},</span>
+    <span class="c1"># ── Heat exchangers ───────────────────────────────────────────────────</span>
+    <span class="s2">"heat exchanger"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"heat_exchanger"</span><span class="p">},</span>
+    <span class="s2">"tube bundle"</span><span class="p">:</span>          <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"heat_exchanger"</span><span class="p">},</span>
+    <span class="c1"># ── I&amp;C specific ──────────────────────────────────────────────────────</span>
+    <span class="s2">"loop check"</span><span class="p">:</span>           <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"I&amp;C"</span><span class="p">,</span>        <span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"calibration"</span><span class="p">},</span>
+    <span class="s2">"set point"</span><span class="p">:</span>            <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"I&amp;C"</span><span class="p">,</span>        <span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"calibration"</span><span class="p">},</span>
+    <span class="s2">"channel calibration"</span><span class="p">:</span>  <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"I&amp;C"</span><span class="p">,</span>        <span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"calibration"</span><span class="p">,</span>
+                             <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"instrument"</span><span class="p">},</span>
+    <span class="s2">"loop calibration"</span><span class="p">:</span>     <span class="p">{</span><span class="s2">"discipline"</span><span class="p">:</span> <span class="s2">"I&amp;C"</span><span class="p">,</span>        <span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"calibration"</span><span class="p">,</span>
+                             <span class="s2">"component_family"</span><span class="p">:</span> <span class="s2">"instrument"</span><span class="p">},</span>
+    <span class="c1"># ── Test phrases (more specific than bare "test") ─────────────────────</span>
+    <span class="s2">"functional test"</span><span class="p">:</span>      <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"testing"</span><span class="p">},</span>
+    <span class="s2">"leak test"</span><span class="p">:</span>            <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"testing"</span><span class="p">},</span>
+    <span class="s2">"hydrostatic test"</span><span class="p">:</span>     <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"testing"</span><span class="p">},</span>
+    <span class="s2">"performance test"</span><span class="p">:</span>     <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"testing"</span><span class="p">},</span>
+    <span class="s2">"in service inspection"</span><span class="p">:{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"inspection"</span><span class="p">},</span>
+    <span class="s2">"visual inspection"</span><span class="p">:</span>    <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"inspection"</span><span class="p">},</span>
+    <span class="c1"># ── Lubrication phrases ───────────────────────────────────────────────</span>
+    <span class="s2">"oil change"</span><span class="p">:</span>           <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"lubrication"</span><span class="p">},</span>
+    <span class="s2">"grease fitting"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"lubrication"</span><span class="p">},</span>
+    <span class="s2">"grease lubrication"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"task_family"</span><span class="p">:</span> <span class="s2">"lubrication"</span><span class="p">},</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Assembled default vocabulary (insertion order: least specific → most specific)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<div class="viewcode-block" id="DEFAULT_TAXONOMY_RULES">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/default_taxonomy/index.html#src.dackar.outage.outage_uncertainty.preprocessing.default_taxonomy.DEFAULT_TAXONOMY_RULES">[docs]</a>
+<span class="n">DEFAULT_TAXONOMY_RULES</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="o">**</span><span class="n">_COMPONENT_SINGLE</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">_TASK_SINGLE</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">_DISCIPLINE_SINGLE</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">_PHRASE</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,122 @@
+src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator
+===================================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator
+
+.. autoapi-nested-parse::
+
+   Duration estimator — orchestrates the full uncertainty pipeline.
+
+   Data flow
+   ---------
+   1. Extract ``(duration, relevance_weight)`` pairs from the neighbour list,
+      keeping only matches that have an actual duration.  Weights are
+      re-normalised after filtering so they continue to sum to 1.0.
+
+   2. ``OutlierHandler.separate(durations, weights)`` → ``OutlierSeparation``
+      Separates the routine execution cluster from disruption-driven outliers.
+      The separation preserves weight alignment so the correct weights flow to
+      the fitter.
+
+   3. ``DistributionFitter.fit_from_separation(separation)``
+      → ``DurationDistribution``
+      Fits weighted percentiles on the *routine* group.  Stores
+      ``extended_fraction`` in ``distribution.parameters`` as a disruption
+      risk signal.
+
+   4. ``ConfidenceEstimator.classify(query, matches, separation)``
+      → ``ConfidenceResult(score, tier, rationale)``
+      Uses power-normalised relevance weights for the similarity component.
+
+   5. Build warnings from tier, extended_fraction, and neighbour coverage.
+
+   6. Return ``ActivityEstimate`` with all fields populated.
+
+   Fallback path
+   -------------
+   If *matches* is empty or all matched neighbours have ``None`` actual
+   durations, the ``HierarchicalFallbackPolicy`` is invoked with access to
+   the full ``historical_activities`` list so it can apply the 4-level
+   relaxed-matching strategy.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator.logger
+   src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator._HIGH_DISRUPTION_FRACTION
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.uncertainty.duration_estimator.DurationEstimator
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: _HIGH_DISRUPTION_FRACTION
+   :value: 0.3
+
+
+.. py:class:: DurationEstimator(outlier_handler, fitter, confidence_estimator, fallback_policy, *, low_coverage_threshold = 0.4)
+
+   Orchestrate outlier separation, distribution fitting, and confidence.
+
+   :param outlier_handler: :class:`~outage_uncertainty.uncertainty.outlier_handler.OutlierHandler`
+   :param fitter: :class:`~outage_uncertainty.uncertainty.distribution_fitter.DistributionFitter`
+   :param confidence_estimator: :class:`~outage_uncertainty.uncertainty.confidence.ConfidenceEstimator`
+   :param fallback_policy: :class:`~outage_uncertainty.uncertainty.fallback_policy.HierarchicalFallbackPolicy`
+   :param low_coverage_threshold: Best-match similarity below which the estimate
+                                  is flagged as low-coverage.  Mirrors ``NeighborSelector.warn_below``;
+                                  keep the two in sync so the warning fires at the same threshold as
+                                  the selector's low-coverage flag.  Default 0.4.
+
+
+   .. py:attribute:: outlier_handler
+
+
+   .. py:attribute:: fitter
+
+
+   .. py:attribute:: confidence_estimator
+
+
+   .. py:attribute:: fallback_policy
+
+
+   .. py:attribute:: low_coverage_threshold
+      :value: 0.4
+
+
+
+   .. py:method:: estimate(query, matches, historical_activities = None)
+
+      Produce a :class:`ActivityEstimate` for *query* given *matches*.
+
+      :param query: The planned activity being estimated.
+      :param matches: Top-k neighbours from
+                      :class:`~outage_uncertainty.retrieval.neighbor_selector.NeighborSelector`.
+                      May be empty.
+      :param historical_activities: Full historical corpus.  Passed to the
+                                    fallback policy so it can apply relaxed matching when the
+                                    primary search yields no usable durations.
+
+      :returns: :class:`ActivityEstimate` with distribution, confidence, and
+                warnings.
+
+
+
+   .. py:method:: _build_warnings(result, separation, matches, *, low_coverage_threshold = 0.4)
+      :staticmethod:
+
+
+

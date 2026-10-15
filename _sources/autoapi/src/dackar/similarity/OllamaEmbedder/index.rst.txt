@@ -1,0 +1,153 @@
+src.dackar.similarity.OllamaEmbedder
+====================================
+
+.. py:module:: src.dackar.similarity.OllamaEmbedder
+
+.. autoapi-nested-parse::
+
+   Ollama-backed dense-vector text embedder.
+
+   A stateless (except for its cache) embedder served by a locally running Ollama
+   instance.  The same instance can be shared across callers.
+
+   Embedding model notes:
+
+   * ``nomic-embed-text:latest`` — fast, 274 MB.  Good general-purpose default.
+   * ``mxbai-embed-large:latest`` — stronger retrieval ranking, ~2.4x larger
+     (669 MB).
+
+   Caching
+   -------
+   Two-level cache:
+
+   1. **In-memory** — a plain ``dict`` mapping text to embedding, living for the
+      lifetime of the embedder instance.  Avoids redundant API calls within a
+      single run.
+   2. **Persistent JSON file** (optional) — loaded at construction and saved on
+      demand via :meth:`save_cache`, so embeddings survive across restarts.
+
+   Graceful degradation
+   --------------------
+   If the Ollama server is unreachable (``URLError``, ``TimeoutError``) the
+   embedder logs a warning and returns a single-element vector ``[0.0]`` so the
+   caller can fall back (e.g. to a lexical similarity measure).
+
+   Only the standard library is required.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.similarity.OllamaEmbedder.logger
+   src.dackar.similarity.OllamaEmbedder._FALLBACK_EMBEDDING
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.similarity.OllamaEmbedder.OllamaEmbedder
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.similarity.OllamaEmbedder.cosine_similarity
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: _FALLBACK_EMBEDDING
+   :type:  list[float]
+   :value: [0.0]
+
+
+.. py:class:: OllamaEmbedder(model = 'nomic-embed-text:latest', base_url = 'http://localhost:11434', cache_path = None, timeout = 30)
+
+   Dense-vector text embedder backed by a local Ollama server.
+
+   :param model: Ollama model name, e.g. ``"nomic-embed-text:latest"`` or
+                 ``"mxbai-embed-large:latest"``.
+   :param base_url: Base URL of the Ollama HTTP API.
+                    Default ``"http://localhost:11434"``.
+   :param cache_path: Optional path to a JSON file used as a persistent cache.
+                      If the file already exists its contents are loaded on construction.
+                      Call :meth:`save_cache` to flush in-memory additions back to disk.
+   :param timeout: HTTP request timeout in seconds.  Default 30.
+
+
+   .. py:attribute:: _model
+      :value: 'nomic-embed-text:latest'
+
+
+
+   .. py:attribute:: _base_url
+      :value: ''
+
+
+
+   .. py:attribute:: _timeout
+      :value: 30
+
+
+
+   .. py:attribute:: _cache
+      :type:  dict[str, list[float]]
+
+
+   .. py:attribute:: _cache_path
+      :value: None
+
+
+
+   .. py:method:: encode(text)
+
+      Return the dense embedding vector for *text*.
+
+      Successful results are cached in memory.  Returns the ``[0.0]``
+      fallback singleton if Ollama is unavailable (logged at WARNING level);
+      a fallback is never cached, so a later call retries the server.
+
+
+
+   .. py:method:: encode_batch(texts)
+
+      Encode multiple texts, exploiting the in-memory cache.
+
+
+
+   .. py:method:: cache_size()
+
+      Return the number of successfully-embedded texts held in memory.
+
+
+
+   .. py:method:: save_cache()
+
+      Flush the in-memory cache to the JSON file specified at construction.
+
+
+
+   .. py:method:: _call_api(text)
+
+
+   .. py:method:: _load_cache(path)
+
+
+.. py:function:: cosine_similarity(a, b)
+
+   Return the cosine similarity between two vectors.
+
+   Returns 0.0 if either vector is the fallback ``[0.0]`` singleton, if the
+   vectors differ in length, or if either norm is zero.
+
+

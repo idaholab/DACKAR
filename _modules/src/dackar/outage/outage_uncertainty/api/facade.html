@@ -1,0 +1,328 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.api.facade &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.api.facade</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.api.facade</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Public factory for the outage duration-uncertainty service.</span>
+
+<span class="sd">Usage (minimal)::</span>
+
+<span class="sd">    from dackar.outage.outage_uncertainty.api.facade import build_duration_uncertainty_service</span>
+
+<span class="sd">    service = build_duration_uncertainty_service()</span>
+<span class="sd">    estimate = service.estimate_activity(query_row={...}, historical_rows=[...])</span>
+
+<span class="sd">The factory wires all components together.  Heavy optional dependencies</span>
+<span class="sd">(textacy, dackar.similarity, NLTK / pywsd) are loaded lazily inside each</span>
+<span class="sd">component and fall back gracefully when absent.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.adapters.pandas_repository</span><span class="w"> </span><span class="kn">import</span> <span class="n">PandasActivityRepository</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.api.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">AppConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.preprocessing.abbreviations</span><span class="w"> </span><span class="kn">import</span> <span class="n">AbbreviationResolver</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.preprocessing.cleaners</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">ActivityCleaner</span><span class="p">,</span>
+    <span class="n">ComponentIdRemover</span><span class="p">,</span>
+    <span class="n">IdentityTransform</span><span class="p">,</span>
+    <span class="n">TextacyPreprocessor</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.preprocessing.ollama_embedder</span><span class="w"> </span><span class="kn">import</span> <span class="n">OllamaEmbedder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.preprocessing.spell_checker</span><span class="w"> </span><span class="kn">import</span> <span class="n">DomainSpellChecker</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.retrieval.semantic_similarity</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">EmbeddingSemanticScorer</span><span class="p">,</span>
+    <span class="n">SemanticSimilarityScorer</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.preprocessing.feature_builder</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActivityFeatureBuilder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.preprocessing.label_mapper</span><span class="w"> </span><span class="kn">import</span> <span class="n">TaskLabelMapper</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.preprocessing.validators</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActivityValidator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.retrieval.context_similarity</span><span class="w"> </span><span class="kn">import</span> <span class="n">ContextSimilarityScorer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.retrieval.dependency_similarity</span><span class="w"> </span><span class="kn">import</span> <span class="n">DependencyPatternScorer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.retrieval.lexical_similarity</span><span class="w"> </span><span class="kn">import</span> <span class="n">LexicalSimilarityScorer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.retrieval.neighbor_selector</span><span class="w"> </span><span class="kn">import</span> <span class="n">NeighborSelector</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.retrieval.retrieval_index</span><span class="w"> </span><span class="kn">import</span> <span class="n">HistoricalActivityIndex</span><span class="p">,</span> <span class="n">LexicalContextPrescorer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.retrieval.similarity_engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimilarityAggregator</span><span class="p">,</span> <span class="n">SimilarityEngine</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.services.duration_service</span><span class="w"> </span><span class="kn">import</span> <span class="n">DurationUncertaintyService</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.uncertainty.confidence</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConfidenceEstimator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.uncertainty.distribution_fitter</span><span class="w"> </span><span class="kn">import</span> <span class="n">DistributionFitter</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.uncertainty.duration_estimator</span><span class="w"> </span><span class="kn">import</span> <span class="n">DurationEstimator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.uncertainty.fallback_policy</span><span class="w"> </span><span class="kn">import</span> <span class="n">FallbackPolicy</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.uncertainty.outlier_handler</span><span class="w"> </span><span class="kn">import</span> <span class="n">OutlierHandler</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.workflows.activity_ingestion_workflow</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActivityIngestionWorkflow</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.workflows.similarity_assessment_workflow</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimilarityAssessmentWorkflow</span>
+
+<span class="c1"># Default path: &lt;DACKAR project root&gt;/data/abbreviations.xlsx</span>
+<span class="c1"># Resolved relative to this file's location so it works regardless of cwd.</span>
+<span class="c1"># Layout: outage/outage_uncertainty/api/facade.py</span>
+<span class="c1">#   parents[0]=api  parents[1]=outage_uncertainty  parents[2]=outage</span>
+<span class="c1">#   parents[3]=dackar  parents[4]=src  parents[5]=DACKAR/</span>
+<div class="viewcode-block" id="_DEFAULT_ABBREVIATIONS_FILE">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/api/facade/index.html#src.dackar.outage.outage_uncertainty.api.facade._DEFAULT_ABBREVIATIONS_FILE">[docs]</a>
+<span class="n">_DEFAULT_ABBREVIATIONS_FILE</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span>
+    <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parents</span><span class="p">[</span><span class="mi">5</span><span class="p">]</span> <span class="o">/</span> <span class="s2">"data"</span> <span class="o">/</span> <span class="s2">"abbreviations.xlsx"</span>
+<span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="build_duration_uncertainty_service">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/api/facade/index.html#src.dackar.outage.outage_uncertainty.api.facade.build_duration_uncertainty_service">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_duration_uncertainty_service</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">AppConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">abbreviations_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">abbreviations</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">taxonomy_rules</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DurationUncertaintyService</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Build and wire a fully configured :class:`DurationUncertaintyService`.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    config:</span>
+<span class="sd">        Full :class:`AppConfig` instance.  When provided all other keyword</span>
+<span class="sd">        arguments are ignored (configure via the ``AppConfig`` fields instead).</span>
+<span class="sd">    abbreviations_file:</span>
+<span class="sd">        Path to the abbreviations Excel file.  Defaults to the DACKAR</span>
+<span class="sd">        ``data/abbreviations.xlsx``.  Pass ``""`` to disable file loading.</span>
+<span class="sd">    abbreviations:</span>
+<span class="sd">        Extra ``{abbr: full}`` pairs merged on top of the Excel data.</span>
+<span class="sd">    taxonomy_rules:</span>
+<span class="sd">        Keyword-to-taxonomy mapping for :class:`TaskLabelMapper`.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    DurationUncertaintyService</span>
+<span class="sd">        Ready-to-use service instance.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">config</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">config</span> <span class="o">=</span> <span class="n">AppConfig</span><span class="p">(</span>
+            <span class="n">taxonomy_rules</span><span class="o">=</span><span class="n">taxonomy_rules</span> <span class="ow">or</span> <span class="p">{},</span>
+            <span class="n">abbreviations</span><span class="o">=</span><span class="n">abbreviations</span> <span class="ow">or</span> <span class="p">{},</span>
+            <span class="n">abbreviations_file</span><span class="o">=</span><span class="n">abbreviations_file</span><span class="p">,</span>   <span class="c1"># None → use default below</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Resolve the abbreviations file path (None means "use default")</span>
+    <span class="n">abbr_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">abbreviations_file</span>
+    <span class="k">if</span> <span class="n">abbr_file</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">abbr_file</span> <span class="o">=</span> <span class="n">_DEFAULT_ABBREVIATIONS_FILE</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Ollama embedder (shared by feature builder and semantic scorer)</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="n">embedder</span><span class="p">:</span> <span class="n">OllamaEmbedder</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">embedding_enabled</span><span class="p">:</span>
+        <span class="n">embedder</span> <span class="o">=</span> <span class="n">OllamaEmbedder</span><span class="p">(</span>
+            <span class="n">model</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">embedding_model</span><span class="p">,</span>
+            <span class="n">base_url</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">ollama_base_url</span><span class="p">,</span>
+            <span class="n">cache_path</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">embedding_cache_path</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Text cleaning pipeline</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="n">abbreviation_expander</span> <span class="o">=</span> <span class="n">AbbreviationResolver</span><span class="p">(</span>
+        <span class="n">abbreviations_file</span><span class="o">=</span><span class="n">abbr_file</span> <span class="k">if</span> <span class="n">abbr_file</span> <span class="o">!=</span> <span class="s2">""</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">extra_abbreviations</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">abbreviations</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">cleaner</span> <span class="o">=</span> <span class="n">ActivityCleaner</span><span class="p">(</span>
+        <span class="n">component_id_remover</span><span class="o">=</span><span class="n">ComponentIdRemover</span><span class="p">(),</span>
+        <span class="n">preprocessor</span><span class="o">=</span><span class="n">TextacyPreprocessor</span><span class="p">(),</span>
+        <span class="n">abbreviation_expander</span><span class="o">=</span><span class="n">abbreviation_expander</span><span class="p">,</span>
+        <span class="n">spell_checker</span><span class="o">=</span><span class="p">(</span>
+            <span class="n">DomainSpellChecker</span><span class="p">(</span><span class="n">cutoff</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">spell_check_cutoff</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">spell_check_enabled</span>
+            <span class="k">else</span> <span class="n">IdentityTransform</span><span class="p">()</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Ingestion workflow</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="n">ingestion</span> <span class="o">=</span> <span class="n">ActivityIngestionWorkflow</span><span class="p">(</span>
+        <span class="n">repository</span><span class="o">=</span><span class="n">PandasActivityRepository</span><span class="p">(),</span>
+        <span class="n">cleaner</span><span class="o">=</span><span class="n">cleaner</span><span class="p">,</span>
+        <span class="n">label_mapper</span><span class="o">=</span><span class="n">TaskLabelMapper</span><span class="p">(</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">taxonomy_rules</span><span class="p">,</span>
+            <span class="n">use_defaults</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">taxonomy_use_defaults</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="n">feature_builder</span><span class="o">=</span><span class="n">ActivityFeatureBuilder</span><span class="p">(</span><span class="n">embedder</span><span class="o">=</span><span class="n">embedder</span><span class="p">),</span>
+        <span class="n">validator</span><span class="o">=</span><span class="n">ActivityValidator</span><span class="p">(),</span>
+    <span class="p">)</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Similarity engine</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># When embedding is enabled: EmbeddingSemanticScorer (cosine on dense vectors)</span>
+    <span class="c1"># Otherwise: WordNet/Pawar-Mago scorer with trigram-Jaccard fallback.</span>
+    <span class="c1"># Weights rebalanced to include the dependency (schedule-neighbourhood)</span>
+    <span class="c1"># dimension per the PDF allocation:</span>
+    <span class="c1">#   text (lexical + semantic) ≈ 45%,  context ≈ 35%,  dependency = 20%</span>
+    <span class="n">semantic_scorer</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">EmbeddingSemanticScorer</span><span class="p">(</span><span class="n">embedder</span><span class="o">=</span><span class="n">embedder</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">embedding_enabled</span>
+        <span class="k">else</span> <span class="n">SemanticSimilarityScorer</span><span class="p">(</span>
+            <span class="n">disambiguation_method</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">semantic_disambiguation_method</span><span class="p">,</span>
+            <span class="n">similarity_method</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">semantic_similarity_method</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="n">similarity_engine</span> <span class="o">=</span> <span class="n">SimilarityEngine</span><span class="p">(</span>
+        <span class="n">lexical_scorer</span><span class="o">=</span><span class="n">LexicalSimilarityScorer</span><span class="p">(),</span>
+        <span class="n">semantic_scorer</span><span class="o">=</span><span class="n">semantic_scorer</span><span class="p">,</span>
+        <span class="n">context_scorer</span><span class="o">=</span><span class="n">ContextSimilarityScorer</span><span class="p">(),</span>
+        <span class="n">aggregator</span><span class="o">=</span><span class="n">SimilarityAggregator</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="p">{</span>
+            <span class="s2">"lexical"</span><span class="p">:</span>    <span class="mf">0.15</span><span class="p">,</span>
+            <span class="s2">"semantic"</span><span class="p">:</span>   <span class="mf">0.30</span><span class="p">,</span>
+            <span class="s2">"context"</span><span class="p">:</span>    <span class="mf">0.35</span><span class="p">,</span>
+            <span class="s2">"dependency"</span><span class="p">:</span> <span class="mf">0.20</span><span class="p">,</span>
+        <span class="p">}),</span>
+        <span class="n">dependency_scorer</span><span class="o">=</span><span class="n">DependencyPatternScorer</span><span class="p">(),</span>
+    <span class="p">)</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Duration estimation</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="n">prescorer</span> <span class="o">=</span> <span class="n">LexicalContextPrescorer</span><span class="p">(</span>
+        <span class="n">text_weight</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">prescorer_text_weight</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">similarity_workflow</span> <span class="o">=</span> <span class="n">SimilarityAssessmentWorkflow</span><span class="p">(</span>
+        <span class="n">index</span><span class="o">=</span><span class="n">HistoricalActivityIndex</span><span class="p">(</span><span class="n">prescorer</span><span class="o">=</span><span class="n">prescorer</span><span class="p">),</span>
+        <span class="n">similarity_engine</span><span class="o">=</span><span class="n">similarity_engine</span><span class="p">,</span>
+        <span class="n">prescorer_top_k</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">prescorer_top_k</span><span class="p">,</span>
+        <span class="n">neighbor_selector</span><span class="o">=</span><span class="n">NeighborSelector</span><span class="p">(</span>
+            <span class="n">top_k</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">similarity_top_k</span><span class="p">,</span>
+            <span class="n">min_score</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">similarity_min_score</span><span class="p">,</span>
+            <span class="n">warn_below</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">similarity_warn_below</span><span class="p">,</span>
+            <span class="n">weight_exponent</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">similarity_weight_exponent</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="n">duration_estimator</span><span class="o">=</span><span class="n">DurationEstimator</span><span class="p">(</span>
+            <span class="n">outlier_handler</span><span class="o">=</span><span class="n">OutlierHandler</span><span class="p">(</span>
+                <span class="n">strategy</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">outlier_strategy</span><span class="p">,</span>
+                <span class="n">trim_pct</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">outlier_trim_pct</span><span class="p">,</span>
+                <span class="n">mad_scale</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">outlier_mad_scale</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="n">fitter</span><span class="o">=</span><span class="n">DistributionFitter</span><span class="p">(),</span>
+            <span class="n">confidence_estimator</span><span class="o">=</span><span class="n">ConfidenceEstimator</span><span class="p">(),</span>
+            <span class="n">fallback_policy</span><span class="o">=</span><span class="n">FallbackPolicy</span><span class="p">(</span>
+                <span class="n">min_support</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">fallback_min_support</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">DurationUncertaintyService</span><span class="p">(</span>
+        <span class="n">ingestion_workflow</span><span class="o">=</span><span class="n">ingestion</span><span class="p">,</span>
+        <span class="n">similarity_workflow</span><span class="o">=</span><span class="n">similarity_workflow</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

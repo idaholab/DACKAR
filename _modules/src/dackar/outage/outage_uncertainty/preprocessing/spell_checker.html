@@ -1,0 +1,395 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.preprocessing.spell_checker &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.preprocessing.spell_checker</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.preprocessing.spell_checker</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Domain-aware spell checker for nuclear outage activity descriptions.</span>
+
+<span class="sd">Design rationale</span>
+<span class="sd">----------------</span>
+<span class="sd">Generic spell checkers (pyspellchecker, autocorrect, etc.) are inappropriate</span>
+<span class="sd">here for two reasons:</span>
+
+<span class="sd">1. **Domain vocabulary** — nuclear outage terms such as ``"pressurizer"``,</span>
+<span class="sd">   ``"impeller"``, ``"torquing"`` are not in standard English dictionaries and</span>
+<span class="sd">   would be "corrected" to unrelated words.</span>
+<span class="sd">2. **Abbreviated tokens** — abbreviations that were not fully expanded (or are</span>
+<span class="sd">   new to the dictionary) must pass through unchanged; a generic checker would</span>
+<span class="sd">   mangle them.</span>
+
+<span class="sd">This checker builds its vocabulary *from the package's own domain data*</span>
+<span class="sd">(nuclear abbreviation expansions, taxonomy keywords, and a static engineering</span>
+<span class="sd">word list) so it can only suggest corrections to words that belong to the</span>
+<span class="sd">nuclear outage domain.</span>
+
+<span class="sd">Algorithm</span>
+<span class="sd">---------</span>
+<span class="sd">For each token in the cleaned text:</span>
+
+<span class="sd">1. **Pass-through** if the token is shorter than ``min_token_len`` (default 5)</span>
+<span class="sd">   or is already in the domain vocabulary.</span>
+<span class="sd">2. Otherwise call :func:`difflib.get_close_matches` against the vocabulary</span>
+<span class="sd">   with a configurable ``cutoff`` (default 0.85).  This is equivalent to</span>
+<span class="sd">   accepting corrections whose SequenceMatcher ratio ≥ ``cutoff``.</span>
+<span class="sd">3. If a match is found, substitute — **unless** the match is simply the token</span>
+<span class="sd">   with a prefix or suffix removed (a strict substring ≥ 2 characters shorter).</span>
+<span class="sd">   Those are rejected because for prefixed domain verbs the nearest vocabulary</span>
+<span class="sd">   word is the opposite operation (``uninstall`` → ``install``, ``unisolate``</span>
+<span class="sd">   → ``isolate``, ``reenergize`` → ``energize``, ``retorque`` → ``torque``),</span>
+<span class="sd">   not a typo correction.  Otherwise leave the original token.</span>
+
+<span class="sd">The 0.85 threshold was validated on a representative set of P6 typos:</span>
+
+<span class="sd">* ``calibartion`` → ``calibration``  (ratio 0.91)</span>
+<span class="sd">* ``presure``     → ``pressure``     (ratio 0.93)</span>
+<span class="sd">* ``transmiter``  → ``transmitter``  (ratio 0.95)</span>
+<span class="sd">* ``maintenace``  → ``maintenance``  (ratio 0.95)</span>
+<span class="sd">* ``inspcetion``  → ``inspection``   (ratio 0.90)</span>
+
+<span class="sd">and against common false-positive pairs</span>
+<span class="sd">(``primary`` / ``primate`` ratio 0.71; ``install`` / ``instill`` ratio 0.86</span>
+<span class="sd">which is borderline — resolved by ``install`` matching itself exactly at 1.0).</span>
+<span class="sd">Affix variants that clear the ratio cutoff but invert meaning are handled by</span>
+<span class="sd">the substring guard in step 3 rather than by the ratio alone.</span>
+
+<span class="sd">No external dependencies are required.  The checker is deterministic and</span>
+<span class="sd">fast enough for the corpus sizes (tens of thousands of activities) encountered</span>
+<span class="sd">in a single-outage planning cycle.</span>
+
+<span class="sd">Implementation</span>
+<span class="sd">--------------</span>
+<span class="sd">The closed-vocabulary correction algorithm is the generic</span>
+<span class="sd">:class:`dackar.text_processing.VocabSpellChecker.VocabSpellChecker`.  This module</span>
+<span class="sd">is the outage adapter: it supplies the nuclear-domain vocabulary and keeps the</span>
+<span class="sd">``.transform`` interface expected by :class:`ActivityCleaner`.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.text_processing.VocabSpellChecker</span><span class="w"> </span><span class="kn">import</span> <span class="n">VocabSpellChecker</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.preprocessing.default_taxonomy</span><span class="w"> </span><span class="kn">import</span> <span class="n">DEFAULT_TAXONOMY_RULES</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.preprocessing.nuclear_abbreviations</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">NUCLEAR_OUTAGE_ABBREVIATIONS</span><span class="p">,</span>
+<span class="p">)</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/spell_checker/index.html#src.dackar.outage.outage_uncertainty.preprocessing.spell_checker.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Static engineering / nuclear vocabulary</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Words (all lowercase) that appear in nuclear outage P6 activity descriptions</span>
+<span class="c1"># but are not derived from the nuclear abbreviation supplement or the taxonomy</span>
+<span class="c1"># keyword list.  Only words ≥ 5 characters are necessary here; shorter tokens</span>
+<span class="c1"># are never sent to get_close_matches (they are too short to distinguish typos</span>
+<span class="c1"># reliably from valid edits).</span>
+
+<div class="viewcode-block" id="_COMMON_ENGINEERING_WORDS">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/spell_checker/index.html#src.dackar.outage.outage_uncertainty.preprocessing.spell_checker._COMMON_ENGINEERING_WORDS">[docs]</a>
+<span class="n">_COMMON_ENGINEERING_WORDS</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span>
+    <span class="c1"># Action verbs — infinitive and nominal forms</span>
+    <span class="s2">"replace"</span><span class="p">,</span> <span class="s2">"replacement"</span><span class="p">,</span> <span class="s2">"replacing"</span><span class="p">,</span>
+    <span class="s2">"install"</span><span class="p">,</span> <span class="s2">"installation"</span><span class="p">,</span> <span class="s2">"installing"</span><span class="p">,</span>
+    <span class="s2">"remove"</span><span class="p">,</span>  <span class="s2">"removal"</span><span class="p">,</span>     <span class="s2">"removing"</span><span class="p">,</span>
+    <span class="s2">"inspect"</span><span class="p">,</span> <span class="s2">"inspection"</span><span class="p">,</span>  <span class="s2">"inspecting"</span><span class="p">,</span>
+    <span class="s2">"calibrate"</span><span class="p">,</span> <span class="s2">"calibration"</span><span class="p">,</span> <span class="s2">"calibrating"</span><span class="p">,</span>
+    <span class="s2">"adjust"</span><span class="p">,</span>  <span class="s2">"adjustment"</span><span class="p">,</span>  <span class="s2">"adjusting"</span><span class="p">,</span>
+    <span class="s2">"overhaul"</span><span class="p">,</span> <span class="s2">"overhauling"</span><span class="p">,</span>
+    <span class="s2">"repair"</span><span class="p">,</span>  <span class="s2">"repairing"</span><span class="p">,</span>
+    <span class="s2">"verify"</span><span class="p">,</span>  <span class="s2">"verification"</span><span class="p">,</span> <span class="s2">"verifying"</span><span class="p">,</span>
+    <span class="s2">"lubricate"</span><span class="p">,</span> <span class="s2">"lubrication"</span><span class="p">,</span> <span class="s2">"lubricating"</span><span class="p">,</span>
+    <span class="s2">"clean"</span><span class="p">,</span>   <span class="s2">"cleaning"</span><span class="p">,</span>
+    <span class="s2">"flush"</span><span class="p">,</span>   <span class="s2">"flushing"</span><span class="p">,</span>
+    <span class="s2">"drain"</span><span class="p">,</span>   <span class="s2">"draining"</span><span class="p">,</span>
+    <span class="s2">"purge"</span><span class="p">,</span>   <span class="s2">"purging"</span><span class="p">,</span>
+    <span class="s2">"vent"</span><span class="p">,</span>    <span class="s2">"venting"</span><span class="p">,</span>
+    <span class="s2">"bleed"</span><span class="p">,</span>   <span class="s2">"bleeding"</span><span class="p">,</span>
+    <span class="s2">"torque"</span><span class="p">,</span>  <span class="s2">"torquing"</span><span class="p">,</span>
+    <span class="s2">"weld"</span><span class="p">,</span>    <span class="s2">"welding"</span><span class="p">,</span>
+    <span class="s2">"fabricate"</span><span class="p">,</span> <span class="s2">"fabrication"</span><span class="p">,</span>
+    <span class="s2">"disassemble"</span><span class="p">,</span> <span class="s2">"disassembly"</span><span class="p">,</span>
+    <span class="s2">"reassemble"</span><span class="p">,</span>  <span class="s2">"reassembly"</span><span class="p">,</span>
+    <span class="s2">"pressurize"</span><span class="p">,</span>  <span class="s2">"depressurize"</span><span class="p">,</span>
+    <span class="s2">"energize"</span><span class="p">,</span> <span class="s2">"de-energize"</span><span class="p">,</span>
+    <span class="s2">"isolate"</span><span class="p">,</span>  <span class="s2">"isolation"</span><span class="p">,</span>
+    <span class="s2">"restore"</span><span class="p">,</span>  <span class="s2">"restoration"</span><span class="p">,</span>
+    <span class="s2">"commission"</span><span class="p">,</span> <span class="s2">"decommission"</span><span class="p">,</span>
+    <span class="s2">"measure"</span><span class="p">,</span>  <span class="s2">"measurement"</span><span class="p">,</span>
+    <span class="s2">"testing"</span><span class="p">,</span>  <span class="s2">"retest"</span><span class="p">,</span>
+    <span class="s2">"document"</span><span class="p">,</span> <span class="s2">"documentation"</span><span class="p">,</span>
+    <span class="s2">"perform"</span><span class="p">,</span>  <span class="s2">"performance"</span><span class="p">,</span>
+    <span class="c1"># Components</span>
+    <span class="s2">"bearing"</span><span class="p">,</span>   <span class="s2">"bearings"</span><span class="p">,</span>
+    <span class="s2">"shaft"</span><span class="p">,</span>     <span class="s2">"shafts"</span><span class="p">,</span>
+    <span class="s2">"coupling"</span><span class="p">,</span>  <span class="s2">"couplings"</span><span class="p">,</span>
+    <span class="s2">"gasket"</span><span class="p">,</span>    <span class="s2">"gaskets"</span><span class="p">,</span>
+    <span class="s2">"flange"</span><span class="p">,</span>    <span class="s2">"flanges"</span><span class="p">,</span>
+    <span class="s2">"impeller"</span><span class="p">,</span>  <span class="s2">"impellers"</span><span class="p">,</span>
+    <span class="s2">"bracket"</span><span class="p">,</span>   <span class="s2">"brackets"</span><span class="p">,</span>
+    <span class="s2">"nozzle"</span><span class="p">,</span>    <span class="s2">"nozzles"</span><span class="p">,</span>
+    <span class="s2">"strainer"</span><span class="p">,</span>  <span class="s2">"strainers"</span><span class="p">,</span>
+    <span class="s2">"filter"</span><span class="p">,</span>    <span class="s2">"filters"</span><span class="p">,</span>
+    <span class="s2">"housing"</span><span class="p">,</span>   <span class="s2">"casing"</span><span class="p">,</span>
+    <span class="s2">"packing"</span><span class="p">,</span>   <span class="s2">"gland"</span><span class="p">,</span>
+    <span class="s2">"actuator"</span><span class="p">,</span>  <span class="s2">"positioner"</span><span class="p">,</span>
+    <span class="s2">"transmitter"</span><span class="p">,</span> <span class="s2">"transducer"</span><span class="p">,</span>
+    <span class="s2">"sensor"</span><span class="p">,</span>    <span class="s2">"sensors"</span><span class="p">,</span>
+    <span class="s2">"controller"</span><span class="p">,</span> <span class="s2">"relay"</span><span class="p">,</span>
+    <span class="s2">"switch"</span><span class="p">,</span>    <span class="s2">"switches"</span><span class="p">,</span>
+    <span class="s2">"breaker"</span><span class="p">,</span>   <span class="s2">"breakers"</span><span class="p">,</span>
+    <span class="s2">"transformer"</span><span class="p">,</span> <span class="s2">"compressor"</span><span class="p">,</span>
+    <span class="s2">"expansion"</span><span class="p">,</span> <span class="s2">"reducer"</span><span class="p">,</span>
+    <span class="s2">"support"</span><span class="p">,</span>   <span class="s2">"hanger"</span><span class="p">,</span>
+    <span class="s2">"insulation"</span><span class="p">,</span>
+    <span class="c1"># Systems and descriptors</span>
+    <span class="s2">"reactor"</span><span class="p">,</span>   <span class="s2">"containment"</span><span class="p">,</span>
+    <span class="s2">"coolant"</span><span class="p">,</span>   <span class="s2">"feedwater"</span><span class="p">,</span>
+    <span class="s2">"turbine"</span><span class="p">,</span>   <span class="s2">"condenser"</span><span class="p">,</span>
+    <span class="s2">"generator"</span><span class="p">,</span> <span class="s2">"steam"</span><span class="p">,</span>
+    <span class="s2">"pressurizer"</span><span class="p">,</span>
+    <span class="s2">"primary"</span><span class="p">,</span>   <span class="s2">"secondary"</span><span class="p">,</span>
+    <span class="s2">"auxiliary"</span><span class="p">,</span> <span class="s2">"emergency"</span><span class="p">,</span>
+    <span class="s2">"standby"</span><span class="p">,</span>   <span class="s2">"redundant"</span><span class="p">,</span>
+    <span class="s2">"mechanical"</span><span class="p">,</span> <span class="s2">"electrical"</span><span class="p">,</span>
+    <span class="s2">"pneumatic"</span><span class="p">,</span> <span class="s2">"hydraulic"</span><span class="p">,</span>
+    <span class="s2">"thermal"</span><span class="p">,</span>   <span class="s2">"nuclear"</span><span class="p">,</span>
+    <span class="s2">"structural"</span><span class="p">,</span> <span class="s2">"functional"</span><span class="p">,</span>
+    <span class="s2">"visual"</span><span class="p">,</span>    <span class="s2">"dimensional"</span><span class="p">,</span>
+    <span class="s2">"ultrasonic"</span><span class="p">,</span> <span class="s2">"radiographic"</span><span class="p">,</span>
+    <span class="s2">"preventive"</span><span class="p">,</span> <span class="s2">"corrective"</span><span class="p">,</span>
+    <span class="s2">"periodic"</span><span class="p">,</span>  <span class="s2">"annual"</span><span class="p">,</span>
+    <span class="s2">"refuel"</span><span class="p">,</span>    <span class="s2">"outage"</span><span class="p">,</span>
+    <span class="s2">"setpoint"</span><span class="p">,</span>  <span class="s2">"setpoints"</span><span class="p">,</span>
+    <span class="s2">"differential"</span><span class="p">,</span> <span class="s2">"pressure"</span><span class="p">,</span>
+    <span class="s2">"temperature"</span><span class="p">,</span> <span class="s2">"voltage"</span><span class="p">,</span>
+    <span class="s2">"resistance"</span><span class="p">,</span> <span class="s2">"current"</span><span class="p">,</span>
+    <span class="s2">"level"</span><span class="p">,</span>     <span class="s2">"flow"</span><span class="p">,</span>
+    <span class="s2">"safety"</span><span class="p">,</span>    <span class="s2">"protective"</span><span class="p">,</span>
+    <span class="s2">"radioactive"</span><span class="p">,</span> <span class="s2">"radiation"</span><span class="p">,</span>
+    <span class="s2">"critical"</span><span class="p">,</span>  <span class="s2">"normal"</span><span class="p">,</span>
+    <span class="s2">"upper"</span><span class="p">,</span>     <span class="s2">"lower"</span><span class="p">,</span>
+    <span class="s2">"inner"</span><span class="p">,</span>     <span class="s2">"outer"</span><span class="p">,</span>
+    <span class="s2">"discharge"</span><span class="p">,</span> <span class="s2">"suction"</span><span class="p">,</span>
+    <span class="s2">"upstream"</span><span class="p">,</span>  <span class="s2">"downstream"</span><span class="p">,</span>
+    <span class="s2">"train"</span><span class="p">,</span>     <span class="s2">"division"</span><span class="p">,</span>
+    <span class="s2">"system"</span><span class="p">,</span>    <span class="s2">"subsystem"</span><span class="p">,</span>
+    <span class="s2">"assembly"</span><span class="p">,</span>  <span class="s2">"subassembly"</span><span class="p">,</span>
+    <span class="s2">"component"</span><span class="p">,</span> <span class="s2">"equipment"</span><span class="p">,</span>
+    <span class="s2">"station"</span><span class="p">,</span>   <span class="s2">"panel"</span><span class="p">,</span>
+    <span class="s2">"cabinet"</span><span class="p">,</span>   <span class="s2">"enclosure"</span><span class="p">,</span>
+    <span class="s2">"motor"</span><span class="p">,</span>     <span class="s2">"pump"</span><span class="p">,</span>
+    <span class="s2">"valve"</span><span class="p">,</span>     <span class="s2">"piping"</span><span class="p">,</span>
+    <span class="s2">"tubing"</span><span class="p">,</span>    <span class="s2">"fitting"</span><span class="p">,</span>
+    <span class="s2">"connector"</span><span class="p">,</span> <span class="s2">"terminal"</span><span class="p">,</span>
+    <span class="s2">"wiring"</span><span class="p">,</span>    <span class="s2">"cabling"</span><span class="p">,</span>
+    <span class="s2">"ground"</span><span class="p">,</span>    <span class="s2">"grounding"</span><span class="p">,</span>
+    <span class="s2">"torque"</span><span class="p">,</span>    <span class="s2">"thread"</span><span class="p">,</span>
+    <span class="s2">"bolt"</span><span class="p">,</span>      <span class="s2">"nut"</span><span class="p">,</span>
+    <span class="s2">"washer"</span><span class="p">,</span>    <span class="s2">"stud"</span><span class="p">,</span>
+    <span class="s2">"screw"</span><span class="p">,</span>     <span class="s2">"anchor"</span><span class="p">,</span>
+    <span class="s2">"bracket"</span><span class="p">,</span>   <span class="s2">"plate"</span><span class="p">,</span>
+    <span class="s2">"mounting"</span><span class="p">,</span>  <span class="s2">"support"</span><span class="p">,</span>
+    <span class="s2">"scaffold"</span><span class="p">,</span>  <span class="s2">"scaffolding"</span><span class="p">,</span>
+    <span class="s2">"personnel"</span><span class="p">,</span> <span class="s2">"qualified"</span><span class="p">,</span>
+    <span class="s2">"surveillance"</span><span class="p">,</span> <span class="s2">"operability"</span><span class="p">,</span>
+    <span class="s2">"clearance"</span><span class="p">,</span> <span class="s2">"permit"</span><span class="p">,</span>
+    <span class="s2">"procedure"</span><span class="p">,</span> <span class="s2">"instruction"</span><span class="p">,</span>
+    <span class="s2">"checklist"</span><span class="p">,</span> <span class="s2">"record"</span><span class="p">,</span>
+    <span class="s2">"walkdown"</span><span class="p">,</span>  <span class="s2">"walkthrough"</span><span class="p">,</span>
+    <span class="c1"># Words formerly contributed by nuclear-abbreviation expansions that were</span>
+    <span class="c1"># migrated into the shared abbreviations.xlsx (57-entry split).  Listed here</span>
+    <span class="c1"># so slimming NUCLEAR_OUTAGE_ABBREVIATIONS does not shrink the spell-check</span>
+    <span class="c1"># vocabulary: these tokens no longer arrive via the module dict.</span>
+    <span class="s2">"achievable"</span><span class="p">,</span> <span class="s2">"analysis"</span><span class="p">,</span> <span class="s2">"and"</span><span class="p">,</span> <span class="s2">"as"</span><span class="p">,</span> <span class="s2">"brief"</span><span class="p">,</span> <span class="s2">"controls"</span><span class="p">,</span>
+    <span class="s2">"cooling"</span><span class="p">,</span> <span class="s2">"core"</span><span class="p">,</span> <span class="s2">"drive"</span><span class="p">,</span> <span class="s2">"examination"</span><span class="p">,</span> <span class="s2">"hazard"</span><span class="p">,</span> <span class="s2">"high"</span><span class="p">,</span>
+    <span class="s2">"identification"</span><span class="p">,</span> <span class="s2">"job"</span><span class="p">,</span> <span class="s2">"low"</span><span class="p">,</span> <span class="s2">"material"</span><span class="p">,</span> <span class="s2">"non-destructive"</span><span class="p">,</span>
+    <span class="s2">"operations"</span><span class="p">,</span> <span class="s2">"positive"</span><span class="p">,</span> <span class="s2">"pre-job"</span><span class="p">,</span> <span class="s2">"reasonably"</span><span class="p">,</span> <span class="s2">"reinstallation"</span><span class="p">,</span>
+    <span class="s2">"rod"</span><span class="p">,</span> <span class="s2">"spray"</span><span class="p">,</span>
+<span class="p">})</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># DomainSpellChecker</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_build_domain_vocab">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/spell_checker/index.html#src.dackar.outage.outage_uncertainty.preprocessing.spell_checker._build_domain_vocab">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_domain_vocab</span><span class="p">(</span><span class="n">extra</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Build the nuclear outage vocabulary from four sources:</span>
+
+<span class="sd">    1. Individual words from all nuclear abbreviation *expansions*</span>
+<span class="sd">       (e.g. "main coolant pump" contributes "main", "coolant", "pump").</span>
+<span class="sd">    2. All keywords from the taxonomy rules (single-word and phrase parts).</span>
+<span class="sd">    3. The static :data:`_COMMON_ENGINEERING_WORDS` set.</span>
+<span class="sd">    4. Any ``extra_vocab`` supplied by the caller.</span>
+<span class="sd">    """</span>
+    <span class="n">vocab</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+    <span class="c1"># Nuclear abbreviation expansion values</span>
+    <span class="k">for</span> <span class="n">phrase</span> <span class="ow">in</span> <span class="n">NUCLEAR_OUTAGE_ABBREVIATIONS</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+        <span class="n">vocab</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">phrase</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+
+    <span class="c1"># Taxonomy keyword tokens</span>
+    <span class="k">for</span> <span class="n">kw</span> <span class="ow">in</span> <span class="n">DEFAULT_TAXONOMY_RULES</span><span class="p">:</span>
+        <span class="n">vocab</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">kw</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+
+    <span class="c1"># Static engineering vocabulary</span>
+    <span class="n">vocab</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">w</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">_COMMON_ENGINEERING_WORDS</span><span class="p">)</span>
+
+    <span class="c1"># Caller-supplied extras</span>
+    <span class="n">vocab</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">w</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">extra</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">vocab</span></div>
+
+
+
+<div class="viewcode-block" id="DomainSpellChecker">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/spell_checker/index.html#src.dackar.outage.outage_uncertainty.preprocessing.spell_checker.DomainSpellChecker">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DomainSpellChecker</span><span class="p">(</span><span class="n">VocabSpellChecker</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Correct residual misspellings using a nuclear outage domain vocabulary.</span>
+
+<span class="sd">    A thin outage adapter over</span>
+<span class="sd">    :class:`dackar.text_processing.VocabSpellChecker.VocabSpellChecker`: it</span>
+<span class="sd">    assembles the nuclear-domain vocabulary and leaves the correction algorithm</span>
+<span class="sd">    (``.transform``) to the base class.  The checker only ever substitutes a</span>
+<span class="sd">    token with a word drawn from that vocabulary; unknown tokens with no close</span>
+<span class="sd">    match are left unchanged.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        cutoff: Minimum SequenceMatcher ratio for a correction to be</span>
+<span class="sd">            accepted.  Default 0.85.  Lower values increase recall but</span>
+<span class="sd">            also increase the risk of false corrections.</span>
+<span class="sd">        min_token_len: Tokens shorter than this are never corrected</span>
+<span class="sd">            (too short to disambiguate reliably).  Default 5.</span>
+<span class="sd">        extra_vocab: Additional domain words to add to the built-in</span>
+<span class="sd">            vocabulary.  Useful for plant-specific terminology.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">cutoff</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.85</span><span class="p">,</span>
+        <span class="n">min_token_len</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span>
+        <span class="n">extra_vocab</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">vocabulary</span><span class="o">=</span><span class="n">_build_domain_vocab</span><span class="p">(</span><span class="n">extra_vocab</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">()),</span>
+            <span class="n">cutoff</span><span class="o">=</span><span class="n">cutoff</span><span class="p">,</span>
+            <span class="n">min_token_len</span><span class="o">=</span><span class="n">min_token_len</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"DomainSpellChecker: vocabulary size=</span><span class="si">%d</span><span class="s2">"</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_vocab</span><span class="p">))</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

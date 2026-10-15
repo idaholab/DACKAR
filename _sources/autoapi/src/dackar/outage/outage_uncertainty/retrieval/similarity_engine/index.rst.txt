@@ -1,0 +1,91 @@
+src.dackar.outage.outage_uncertainty.retrieval.similarity_engine
+================================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.retrieval.similarity_engine
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.retrieval.similarity_engine.SimilarityAggregator
+   src.dackar.outage.outage_uncertainty.retrieval.similarity_engine.SimilarityEngine
+
+
+Module Contents
+---------------
+
+.. py:class:: SimilarityAggregator(weights = None)
+
+   Bases: :py:obj:`dackar.similarity.scoreAggregator.WeightedScoreAggregator`
+
+
+   Combine the outage similarity dimensions into a single total score.
+
+   A thin outage adapter over
+   :class:`dackar.similarity.scoreAggregator.WeightedScoreAggregator` that
+   pins the four retrieval dimensions (lexical / semantic / context /
+   dependency) and keeps the keyword-style :meth:`combine` signature the
+   engine calls.
+
+   :param weights: ``{dimension: weight}`` dict.  The default ships with
+                   ``"dependency": 0.0`` so the aggregator is backwards compatible
+                   when no dependency scorer is wired.  Pass a non-zero
+                   ``"dependency"`` weight together with a
+                   :class:`~outage_uncertainty.retrieval.dependency_similarity.DependencyPatternScorer`
+                   to activate the schedule-neighbourhood component (Gap 4).
+
+   Default weights (dependency disabled)::
+
+       lexical: 0.20,  semantic: 0.40,  context: 0.40,  dependency: 0.00
+
+
+   .. py:method:: combine(lexical, semantic, context, *, dependency = 0.0)
+
+      Return the weighted combination of per-dimension scores, clamped to [0, 1].
+
+      The ``dependency`` parameter is keyword-only so existing call sites
+      that pass only the three positional-style keyword arguments continue
+      to work without modification.
+
+      Clamping to ``[0, 1]`` (inherited from the base aggregator) matters
+      here: without it, unnormalized weight dicts (weights summing to > 1)
+      would produce total scores above 1.0, which would inflate
+      ``NeighborSelector`` power weights quadratically and let any moderate
+      match trivially pass ``ConfidenceEstimator``'s best-match threshold.
+
+
+
+.. py:class:: SimilarityEngine(lexical_scorer, semantic_scorer, context_scorer, aggregator, dependency_scorer=None)
+
+   Compute a composite similarity score between two activities.
+
+   :param lexical_scorer: Scores token-overlap between cleaned descriptions.
+   :param semantic_scorer: Scores WordNet / embedding-based text similarity.
+   :param context_scorer: Scores structured metadata similarity.
+   :param aggregator: Combines the per-dimension scores.
+   :param dependency_scorer: Optional; scores schedule-structural similarity
+                             (Gap 4).  When ``None`` the dependency dimension contributes 0.
+
+
+   .. py:attribute:: lexical_scorer
+
+
+   .. py:attribute:: semantic_scorer
+
+
+   .. py:attribute:: context_scorer
+
+
+   .. py:attribute:: aggregator
+
+
+   .. py:attribute:: dependency_scorer
+      :value: None
+
+
+
+   .. py:method:: compare(query, candidate)
+
+

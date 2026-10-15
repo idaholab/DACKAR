@@ -1,0 +1,554 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.uncertainty.confidence &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.uncertainty.confidence</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.uncertainty.confidence</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Three-tier confidence estimation for duration estimates.</span>
+
+<span class="sd">The PDF distinguishes two uncertainty types:</span>
+
+<span class="sd">  Aleatory  — genuine execution-time variability (can be modelled)</span>
+<span class="sd">  Epistemic — lack of knowledge from too few / too dissimilar analogues</span>
+
+<span class="sd">The confidence tier captures the *epistemic* dimension: it signals how much</span>
+<span class="sd">trust the planner should place in the estimate regardless of how wide the</span>
+<span class="sd">distribution is.</span>
+
+<span class="sd">Tiers</span>
+<span class="sd">-----</span>
+<span class="sd">high    Strong historical analogue coverage; estimate is reliable.</span>
+<span class="sd">        Reserve this tier for situations where a planner could act on the</span>
+<span class="sd">        P80 interval without further review.</span>
+
+<span class="sd">medium  Moderate coverage; usable but flag for planner awareness.</span>
+<span class="sd">        Appropriate when the estimate informs scheduling decisions but</span>
+<span class="sd">        a contingency buffer is advisable.</span>
+
+<span class="sd">low     Weak or no analogues; expert review required before committing</span>
+<span class="sd">        to schedule assumptions based on this estimate.</span>
+
+<span class="sd">Score formula</span>
+<span class="sd">-------------</span>
+<span class="sd">The scalar confidence score uses the relevance_weights from Phase 2</span>
+<span class="sd">(power-normalised) rather than a raw average so that the closest analogues</span>
+<span class="sd">dominate:</span>
+
+<span class="sd">    weighted_sim   = Σ(relevance_weight_i × total_score_i)</span>
+<span class="sd">    support_factor = min(n_routine / 20, 1.0)</span>
+<span class="sd">    score          = 0.6 × weighted_sim + 0.4 × support_factor</span>
+
+<span class="sd">The 0.6 / 0.4 split reflects that similarity quality matters more than raw</span>
+<span class="sd">count but both are necessary for a high-confidence estimate.</span>
+
+<span class="sd">Tier thresholds (all conditions must hold simultaneously)</span>
+<span class="sd">---------------------------------------------------------</span>
+<span class="sd">high   : score ≥ 0.70  AND  n_routine ≥ 10  AND  best_match ≥ 0.70</span>
+<span class="sd">         AND  outages_represented ≥ high_outage_threshold  (when provided)</span>
+<span class="sd">medium : score ≥ 0.45  AND  n_routine ≥  5  AND  best_match ≥ 0.50</span>
+<span class="sd">         AND  outages_represented ≥ medium_outage_threshold  (when provided)</span>
+<span class="sd">low    : otherwise</span>
+
+<span class="sd">Outage diversity gate</span>
+<span class="sd">---------------------</span>
+<span class="sd">Patterns learned from a single outage reflect within-outage variance, not</span>
+<span class="sd">the genuine between-outage variability that defines execution uncertainty.</span>
+<span class="sd">When ``outages_represented`` is passed to :meth:`classify` (value &gt; 0), the</span>
+<span class="sd">evidence tier is computed first (from score / support / best-match) and then</span>
+<span class="sd">capped by how many distinct outages the analogue pool spans.  The final tier</span>
+<span class="sd">is ``min(evidence_tier, diversity_cap)``, so the cap applies uniformly at every</span>
+<span class="sd">tier (it is not skipped for ``"medium"``):</span>
+
+<span class="sd">    outages_represented == 0  →  gate not applied (backward-compatible default)</span>
+<span class="sd">    outages_represented  &lt; medium_outage_threshold  →  cap = ``"low"``</span>
+<span class="sd">    outages_represented  &lt; high_outage_threshold    →  cap = ``"medium"``</span>
+<span class="sd">    outages_represented ≥ high_outage_threshold     →  cap = ``"high"`` (no effect)</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.domain.activity</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActivityCase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.domain.result_types</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimilarityMatch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.uncertainty.outlier_handler</span><span class="w"> </span><span class="kn">import</span> <span class="n">OutlierSeparation</span>
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="ConfidenceResult">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceResult">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ConfidenceResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Result of confidence estimation.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    score</span>
+<span class="sd">        Scalar in [0, 1].</span>
+<span class="sd">    tier</span>
+<span class="sd">        Qualitative tier: ``"high"``, ``"medium"``, or ``"low"``.</span>
+<span class="sd">    rationale</span>
+<span class="sd">        Human-readable explanation of the tier assignment.</span>
+<span class="sd">    uncertainty_type</span>
+<span class="sd">        Gap 2: dominant uncertainty source.</span>
+
+<span class="sd">        * ``"epistemic"`` – weak analogue coverage; the estimate is uncertain</span>
+<span class="sd">          because we lack data, not because the task is inherently variable.</span>
+<span class="sd">          Action: SME review / better work-package definition.</span>
+<span class="sd">        * ``"aleatory"`` – well-characterised natural execution variability.</span>
+<span class="sd">          Action: add schedule float proportional to P90–P50 spread.</span>
+<span class="sd">        * ``"mixed"`` – both signals present (moderate coverage *and* high</span>
+<span class="sd">          disruption rate or spread).  Action: contingency buffer + awareness.</span>
+<span class="sd">    recommended_action</span>
+<span class="sd">        Plain-language scheduling guidance derived from ``uncertainty_type``</span>
+<span class="sd">        and the tier.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="ConfidenceResult.score">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceResult.score">[docs]</a>
+    <span class="n">score</span><span class="p">:</span> <span class="nb">float</span></div>
+
+<div class="viewcode-block" id="ConfidenceResult.tier">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceResult.tier">[docs]</a>
+    <span class="n">tier</span><span class="p">:</span> <span class="nb">str</span>        <span class="c1"># "high" | "medium" | "low"</span></div>
+
+<div class="viewcode-block" id="ConfidenceResult.rationale">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceResult.rationale">[docs]</a>
+    <span class="n">rationale</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="ConfidenceResult.uncertainty_type">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceResult.uncertainty_type">[docs]</a>
+    <span class="n">uncertainty_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"unknown"</span>   <span class="c1"># "epistemic" | "aleatory" | "mixed"</span></div>
+
+<div class="viewcode-block" id="ConfidenceResult.recommended_action">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceResult.recommended_action">[docs]</a>
+    <span class="n">recommended_action</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span></div>
+</div>
+
+
+
+<span class="c1"># Thresholds as named constants so they can be overridden via subclassing</span>
+<span class="c1"># or adjusted in tests without monkey-patching.</span>
+<div class="viewcode-block" id="_HIGH_SCORE">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence._HIGH_SCORE">[docs]</a>
+<span class="n">_HIGH_SCORE</span>   <span class="o">=</span> <span class="mf">0.70</span></div>
+
+<div class="viewcode-block" id="_HIGH_SUPPORT">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence._HIGH_SUPPORT">[docs]</a>
+<span class="n">_HIGH_SUPPORT</span> <span class="o">=</span> <span class="mi">10</span></div>
+
+<div class="viewcode-block" id="_HIGH_BEST">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence._HIGH_BEST">[docs]</a>
+<span class="n">_HIGH_BEST</span>    <span class="o">=</span> <span class="mf">0.70</span></div>
+
+
+<div class="viewcode-block" id="_MED_SCORE">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence._MED_SCORE">[docs]</a>
+<span class="n">_MED_SCORE</span>    <span class="o">=</span> <span class="mf">0.45</span></div>
+
+<div class="viewcode-block" id="_MED_SUPPORT">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence._MED_SUPPORT">[docs]</a>
+<span class="n">_MED_SUPPORT</span>  <span class="o">=</span> <span class="mi">5</span></div>
+
+<div class="viewcode-block" id="_MED_BEST">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence._MED_BEST">[docs]</a>
+<span class="n">_MED_BEST</span>     <span class="o">=</span> <span class="mf">0.50</span></div>
+
+
+<span class="c1"># Outage diversity gate: minimum distinct outages required per tier.</span>
+<span class="c1"># Set to 0 to disable the gate entirely.</span>
+<div class="viewcode-block" id="_HIGH_OUTAGES">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence._HIGH_OUTAGES">[docs]</a>
+<span class="n">_HIGH_OUTAGES</span> <span class="o">=</span> <span class="mi">3</span></div>
+
+<div class="viewcode-block" id="_MED_OUTAGES">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence._MED_OUTAGES">[docs]</a>
+<span class="n">_MED_OUTAGES</span>  <span class="o">=</span> <span class="mi">2</span></div>
+
+
+
+<div class="viewcode-block" id="ConfidenceEstimator">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceEstimator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ConfidenceEstimator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Compute a scalar confidence score and tier for a duration estimate.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        similarity_weight: Weight given to the similarity component of the</span>
+<span class="sd">            score (the rest goes to support count).  Default 0.6.</span>
+<span class="sd">        support_saturation: Number of routine samples at which the support</span>
+<span class="sd">            factor saturates at 1.0.  Default 20.</span>
+<span class="sd">        high_score_threshold: Minimum score for the ``"high"`` tier.</span>
+<span class="sd">        high_support_threshold: Minimum routine-sample count for ``"high"``.</span>
+<span class="sd">        high_best_match_threshold: Minimum best-match score for ``"high"``.</span>
+<span class="sd">        medium_score_threshold: Minimum score for the ``"medium"`` tier.</span>
+<span class="sd">        medium_support_threshold: Minimum routine-sample count for</span>
+<span class="sd">            ``"medium"``.</span>
+<span class="sd">        medium_best_match_threshold: Minimum best-match score for</span>
+<span class="sd">            ``"medium"``.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">similarity_weight</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.6</span><span class="p">,</span>
+        <span class="n">support_saturation</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span>
+        <span class="n">high_score_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">_HIGH_SCORE</span><span class="p">,</span>
+        <span class="n">high_support_threshold</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">_HIGH_SUPPORT</span><span class="p">,</span>
+        <span class="n">high_best_match_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">_HIGH_BEST</span><span class="p">,</span>
+        <span class="n">medium_score_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">_MED_SCORE</span><span class="p">,</span>
+        <span class="n">medium_support_threshold</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">_MED_SUPPORT</span><span class="p">,</span>
+        <span class="n">medium_best_match_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">_MED_BEST</span><span class="p">,</span>
+        <span class="n">high_outage_threshold</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">_HIGH_OUTAGES</span><span class="p">,</span>
+        <span class="n">medium_outage_threshold</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">_MED_OUTAGES</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="ConfidenceEstimator._sim_w">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceEstimator._sim_w">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sim_w</span> <span class="o">=</span> <span class="n">similarity_weight</span></div>
+
+<div class="viewcode-block" id="ConfidenceEstimator._sup_sat">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceEstimator._sup_sat">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sup_sat</span> <span class="o">=</span> <span class="n">support_saturation</span></div>
+
+<div class="viewcode-block" id="ConfidenceEstimator._high">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceEstimator._high">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_high</span> <span class="o">=</span> <span class="p">(</span><span class="n">high_score_threshold</span><span class="p">,</span> <span class="n">high_support_threshold</span><span class="p">,</span> <span class="n">high_best_match_threshold</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ConfidenceEstimator._med">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceEstimator._med">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_med</span> <span class="o">=</span> <span class="p">(</span><span class="n">medium_score_threshold</span><span class="p">,</span> <span class="n">medium_support_threshold</span><span class="p">,</span> <span class="n">medium_best_match_threshold</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ConfidenceEstimator._high_outages">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceEstimator._high_outages">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_high_outages</span> <span class="o">=</span> <span class="n">high_outage_threshold</span></div>
+
+<div class="viewcode-block" id="ConfidenceEstimator._med_outages">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceEstimator._med_outages">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_med_outages</span> <span class="o">=</span> <span class="n">medium_outage_threshold</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Public interface</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="ConfidenceEstimator.classify">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceEstimator.classify">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">classify</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">query</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">,</span>  <span class="c1"># noqa: ARG002  (reserved for future query-level features)</span>
+        <span class="n">matches</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">SimilarityMatch</span><span class="p">],</span>
+        <span class="n">separation</span><span class="p">:</span> <span class="n">OutlierSeparation</span><span class="p">,</span>
+        <span class="n">outages_represented</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ConfidenceResult</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return a :class:`ConfidenceResult` for the given evidence.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            query: The planned activity being estimated (reserved for future</span>
+<span class="sd">                query-level adjustments).</span>
+<span class="sd">            matches: Neighbours selected by</span>
+<span class="sd">                :class:`~outage_uncertainty.retrieval.neighbor_selector.NeighborSelector`.</span>
+<span class="sd">            separation: Outlier separation result from</span>
+<span class="sd">                :class:`~outage_uncertainty.uncertainty.outlier_handler.OutlierHandler`.</span>
+<span class="sd">            outages_represented: Number of distinct outages the analogue pool</span>
+<span class="sd">                spans.  When ``0`` (default) the outage diversity gate is not</span>
+<span class="sd">                applied, preserving backward compatibility.  Pass the value</span>
+<span class="sd">                from ``retrieval_summary["outages_represented"]`` in Stage D to</span>
+<span class="sd">                enable the gate.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            :class:`ConfidenceResult` with scalar score, tier, and rationale.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">matches</span> <span class="ow">or</span> <span class="n">separation</span><span class="o">.</span><span class="n">n_routine</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ConfidenceResult</span><span class="p">(</span>
+                <span class="n">score</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+                <span class="n">tier</span><span class="o">=</span><span class="s2">"low"</span><span class="p">,</span>
+                <span class="n">rationale</span><span class="o">=</span><span class="s2">"No usable historical analogues found."</span><span class="p">,</span>
+                <span class="n">uncertainty_type</span><span class="o">=</span><span class="s2">"epistemic"</span><span class="p">,</span>
+                <span class="n">recommended_action</span><span class="o">=</span><span class="p">(</span>
+                    <span class="s2">"No historical data found — SME review or field walkdown "</span>
+                    <span class="s2">"required before committing to schedule."</span>
+                <span class="p">),</span>
+            <span class="p">)</span>
+
+        <span class="n">score</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_score</span><span class="p">(</span><span class="n">matches</span><span class="p">,</span> <span class="n">separation</span><span class="o">.</span><span class="n">n_routine</span><span class="p">)</span>
+        <span class="n">best</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">total_score</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">matches</span><span class="p">)</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="n">separation</span><span class="o">.</span><span class="n">n_routine</span>
+
+        <span class="n">tier</span><span class="p">,</span> <span class="n">rationale</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_classify_tier</span><span class="p">(</span><span class="n">score</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">best</span><span class="p">,</span> <span class="n">outages_represented</span><span class="p">)</span>
+        <span class="n">cv</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_cv</span><span class="p">(</span><span class="n">separation</span><span class="o">.</span><span class="n">routine</span><span class="p">)</span>
+        <span class="n">uncertainty_type</span><span class="p">,</span> <span class="n">recommended_action</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_classify_uncertainty</span><span class="p">(</span>
+            <span class="n">tier</span><span class="p">,</span> <span class="n">cv</span><span class="p">,</span> <span class="n">separation</span><span class="o">.</span><span class="n">extended_fraction</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">ConfidenceResult</span><span class="p">(</span>
+            <span class="n">score</span><span class="o">=</span><span class="n">score</span><span class="p">,</span>
+            <span class="n">tier</span><span class="o">=</span><span class="n">tier</span><span class="p">,</span>
+            <span class="n">rationale</span><span class="o">=</span><span class="n">rationale</span><span class="p">,</span>
+            <span class="n">uncertainty_type</span><span class="o">=</span><span class="n">uncertainty_type</span><span class="p">,</span>
+            <span class="n">recommended_action</span><span class="o">=</span><span class="n">recommended_action</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># Backwards-compatible scalar interface (used by tests expecting a float)</span>
+<div class="viewcode-block" id="ConfidenceEstimator.score">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceEstimator.score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">query</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">,</span>
+        <span class="n">matches</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">SimilarityMatch</span><span class="p">],</span>
+        <span class="n">durations</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return confidence score as a plain float (legacy interface).</span>
+
+<span class="sd">        Prefer :meth:`classify` in new code.</span>
+<span class="sd">        """</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.uncertainty.outlier_handler</span><span class="w"> </span><span class="kn">import</span> <span class="n">OutlierSeparation</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">durations</span><span class="p">)</span>
+        <span class="n">sep</span> <span class="o">=</span> <span class="n">OutlierSeparation</span><span class="p">(</span>
+            <span class="n">routine</span><span class="o">=</span><span class="n">durations</span><span class="p">,</span>
+            <span class="n">routine_weights</span><span class="o">=</span><span class="p">[</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">n</span><span class="p">]</span> <span class="o">*</span> <span class="n">n</span> <span class="k">if</span> <span class="n">n</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="p">[],</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">classify</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">matches</span><span class="p">,</span> <span class="n">sep</span><span class="p">)</span><span class="o">.</span><span class="n">score</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Private helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="ConfidenceEstimator._compute_score">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceEstimator._compute_score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compute_score</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">matches</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">SimilarityMatch</span><span class="p">],</span> <span class="n">n_routine</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="c1"># Weighted average similarity using relevance_weights (sum to 1.0)</span>
+        <span class="n">weighted_sim</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">relevance_weight</span> <span class="o">*</span> <span class="n">m</span><span class="o">.</span><span class="n">total_score</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">matches</span><span class="p">)</span>
+        <span class="n">support_factor</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">n_routine</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sup_sat</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="n">raw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sim_w</span> <span class="o">*</span> <span class="n">weighted_sim</span> <span class="o">+</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sim_w</span><span class="p">)</span> <span class="o">*</span> <span class="n">support_factor</span>
+        <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">raw</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="ConfidenceEstimator._classify_tier">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceEstimator._classify_tier">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_classify_tier</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">score</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">n_routine</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">best_match</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">outages_represented</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+        <span class="n">high_sc</span><span class="p">,</span> <span class="n">high_n</span><span class="p">,</span> <span class="n">high_best</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_high</span>
+        <span class="n">med_sc</span><span class="p">,</span> <span class="n">med_n</span><span class="p">,</span> <span class="n">med_best</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_med</span>
+
+        <span class="c1"># Step 1: evidence tier from score / support / best-match alone.</span>
+        <span class="k">if</span> <span class="n">score</span> <span class="o">&gt;=</span> <span class="n">high_sc</span> <span class="ow">and</span> <span class="n">n_routine</span> <span class="o">&gt;=</span> <span class="n">high_n</span> <span class="ow">and</span> <span class="n">best_match</span> <span class="o">&gt;=</span> <span class="n">high_best</span><span class="p">:</span>
+            <span class="n">evidence_tier</span> <span class="o">=</span> <span class="s2">"high"</span>
+        <span class="k">elif</span> <span class="n">score</span> <span class="o">&gt;=</span> <span class="n">med_sc</span> <span class="ow">and</span> <span class="n">n_routine</span> <span class="o">&gt;=</span> <span class="n">med_n</span> <span class="ow">and</span> <span class="n">best_match</span> <span class="o">&gt;=</span> <span class="n">med_best</span><span class="p">:</span>
+            <span class="n">evidence_tier</span> <span class="o">=</span> <span class="s2">"medium"</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">evidence_tier</span> <span class="o">=</span> <span class="s2">"low"</span>
+
+        <span class="c1"># Step 2: outage diversity cap, applied only when outages_represented &gt; 0</span>
+        <span class="c1"># (0 means "not provided" — gate disabled for backward compatibility).</span>
+        <span class="c1"># Patterns learned from too few distinct outages reflect within-outage</span>
+        <span class="c1"># variance, not genuine between-outage variability, so the cap limits</span>
+        <span class="c1"># how high the tier may be regardless of evidence strength.</span>
+        <span class="n">outage_gate_active</span> <span class="o">=</span> <span class="n">outages_represented</span> <span class="o">&gt;</span> <span class="mi">0</span>
+        <span class="n">outage_suffix</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">", outages=</span><span class="si">{</span><span class="n">outages_represented</span><span class="si">}</span><span class="s2">"</span> <span class="k">if</span> <span class="n">outage_gate_active</span> <span class="k">else</span> <span class="s2">""</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">outage_gate_active</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">outages_represented</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_med_outages</span><span class="p">:</span>
+                <span class="n">diversity_cap</span> <span class="o">=</span> <span class="s2">"low"</span>
+            <span class="k">elif</span> <span class="n">outages_represented</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_high_outages</span><span class="p">:</span>
+                <span class="n">diversity_cap</span> <span class="o">=</span> <span class="s2">"medium"</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">diversity_cap</span> <span class="o">=</span> <span class="s2">"high"</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">diversity_cap</span> <span class="o">=</span> <span class="s2">"high"</span>
+
+        <span class="c1"># Step 3: final tier = min(evidence_tier, diversity_cap).</span>
+        <span class="n">order</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"low"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"medium"</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">"high"</span><span class="p">:</span> <span class="mi">2</span><span class="p">}</span>
+        <span class="n">final_tier</span> <span class="o">=</span> <span class="n">evidence_tier</span> <span class="k">if</span> <span class="n">order</span><span class="p">[</span><span class="n">evidence_tier</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">order</span><span class="p">[</span><span class="n">diversity_cap</span><span class="p">]</span> <span class="k">else</span> <span class="n">diversity_cap</span>
+
+        <span class="n">base</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"score=</span><span class="si">{</span><span class="n">score</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">, n=</span><span class="si">{</span><span class="n">n_routine</span><span class="si">}</span><span class="s2">, best_match=</span><span class="si">{</span><span class="n">best_match</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}{</span><span class="n">outage_suffix</span><span class="si">}</span><span class="s2">"</span>
+        <span class="k">if</span> <span class="n">final_tier</span> <span class="o">!=</span> <span class="n">evidence_tier</span><span class="p">:</span>
+            <span class="n">need</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_high_outages</span> <span class="k">if</span> <span class="n">final_tier</span> <span class="o">==</span> <span class="s2">"medium"</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_med_outages</span>
+            <span class="n">next_tier</span> <span class="o">=</span> <span class="s2">"high"</span> <span class="k">if</span> <span class="n">final_tier</span> <span class="o">==</span> <span class="s2">"medium"</span> <span class="k">else</span> <span class="s2">"medium"</span>
+            <span class="n">label</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"medium"</span><span class="p">:</span> <span class="s2">"Moderate"</span><span class="p">,</span> <span class="s2">"low"</span><span class="p">:</span> <span class="s2">"Weak"</span><span class="p">}[</span><span class="n">final_tier</span><span class="p">]</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="n">final_tier</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2"> evidence (outage diversity cap): </span><span class="si">{</span><span class="n">base</span><span class="si">}</span><span class="s2">. "</span>
+                <span class="sa">f</span><span class="s2">"Evidence supports '</span><span class="si">{</span><span class="n">evidence_tier</span><span class="si">}</span><span class="s2">' but needs ≥</span><span class="si">{</span><span class="n">need</span><span class="si">}</span><span class="s2"> outages "</span>
+                <span class="sa">f</span><span class="s2">"for '</span><span class="si">{</span><span class="n">next_tier</span><span class="si">}</span><span class="s2">' tier."</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">final_tier</span> <span class="o">==</span> <span class="s2">"high"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"high"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"Strong evidence: </span><span class="si">{</span><span class="n">base</span><span class="si">}</span><span class="s2">."</span>
+        <span class="k">if</span> <span class="n">final_tier</span> <span class="o">==</span> <span class="s2">"medium"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"medium"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"Moderate evidence: </span><span class="si">{</span><span class="n">base</span><span class="si">}</span><span class="s2">."</span>
+        <span class="k">return</span> <span class="s2">"low"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"Weak evidence: </span><span class="si">{</span><span class="n">base</span><span class="si">}</span><span class="s2">. Expert review recommended."</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="ConfidenceEstimator._compute_cv">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceEstimator._compute_cv">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compute_cv</span><span class="p">(</span><span class="n">routine</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Coefficient of variation of the routine duration pool."""</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">routine</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+        <span class="n">arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">routine</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+        <span class="n">mu</span> <span class="o">=</span> <span class="n">arr</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">mu</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">arr</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">ddof</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">mu</span><span class="p">)</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="ConfidenceEstimator._classify_uncertainty">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/confidence/index.html#src.dackar.outage.outage_uncertainty.uncertainty.confidence.ConfidenceEstimator._classify_uncertainty">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_classify_uncertainty</span><span class="p">(</span>
+        <span class="n">tier</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">cv</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">extended_fraction</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Map confidence signals to an uncertainty type and recommended action.</span>
+
+<span class="sd">        Decision logic (in priority order):</span>
+<span class="sd">        1. Low tier → epistemic regardless of spread (not enough data to</span>
+<span class="sd">           characterise variability reliably).</span>
+<span class="sd">        2. High disruption fraction (≥ 25 %) → mixed (even if confidence is</span>
+<span class="sd">           high, the process is not under control).</span>
+<span class="sd">        3. High CV (≥ 0.5) → aleatory (genuine execution variability).</span>
+<span class="sd">        4. Medium tier → mixed (moderate coverage, moderate spread).</span>
+<span class="sd">        5. High tier + low CV + low disruption → aleatory (well-characterised).</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">tier</span> <span class="o">==</span> <span class="s2">"low"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="s2">"epistemic"</span><span class="p">,</span>
+                <span class="s2">"Weak analogue coverage — SME review or field walkdown required "</span>
+                <span class="s2">"before committing to schedule."</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">extended_fraction</span> <span class="o">&gt;=</span> <span class="mf">0.25</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="s2">"mixed"</span><span class="p">,</span>
+                <span class="s2">"Significant disruption rate in historical analogues — add schedule "</span>
+                <span class="s2">"contingency and consider pre-job walkdown."</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">cv</span> <span class="o">&gt;=</span> <span class="mf">0.5</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="s2">"aleatory"</span><span class="p">,</span>
+                <span class="s2">"High natural execution variability — add schedule float proportional "</span>
+                <span class="s2">"to the P90–P50 spread."</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">tier</span> <span class="o">==</span> <span class="s2">"medium"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="s2">"mixed"</span><span class="p">,</span>
+                <span class="s2">"Moderate analogue coverage — use P80 estimate with awareness; "</span>
+                <span class="s2">"contingency buffer advisable."</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="s2">"aleatory"</span><span class="p">,</span>
+            <span class="s2">"Estimate is well-characterised; variability is natural — minor schedule "</span>
+            <span class="s2">"contingency may suffice."</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

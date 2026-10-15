@@ -1,0 +1,354 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.similarity.OllamaEmbedder &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.similarity.OllamaEmbedder</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.similarity.OllamaEmbedder</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+<span class="sd">"""</span>
+<span class="sd">Ollama-backed dense-vector text embedder.</span>
+
+<span class="sd">A stateless (except for its cache) embedder served by a locally running Ollama</span>
+<span class="sd">instance.  The same instance can be shared across callers.</span>
+
+<span class="sd">Embedding model notes:</span>
+
+<span class="sd">* ``nomic-embed-text:latest`` — fast, 274 MB.  Good general-purpose default.</span>
+<span class="sd">* ``mxbai-embed-large:latest`` — stronger retrieval ranking, ~2.4x larger</span>
+<span class="sd">  (669 MB).</span>
+
+<span class="sd">Caching</span>
+<span class="sd">-------</span>
+<span class="sd">Two-level cache:</span>
+
+<span class="sd">1. **In-memory** — a plain ``dict`` mapping text to embedding, living for the</span>
+<span class="sd">   lifetime of the embedder instance.  Avoids redundant API calls within a</span>
+<span class="sd">   single run.</span>
+<span class="sd">2. **Persistent JSON file** (optional) — loaded at construction and saved on</span>
+<span class="sd">   demand via :meth:`save_cache`, so embeddings survive across restarts.</span>
+
+<span class="sd">Graceful degradation</span>
+<span class="sd">--------------------</span>
+<span class="sd">If the Ollama server is unreachable (``URLError``, ``TimeoutError``) the</span>
+<span class="sd">embedder logs a warning and returns a single-element vector ``[0.0]`` so the</span>
+<span class="sd">caller can fall back (e.g. to a lexical similarity measure).</span>
+
+<span class="sd">Only the standard library is required.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">urllib.error</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">urllib.request</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/OllamaEmbedder/index.html#src.dackar.similarity.OllamaEmbedder.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="_FALLBACK_EMBEDDING">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/OllamaEmbedder/index.html#src.dackar.similarity.OllamaEmbedder._FALLBACK_EMBEDDING">[docs]</a>
+<span class="n">_FALLBACK_EMBEDDING</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="OllamaEmbedder">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/OllamaEmbedder/index.html#src.dackar.similarity.OllamaEmbedder.OllamaEmbedder">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">OllamaEmbedder</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Dense-vector text embedder backed by a local Ollama server.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        model: Ollama model name, e.g. ``"nomic-embed-text:latest"`` or</span>
+<span class="sd">            ``"mxbai-embed-large:latest"``.</span>
+<span class="sd">        base_url: Base URL of the Ollama HTTP API.</span>
+<span class="sd">            Default ``"http://localhost:11434"``.</span>
+<span class="sd">        cache_path: Optional path to a JSON file used as a persistent cache.</span>
+<span class="sd">            If the file already exists its contents are loaded on construction.</span>
+<span class="sd">            Call :meth:`save_cache` to flush in-memory additions back to disk.</span>
+<span class="sd">        timeout: HTTP request timeout in seconds.  Default 30.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"nomic-embed-text:latest"</span><span class="p">,</span>
+        <span class="n">base_url</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"http://localhost:11434"</span><span class="p">,</span>
+        <span class="n">cache_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">30</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="OllamaEmbedder._model">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/OllamaEmbedder/index.html#src.dackar.similarity.OllamaEmbedder.OllamaEmbedder._model">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_model</span> <span class="o">=</span> <span class="n">model</span></div>
+
+<div class="viewcode-block" id="OllamaEmbedder._base_url">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/OllamaEmbedder/index.html#src.dackar.similarity.OllamaEmbedder.OllamaEmbedder._base_url">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_base_url</span> <span class="o">=</span> <span class="n">base_url</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">"/"</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="OllamaEmbedder._timeout">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/OllamaEmbedder/index.html#src.dackar.similarity.OllamaEmbedder.OllamaEmbedder._timeout">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_timeout</span> <span class="o">=</span> <span class="n">timeout</span></div>
+
+<div class="viewcode-block" id="OllamaEmbedder._cache">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/OllamaEmbedder/index.html#src.dackar.similarity.OllamaEmbedder.OllamaEmbedder._cache">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+<div class="viewcode-block" id="OllamaEmbedder._cache_path">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/OllamaEmbedder/index.html#src.dackar.similarity.OllamaEmbedder.OllamaEmbedder._cache_path">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cache_path</span> <span class="o">=</span> <span class="n">cache_path</span></div>
+
+
+        <span class="k">if</span> <span class="n">cache_path</span> <span class="ow">and</span> <span class="n">Path</span><span class="p">(</span><span class="n">cache_path</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_load_cache</span><span class="p">(</span><span class="n">cache_path</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">"OllamaEmbedder: model=</span><span class="si">%s</span><span class="s2">, base_url=</span><span class="si">%s</span><span class="s2">, cache_entries=</span><span class="si">%d</span><span class="s2">"</span><span class="p">,</span>
+            <span class="n">model</span><span class="p">,</span>
+            <span class="n">base_url</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Public interface</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="OllamaEmbedder.encode">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/OllamaEmbedder/index.html#src.dackar.similarity.OllamaEmbedder.OllamaEmbedder.encode">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">encode</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Return the dense embedding vector for *text*.</span>
+
+<span class="sd">        Successful results are cached in memory.  Returns the ``[0.0]``</span>
+<span class="sd">        fallback singleton if Ollama is unavailable (logged at WARNING level);</span>
+<span class="sd">        a fallback is never cached, so a later call retries the server.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_FALLBACK_EMBEDDING</span>
+
+        <span class="k">if</span> <span class="n">text</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">[</span><span class="n">text</span><span class="p">]</span>
+
+        <span class="n">embedding</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_call_api</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="c1"># Do not cache (or later persist) a failure: caching the fallback would</span>
+        <span class="c1"># pin this text to cosine 0 even after Ollama recovers, and save_cache()</span>
+        <span class="c1"># would write the failure to disk.</span>
+        <span class="k">if</span> <span class="n">embedding</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">_FALLBACK_EMBEDDING</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">[</span><span class="n">text</span><span class="p">]</span> <span class="o">=</span> <span class="n">embedding</span>
+        <span class="k">return</span> <span class="n">embedding</span></div>
+
+
+<div class="viewcode-block" id="OllamaEmbedder.encode_batch">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/OllamaEmbedder/index.html#src.dackar.similarity.OllamaEmbedder.OllamaEmbedder.encode_batch">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">encode_batch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">texts</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Encode multiple texts, exploiting the in-memory cache."""</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">texts</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="OllamaEmbedder.cache_size">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/OllamaEmbedder/index.html#src.dackar.similarity.OllamaEmbedder.OllamaEmbedder.cache_size">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cache_size</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return the number of successfully-embedded texts held in memory."""</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="OllamaEmbedder.save_cache">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/OllamaEmbedder/index.html#src.dackar.similarity.OllamaEmbedder.OllamaEmbedder.save_cache">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save_cache</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Flush the in-memory cache to the JSON file specified at construction."""</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cache_path</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cache_path</span><span class="p">)</span>
+        <span class="n">path</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">path</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+            <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">,</span> <span class="n">fh</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">"OllamaEmbedder: saved </span><span class="si">%d</span><span class="s2"> embeddings to </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cache_path</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Private helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="OllamaEmbedder._call_api">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/OllamaEmbedder/index.html#src.dackar.similarity.OllamaEmbedder.OllamaEmbedder._call_api">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_call_api</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">({</span><span class="s2">"model"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="p">,</span> <span class="s2">"prompt"</span><span class="p">:</span> <span class="n">text</span><span class="p">})</span><span class="o">.</span><span class="n">encode</span><span class="p">()</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">Request</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_base_url</span><span class="si">}</span><span class="s2">/api/embeddings"</span><span class="p">,</span>
+            <span class="n">data</span><span class="o">=</span><span class="n">payload</span><span class="p">,</span>
+            <span class="n">headers</span><span class="o">=</span><span class="p">{</span><span class="s2">"Content-Type"</span><span class="p">:</span> <span class="s2">"application/json"</span><span class="p">},</span>
+        <span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_timeout</span><span class="p">)</span> <span class="k">as</span> <span class="n">resp</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">resp</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+                <span class="k">return</span> <span class="n">data</span><span class="p">[</span><span class="s2">"embedding"</span><span class="p">]</span>
+        <span class="k">except</span> <span class="p">(</span><span class="n">urllib</span><span class="o">.</span><span class="n">error</span><span class="o">.</span><span class="n">URLError</span><span class="p">,</span> <span class="ne">TimeoutError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"OllamaEmbedder: API call failed for model '</span><span class="si">%s</span><span class="s2">' (</span><span class="si">%s</span><span class="s2">); "</span>
+                <span class="s2">"returning fallback embedding — caller should degrade gracefully"</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="p">,</span>
+                <span class="n">exc</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">_FALLBACK_EMBEDDING</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">KeyError</span><span class="p">,</span> <span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"OllamaEmbedder: unexpected API response (</span><span class="si">%s</span><span class="s2">); returning fallback"</span><span class="p">,</span>
+                <span class="n">exc</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">_FALLBACK_EMBEDDING</span></div>
+
+
+<div class="viewcode-block" id="OllamaEmbedder._load_cache">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/OllamaEmbedder/index.html#src.dackar.similarity.OllamaEmbedder.OllamaEmbedder._load_cache">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_load_cache</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">fh</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">"OllamaEmbedder: loaded </span><span class="si">%d</span><span class="s2"> cached embeddings from </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">),</span>
+                <span class="n">path</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"OllamaEmbedder: could not load cache from </span><span class="si">%s</span><span class="s2"> (</span><span class="si">%s</span><span class="s2">); starting empty"</span><span class="p">,</span>
+                <span class="n">path</span><span class="p">,</span>
+                <span class="n">exc</span><span class="p">,</span>
+            <span class="p">)</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Cosine similarity utility</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="cosine_similarity">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/OllamaEmbedder/index.html#src.dackar.similarity.OllamaEmbedder.cosine_similarity">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">cosine_similarity</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">b</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return the cosine similarity between two vectors.</span>
+
+<span class="sd">    Returns 0.0 if either vector is the fallback ``[0.0]`` singleton, if the</span>
+<span class="sd">    vectors differ in length, or if either norm is zero.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">a</span> <span class="o">==</span> <span class="n">_FALLBACK_EMBEDDING</span> <span class="ow">or</span> <span class="n">b</span> <span class="o">==</span> <span class="n">_FALLBACK_EMBEDDING</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">b</span><span class="p">):</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+    <span class="n">dot</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">x</span> <span class="o">*</span> <span class="n">y</span> <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">))</span>
+    <span class="n">na</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="nb">sum</span><span class="p">(</span><span class="n">x</span> <span class="o">*</span> <span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">a</span><span class="p">))</span>
+    <span class="n">nb</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="nb">sum</span><span class="p">(</span><span class="n">x</span> <span class="o">*</span> <span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">b</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">na</span> <span class="o">==</span> <span class="mf">0.0</span> <span class="ow">or</span> <span class="n">nb</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+    <span class="k">return</span> <span class="n">dot</span> <span class="o">/</span> <span class="p">(</span><span class="n">na</span> <span class="o">*</span> <span class="n">nb</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

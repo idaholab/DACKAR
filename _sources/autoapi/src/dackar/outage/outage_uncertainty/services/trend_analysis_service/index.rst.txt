@@ -1,0 +1,123 @@
+src.dackar.outage.outage_uncertainty.services.trend_analysis_service
+====================================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.services.trend_analysis_service
+
+.. autoapi-nested-parse::
+
+   Temporal trend analysis service for pre-outage risk prediction.
+
+   Computes a per-component trend profile from historical condition-report
+   frequency, category escalation, and work-order duration overrun signals.
+
+   Intended caller
+   ---------------
+   :class:`~outage_uncertainty.workflows.pre_outage_risk_workflow.PreOutageRiskWorkflow`
+   (Stage D).  The data it consumes comes from a KG query that produces a
+   ``component_histories`` mapping — the same shape produced by
+   ``outage.stages.stage_b_kg_timeline.KGTimelineBuilder`` or by the demo's
+   in-memory KG builder.
+
+   Input shape
+   -----------
+   ``component_histories`` is a dict keyed by ``component_id``, each value::
+
+       {
+           "crs_by_cycle":  {cycle_name: [cr_dict, ...]},
+           "wos_by_cycle":  {cycle_name: [wo_dict, ...]},
+           ...  # other keys ignored
+       }
+
+   Each ``cr_dict`` must have at least:
+       ``cr_category``  ("observation" | "degradation" | …)
+
+   Each ``wo_dict`` must have at least:
+       ``planned_duration_hrs``  (float | None)
+       ``actual_duration_hrs``   (float | None)
+       ``created_date``          (str, YYYY-MM-DD, used only for ordering)
+
+   ``cycle_order``
+       Ordered list of cycle-name strings covering all pre-outage windows,
+       e.g. ``["RF-20 prep", "RF-21 prep", "RF-22 prep"]``.
+
+   ``training_outages``
+       Subset of outage IDs whose prep cycles are the *training* window,
+       e.g. ``["RF-20", "RF-21"]``.  Their cycle names are derived as
+       ``f"{outage_id} prep"`` by convention.
+
+   Output shape (per component)
+   ----------------------------
+   ::
+
+       {
+           "component_id":           str,
+           "trend_score":            float,   # 0.0–1.0
+           "trend_label":            str,     # escalating|moderate|stable|insufficient_data|no_signal
+           "freq_slope":             float | None,
+           "deg_counts_by_cycle":    {cycle: int},
+           "category_escalation":    bool,
+           "overrun_ratios":         [float],
+           "overrun_mean":           float | None,
+           "overrun_slope_positive": bool,
+           "cycle_detail":           {cycle: {total_crs, degradation_crs, observation_crs}},
+       }
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.services.trend_analysis_service.JsonDict
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.services.trend_analysis_service.TrendAnalysisService
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:class:: TrendAnalysisService
+
+   Compute temporal trend profiles for each component in ``component_histories``.
+
+   Trend score composition (clamped to [0.0, 1.0])
+   ------------------------------------------------
+   +0.40  degradation-CR frequency slope > 0 across training cycles
+   +0.30  category escalation: at least one obs-only cycle immediately
+          followed by a degradation cycle
+   +0.30  mean WO actual/planned overrun ratio > 1.15
+
+   Trend labels
+   ------------
+   >= 0.5  → "escalating"
+   >= 0.2  → "moderate"
+   >  0.0  → "stable"
+   == 0.0, < 2 cycles with CR data → "insufficient_data"
+   == 0.0  → "no_signal"
+
+
+   .. py:method:: compute(component_histories, cycle_order, training_outages)
+
+      Compute trend profiles for every component in *component_histories*.
+
+      :param component_histories: Mapping of ``component_id`` → history dict (see module docstring).
+      :param cycle_order: Ordered list of all pre-outage cycle names to consider.
+      :param training_outages: Outage IDs whose prep cycles are the training window.  Their
+                               cycle names are derived as ``f"{outage_id} prep"``.
+
+      :rtype: Dict mapping ``component_id`` → trend-profile dict.
+
+
+
+   .. py:method:: _profile(component_id, history, cycle_order, training_outages)
+
+

@@ -1,0 +1,418 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Hierarchical fallback policy for duration estimation.</span>
+
+<span class="sd">The fallback fires when the similarity search produces no usable durations —</span>
+<span class="sd">either because the historical corpus is empty or because all neighbours have</span>
+<span class="sd">None actual_duration_hours.  With the soft top-k selector from Phase 2 this</span>
+<span class="sd">is rare for non-empty corpora, but the hierarchy ensures the system always</span>
+<span class="sd">returns *some* estimate rather than crashing.</span>
+
+<span class="sd">Fallback hierarchy (most specific → most generic)</span>
+<span class="sd">--------------------------------------------------</span>
+<span class="sd">Level 1  plant + task_family + component_family</span>
+<span class="sd">    Filter historical to same plant, same task family, same component family.</span>
+<span class="sd">    Best analogy quality — same plant procedures, same equipment class.</span>
+
+<span class="sd">Level 2  task_family + component_family  (cross-plant)</span>
+<span class="sd">    Drop the plant constraint.  Useful when the activity type is common but</span>
+<span class="sd">    the specific plant has little history (e.g. new unit, rare maintenance).</span>
+
+<span class="sd">Level 3  task_family only  (fleet-level task class)</span>
+<span class="sd">    Drop component family.  Coarser but captures broad execution patterns</span>
+<span class="sd">    for a craft / activity type across the fleet.</span>
+
+<span class="sd">Level 4  planned_duration_hours constant  (generic prior)</span>
+<span class="sd">    Use the planned duration as a point estimate.  Always fires if all</span>
+<span class="sd">    previous levels fail.  Confidence score 0.1 — essentially "no data."</span>
+
+<span class="sd">All fallback levels assign confidence_tier ``"low"`` because the fallback</span>
+<span class="sd">path by definition means the primary similarity search failed to find usable</span>
+<span class="sd">analogues.  Users should treat fallback estimates as upper-bound guides only.</span>
+
+<span class="sd">Minimum support</span>
+<span class="sd">---------------</span>
+<span class="sd">Levels 1–3 require at least ``min_support`` (default 3) matching historical</span>
+<span class="sd">activities to produce an estimate.  If fewer are found the level is skipped.</span>
+<span class="sd">Three is deliberately conservative: with 1–2 samples the distribution</span>
+<span class="sd">percentiles would be highly unreliable and could mislead planners.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.domain.activity</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActivityCase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.domain.duration</span><span class="w"> </span><span class="kn">import</span> <span class="n">DurationDistribution</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.domain.result_types</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActivityEstimate</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/fallback_policy/index.html#src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="viewcode-block" id="_FallbackLevel">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/fallback_policy/index.html#src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy._FallbackLevel">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">_FallbackLevel</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Internal descriptor for one level of the hierarchy."""</span>
+<div class="viewcode-block" id="_FallbackLevel.name">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/fallback_policy/index.html#src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy._FallbackLevel.name">[docs]</a>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="_FallbackLevel.fields">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/fallback_policy/index.html#src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy._FallbackLevel.fields">[docs]</a>
+    <span class="n">fields</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>   <span class="c1"># ActivityCase attributes to match</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="_LEVELS">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/fallback_policy/index.html#src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy._LEVELS">[docs]</a>
+<span class="n">_LEVELS</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">_FallbackLevel</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">_FallbackLevel</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="s2">"plant_task_component"</span><span class="p">,</span>
+        <span class="n">fields</span><span class="o">=</span><span class="p">(</span><span class="s2">"plant_id"</span><span class="p">,</span> <span class="s2">"task_family"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">),</span>
+    <span class="p">),</span>
+    <span class="n">_FallbackLevel</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="s2">"fleet_task_component"</span><span class="p">,</span>
+        <span class="n">fields</span><span class="o">=</span><span class="p">(</span><span class="s2">"task_family"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">),</span>
+    <span class="p">),</span>
+    <span class="n">_FallbackLevel</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="s2">"fleet_task_family"</span><span class="p">,</span>
+        <span class="n">fields</span><span class="o">=</span><span class="p">(</span><span class="s2">"task_family"</span><span class="p">,),</span>
+    <span class="p">),</span>
+<span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="HierarchicalFallbackPolicy">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/fallback_policy/index.html#src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy.HierarchicalFallbackPolicy">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">HierarchicalFallbackPolicy</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Produce a fallback estimate by progressively relaxing matching criteria.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        min_support: Minimum number of historical activities required at a</span>
+<span class="sd">            given level to use that level's distribution.  Default 3.</span>
+<span class="sd">        fitter_percentiles: Percentile levels for the fitted distribution.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">min_support</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+        <span class="n">fitter_percentiles</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.10</span><span class="p">,</span> <span class="mf">0.50</span><span class="p">,</span> <span class="mf">0.80</span><span class="p">,</span> <span class="mf">0.90</span><span class="p">),</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="HierarchicalFallbackPolicy.min_support">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/fallback_policy/index.html#src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy.HierarchicalFallbackPolicy.min_support">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">min_support</span> <span class="o">=</span> <span class="n">min_support</span></div>
+
+<div class="viewcode-block" id="HierarchicalFallbackPolicy._fitter_percentiles">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/fallback_policy/index.html#src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy.HierarchicalFallbackPolicy._fitter_percentiles">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_fitter_percentiles</span> <span class="o">=</span> <span class="n">fitter_percentiles</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Public interface</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="HierarchicalFallbackPolicy.estimate">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/fallback_policy/index.html#src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy.HierarchicalFallbackPolicy.estimate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">estimate</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">query</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">,</span>
+        <span class="n">historical_activities</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">ActivityCase</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ActivityEstimate</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return a fallback :class:`ActivityEstimate` for *query*.</span>
+
+<span class="sd">        Tries each level of the hierarchy in order.  Falls through to the</span>
+<span class="sd">        planned-duration constant if no level produces enough analogues.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            query: The planned activity being estimated.</span>
+<span class="sd">            historical_activities: Full historical corpus (may be empty or</span>
+<span class="sd">                ``None``).</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            :class:`ActivityEstimate` with ``confidence_tier="low"`` and</span>
+<span class="sd">            an appropriate warning message.</span>
+<span class="sd">        """</span>
+        <span class="n">historical</span> <span class="o">=</span> <span class="n">historical_activities</span> <span class="ow">or</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">level</span> <span class="ow">in</span> <span class="n">_LEVELS</span><span class="p">:</span>
+            <span class="n">analogues</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filter</span><span class="p">(</span><span class="n">historical</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">level</span><span class="o">.</span><span class="n">fields</span><span class="p">)</span>
+            <span class="n">durations</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">a</span><span class="o">.</span><span class="n">actual_duration_hours</span>
+                <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">analogues</span>
+                <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">actual_duration_hours</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="p">]</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">durations</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">min_support</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                    <span class="s2">"HierarchicalFallbackPolicy: level '</span><span class="si">%s</span><span class="s2">' found </span><span class="si">%d</span><span class="s2"> analogues"</span><span class="p">,</span>
+                    <span class="n">level</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                    <span class="nb">len</span><span class="p">(</span><span class="n">durations</span><span class="p">),</span>
+                <span class="p">)</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_estimate_from_durations</span><span class="p">(</span>
+                    <span class="n">query</span><span class="p">,</span>
+                    <span class="n">durations</span><span class="p">,</span>
+                    <span class="n">level_name</span><span class="o">=</span><span class="n">level</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                    <span class="n">n_matched</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">analogues</span><span class="p">),</span>
+                <span class="p">)</span>
+
+        <span class="c1"># Level 4: generic prior — planned duration</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_planned_duration_prior</span><span class="p">(</span><span class="n">query</span><span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Private helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="HierarchicalFallbackPolicy._filter">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/fallback_policy/index.html#src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy.HierarchicalFallbackPolicy._filter">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_filter</span><span class="p">(</span>
+        <span class="n">historical</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">ActivityCase</span><span class="p">],</span>
+        <span class="n">query</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">,</span>
+        <span class="n">fields</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">ActivityCase</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Return activities matching *query* on all *fields* (non-None only).</span>
+
+<span class="sd">        A level requires at least one of its fields to be non-``None`` on both</span>
+<span class="sd">        the query and the candidate.  Without this guard, a query whose labels</span>
+<span class="sd">        are all ``None`` (the P6 adapter emits ``None`` labels before</span>
+<span class="sd">        ``LabelMapper`` runs) would skip every field check and "match" the</span>
+<span class="sd">        entire corpus, returning an unfiltered sample under a specific level</span>
+<span class="sd">        name (e.g. unrelated welding activities reported as</span>
+<span class="sd">        ``fleet_task_component``).</span>
+<span class="sd">        """</span>
+        <span class="c1"># The level is only meaningful if the query itself constrains at least</span>
+        <span class="c1"># one of the level's fields; otherwise this level cannot discriminate.</span>
+        <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">act</span> <span class="ow">in</span> <span class="n">historical</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">act</span><span class="o">.</span><span class="n">is_historical</span><span class="p">():</span>
+                <span class="k">continue</span>
+            <span class="n">matched_field</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="n">match</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
+                <span class="n">qval</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="n">hval</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">act</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="c1"># If either side is unknown, skip the field check (don't penalise)</span>
+                <span class="k">if</span> <span class="n">qval</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">hval</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="k">if</span> <span class="n">qval</span> <span class="o">!=</span> <span class="n">hval</span><span class="p">:</span>
+                    <span class="n">match</span> <span class="o">=</span> <span class="kc">False</span>
+                    <span class="k">break</span>
+                <span class="n">matched_field</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="c1"># Require at least one field actually compared equal on both sides,</span>
+            <span class="c1"># so a candidate with all-None labels is not treated as a match.</span>
+            <span class="k">if</span> <span class="n">match</span> <span class="ow">and</span> <span class="n">matched_field</span><span class="p">:</span>
+                <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">act</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="HierarchicalFallbackPolicy._estimate_from_durations">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/fallback_policy/index.html#src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy.HierarchicalFallbackPolicy._estimate_from_durations">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_estimate_from_durations</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">query</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">,</span>
+        <span class="n">durations</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+        <span class="n">level_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">n_matched</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ActivityEstimate</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.uncertainty.distribution_fitter</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+            <span class="n">DistributionFitter</span><span class="p">,</span>
+            <span class="n">_weighted_percentile</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="c1"># Use keep_all for fallback — sample sizes are small</span>
+        <span class="n">fitter</span> <span class="o">=</span> <span class="n">DistributionFitter</span><span class="p">(</span><span class="n">percentiles</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_fitter_percentiles</span><span class="p">)</span>
+        <span class="n">distribution</span> <span class="o">=</span> <span class="n">fitter</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">durations</span><span class="p">)</span>   <span class="c1"># uniform weights at fallback level</span>
+        <span class="n">distribution</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">"fallback_level"</span><span class="p">]</span> <span class="o">=</span> <span class="n">level_name</span>
+        <span class="n">distribution</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">"n_fallback_analogues"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">n_matched</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">ActivityEstimate</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">activity_id</span><span class="p">,</span>
+            <span class="n">estimated_distribution</span><span class="o">=</span><span class="n">distribution</span><span class="p">,</span>
+            <span class="n">confidence_score</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span>   <span class="c1"># fallback = low but not zero (we have some data)</span>
+            <span class="n">confidence_tier</span><span class="o">=</span><span class="s2">"low"</span><span class="p">,</span>
+            <span class="n">support_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">durations</span><span class="p">),</span>
+            <span class="n">matched_cases</span><span class="o">=</span><span class="p">[],</span>
+            <span class="n">warnings</span><span class="o">=</span><span class="p">[</span>
+                <span class="sa">f</span><span class="s2">"Fallback estimate (level: </span><span class="si">{</span><span class="n">level_name</span><span class="si">}</span><span class="s2">, n=</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">durations</span><span class="p">)</span><span class="si">}</span><span class="s2">). "</span>
+                <span class="s2">"No sufficiently similar activities found via primary search; "</span>
+                <span class="s2">"expert review recommended."</span>
+            <span class="p">],</span>
+            <span class="n">uncertainty_type</span><span class="o">=</span><span class="s2">"epistemic"</span><span class="p">,</span>
+            <span class="n">recommended_action</span><span class="o">=</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Fallback level '</span><span class="si">{</span><span class="n">level_name</span><span class="si">}</span><span class="s2">' used — SME review recommended "</span>
+                <span class="s2">"before committing to schedule assumptions based on this estimate."</span>
+            <span class="p">),</span>
+        <span class="p">)</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="HierarchicalFallbackPolicy._planned_duration_prior">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/fallback_policy/index.html#src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy.HierarchicalFallbackPolicy._planned_duration_prior">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_planned_duration_prior</span><span class="p">(</span><span class="n">query</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ActivityEstimate</span><span class="p">:</span>
+        <span class="c1"># Only substitute 1.0 for a genuinely missing planned duration — a</span>
+        <span class="c1"># 0-hour planned duration (P6 milestones) is a real value, not missing,</span>
+        <span class="c1"># and `or 1.0` would wrongly rewrite it to a 1-hour estimate.</span>
+        <span class="n">baseline</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">query</span><span class="o">.</span><span class="n">planned_duration_hours</span>
+            <span class="k">if</span> <span class="n">query</span><span class="o">.</span><span class="n">planned_duration_hours</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="mf">1.0</span>
+        <span class="p">)</span>
+        <span class="n">distribution</span> <span class="o">=</span> <span class="n">DurationDistribution</span><span class="p">(</span>
+            <span class="n">distribution_type</span><span class="o">=</span><span class="s2">"fallback_constant"</span><span class="p">,</span>
+            <span class="n">parameters</span><span class="o">=</span><span class="p">{</span><span class="s2">"location"</span><span class="p">:</span> <span class="n">baseline</span><span class="p">,</span> <span class="s2">"fallback_level"</span><span class="p">:</span> <span class="s2">"planned_duration_prior"</span><span class="p">},</span>
+            <span class="n">p10</span><span class="o">=</span><span class="n">baseline</span><span class="p">,</span>
+            <span class="n">p50</span><span class="o">=</span><span class="n">baseline</span><span class="p">,</span>
+            <span class="n">p80</span><span class="o">=</span><span class="n">baseline</span><span class="p">,</span>
+            <span class="n">p90</span><span class="o">=</span><span class="n">baseline</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">ActivityEstimate</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">activity_id</span><span class="p">,</span>
+            <span class="n">estimated_distribution</span><span class="o">=</span><span class="n">distribution</span><span class="p">,</span>
+            <span class="n">confidence_score</span><span class="o">=</span><span class="mf">0.10</span><span class="p">,</span>
+            <span class="n">confidence_tier</span><span class="o">=</span><span class="s2">"low"</span><span class="p">,</span>
+            <span class="n">support_count</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">matched_cases</span><span class="o">=</span><span class="p">[],</span>
+            <span class="n">warnings</span><span class="o">=</span><span class="p">[</span>
+                <span class="s2">"Fallback estimate (level: planned_duration_prior). "</span>
+                <span class="s2">"No historical analogues found at any level; "</span>
+                <span class="s2">"estimate equals planned duration. Expert review required."</span>
+            <span class="p">],</span>
+            <span class="n">uncertainty_type</span><span class="o">=</span><span class="s2">"epistemic"</span><span class="p">,</span>
+            <span class="n">recommended_action</span><span class="o">=</span><span class="p">(</span>
+                <span class="s2">"No historical analogues found — expert review or field walkdown "</span>
+                <span class="s2">"required; do not rely on this estimate for critical path planning."</span>
+            <span class="p">),</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Backwards-compatible alias</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="c1"># The original stub was named FallbackPolicy.  Keep the alias so existing</span>
+<span class="c1"># code that imports FallbackPolicy by name still works.</span>
+<div class="viewcode-block" id="FallbackPolicy">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/fallback_policy/index.html#src.dackar.outage.outage_uncertainty.uncertainty.fallback_policy.FallbackPolicy">[docs]</a>
+<span class="n">FallbackPolicy</span> <span class="o">=</span> <span class="n">HierarchicalFallbackPolicy</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

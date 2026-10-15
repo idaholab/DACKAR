@@ -1,0 +1,191 @@
+src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter
+================================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter
+
+.. autoapi-nested-parse::
+
+   P6 dataset adapter — bridges ``OutageDataset`` → ``Iterable[dict]`` for
+   ``ActivityIngestionWorkflow``.
+
+   ``OutageDataset`` (from ``P6_adapter``) contains DataFrames for all tables in
+   the P6 schedule model.  This adapter converts those DataFrames into the
+   ``Iterable[dict]`` format expected by
+   ``PandasActivityRepository.load_activities()`` — the existing ingestion entry
+   point.  Nothing inside ``outage_uncertainty`` knows whether the dicts came from
+   a P6 XER file, a CSV export, or a test fixture.
+
+   Field sourcing strategy
+   -----------------------
+   Sourced directly:
+       ``activity_id``, ``outage_id``, ``raw_description``, timestamps,
+       ``planned_duration_hours``
+
+   Computed in adapter:
+       ``actual_duration_hours``  (``actual_finish − actual_start`` in hours)
+
+   Joined from related tables:
+       ``plant_id``, ``unit_id``          — from the ``Outage`` object (caller-supplied)
+       ``predecessor_ids``, ``successor_ids`` — ``Dependency`` table
+       ``is_vendor_supported``, ``crew_size`` — ``ResourceAssignment`` ⋈ ``Resource``
+       ``contractor_flag``                — ``Resource.org_unit`` membership (opt-in)
+       ``is_emergent``, ``is_rework``     — ``ScopeChangeEvent.change_type``
+       ``outage_phase``                   — time-window overlap with ``OutagePhase``
+
+   Delegated to ``LabelMapper`` NLP:
+       ``discipline``, ``task_family``, ``component_family``,
+       ``has_rp_hold``, ``requires_scaffold``, ``has_clearance``
+       (all emitted as ``None`` / ``False`` by this adapter)
+
+   Stashed in ``metadata["p6"]``:
+       ``task_code``, ``task_type``, ``critical_flag``, ``total_float_hours``,
+       ``scope_origin``, ``wbs_id``, ``schedule_version_id``
+       — preserved for audit and downstream use without polluting ``ActivityCase``
+         fields.
+
+   Performance contract
+   --------------------
+   All DataFrame joins are pre-indexed into Python dicts/sets during
+   ``_build_indices()`` at the start of ``iter_activity_rows()`` /
+   ``get_activity_row()``.  Per-task lookup is O(1).  Indices are rebuilt for
+   each call (i.e. each ``OutageDataset``); no stale state across datasets.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter.logger
+   src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter._DEFAULT_EMERGENT_TYPES
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter.P6DatasetAdapter
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter._na
+   src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter._to_float
+   src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter._to_str
+   src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter._to_bool
+   src.dackar.outage.outage_uncertainty.adapters.p6_dataset_adapter._to_datetime
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: _DEFAULT_EMERGENT_TYPES
+   :type:  frozenset[str]
+
+.. py:function:: _na(v)
+
+   Return True when *v* is any variety of missing value.
+
+
+.. py:function:: _to_float(v)
+
+.. py:function:: _to_str(v)
+
+.. py:function:: _to_bool(v, *, default = False)
+
+.. py:function:: _to_datetime(v)
+
+.. py:class:: P6DatasetAdapter(emergent_change_types = None, contractor_org_units = None)
+
+   Convert a P6 ``OutageDataset`` into ``Iterable[dict]`` for ingestion.
+
+   :param emergent_change_types: Set of ``ScopeChangeEvent.change_type`` values (lowercased) that signal
+                                 emergent work.  Defaults to ``{"emergent", "scope_addition"}``.
+   :param contractor_org_units: Set of ``Resource.org_unit`` values (lowercased) that indicate a
+                                contractor resource.  When empty (default) ``contractor_flag`` is left
+                                as ``None`` (unknown) for all tasks — opt-in only.
+
+
+   .. py:attribute:: _emergent_types
+      :type:  frozenset[str]
+
+
+   .. py:attribute:: _contractor_orgs
+      :type:  frozenset[str]
+
+
+   .. py:method:: iter_activity_rows(dataset, outage, *, skip_milestones = True)
+
+      Yield one ``ActivityCase``-compatible dict per ``ScheduleTask``.
+
+      :param dataset: A populated ``OutageDataset`` (from ``P6_adapter``).
+      :param outage: The ``Outage`` record that owns this dataset — provides
+                     ``plant_id`` and ``unit_id``, which are not on ``ScheduleTask``.
+      :param skip_milestones: When ``True`` (default), tasks with ``milestone_flag = True`` are
+                              omitted.  Milestones have zero duration by definition and would
+                              corrupt the duration distribution in the analog index.
+
+      :Yields: *dict* -- Flat dict ready for ``PandasActivityRepository.load_activities()``.
+
+
+
+   .. py:method:: get_activity_row(task_id, dataset, outage)
+
+      Return a single ``ActivityCase``-compatible dict for *task_id*.
+
+      :param task_id: The ``ScheduleTask.task_id`` to retrieve.
+      :param dataset: A populated ``OutageDataset``.
+      :param outage: The owning ``Outage`` record.
+
+      :raises KeyError: If *task_id* is not found in ``dataset.schedule_tasks``.
+
+
+
+   .. py:method:: _build_indices(dataset)
+
+      Pre-index all join tables for O(1) per-task lookup.
+
+      Returns a plain dict of index structures so the adapter has no
+      mutable state between calls — each call to ``iter_activity_rows`` /
+      ``get_activity_row`` gets a fresh set of indices built from the
+      supplied ``dataset``.
+
+
+
+   .. py:method:: _build_dependency_index(deps_df)
+
+      Return (predecessor_index, successor_index) keyed by task_id.
+
+
+
+   .. py:method:: _build_resource_indices(assignments_df, resources_df)
+
+      Return (vendor_task_ids, contractor_task_ids, crew_sizes_by_task).
+
+
+
+   .. py:method:: _build_scope_change_index(scope_df)
+
+      Return (emergent_task_ids, rework_task_ids).
+
+
+
+   .. py:method:: _build_phase_windows(phases_df)
+
+      Return list of (start, end, phase_name) sorted by phase sequence.
+
+
+
+   .. py:method:: _row_to_dict(row, outage, indices)
+
+      Convert one ``ScheduleTask`` itertuples row to an ActivityCase dict.
+
+
+

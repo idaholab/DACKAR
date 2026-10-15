@@ -1,0 +1,409 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Semantic similarity scorers for outage activity descriptions.</span>
+
+<span class="sd">Two implementations are provided:</span>
+
+<span class="sd">EmbeddingSemanticScorer (recommended)</span>
+<span class="sd">--------------------------------------</span>
+<span class="sd">Computes cosine similarity between dense embedding vectors produced by a</span>
+<span class="sd">local Ollama model (see :mod:`preprocessing.ollama_embedder`).  Embeddings</span>
+<span class="sd">are pre-computed during ingestion and stored in</span>
+<span class="sd">``activity.metadata["features"]["text_embedding"]``, so scoring at query</span>
+<span class="sd">time is a single dot-product — O(d) where d is the embedding dimension.</span>
+
+<span class="sd">Benchmark results on ``outage_cleaning_benchmark.csv`` (175 activity pairs):</span>
+
+<span class="sd">* ``nomic-embed-text`` — disc. ratio 1.415, P@5 0.619</span>
+<span class="sd">* ``mxbai-embed-large`` — disc. ratio 1.252, P@5 0.648</span>
+
+<span class="sd">Falls back transparently to character-trigram Jaccard when the embedder is</span>
+<span class="sd">unavailable or when the activity has no stored embedding (e.g. during unit</span>
+<span class="sd">tests that build minimal ``ActivityCase`` fixtures).</span>
+
+<span class="sd">SemanticSimilarityScorer (legacy / WordNet)</span>
+<span class="sd">--------------------------------------------</span>
+<span class="sd">Wraps ``dackar.similarity.SentenceSimilarity``, which implements the</span>
+<span class="sd">Pawar-Mago (2018) method: word-sense disambiguation via ``pywsd``</span>
+<span class="sd">(simple_lesk by default) followed by bidirectional synset-similarity</span>
+<span class="sd">vector comparison using WordNet path + Wu-Palmer similarity.</span>
+
+<span class="sd">Falls back to character-trigram Jaccard when ``dackar.similarity`` or its</span>
+<span class="sd">NLTK/pywsd dependencies are absent.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.similarity.stringSimilarity</span><span class="w"> </span><span class="kn">import</span> <span class="n">trigram_jaccard</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.domain.activity</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActivityCase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.preprocessing.ollama_embedder</span><span class="w"> </span><span class="kn">import</span> <span class="n">cosine_similarity</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/semantic_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="SemanticSimilarityScorer">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/semantic_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity.SemanticSimilarityScorer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SemanticSimilarityScorer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Scores semantic similarity between two cleaned activity descriptions.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        disambiguation_method: Word-sense disambiguation strategy passed to</span>
+<span class="sd">            ``SentenceSimilarity``.  Choices: ``'simple_lesk'`` (default),</span>
+<span class="sd">            ``'original_lesk'``, ``'cosine_lesk'``, ``'adapted_lesk'``,</span>
+<span class="sd">            ``'max_similarity'``.</span>
+<span class="sd">        similarity_method: Synset comparison method.  Default</span>
+<span class="sd">            ``'semantic_similarity_synsets'`` uses a harmonic mean of WordNet</span>
+<span class="sd">            path similarity and Wu-Palmer similarity.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">disambiguation_method</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"simple_lesk"</span><span class="p">,</span>
+        <span class="n">similarity_method</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"semantic_similarity_synsets"</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="SemanticSimilarityScorer._scorer">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/semantic_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity.SemanticSimilarityScorer._scorer">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_scorer</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="SemanticSimilarityScorer._disambiguation_method">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/semantic_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity.SemanticSimilarityScorer._disambiguation_method">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_disambiguation_method</span> <span class="o">=</span> <span class="n">disambiguation_method</span></div>
+
+<div class="viewcode-block" id="SemanticSimilarityScorer._similarity_method">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/semantic_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity.SemanticSimilarityScorer._similarity_method">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_similarity_method</span> <span class="o">=</span> <span class="n">similarity_method</span></div>
+
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">dackar.similarity.SentenceSimilarity</span><span class="w"> </span><span class="kn">import</span> <span class="n">SentenceSimilarity</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_scorer</span> <span class="o">=</span> <span class="n">SentenceSimilarity</span><span class="p">(</span>
+                <span class="n">disambiguationMethod</span><span class="o">=</span><span class="n">disambiguation_method</span><span class="p">,</span>
+                <span class="n">similarityMethod</span><span class="o">=</span><span class="n">similarity_method</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">"SemanticSimilarityScorer: WordNet/Pawar-Mago ready "</span>
+                <span class="s2">"(disambiguation=</span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span>
+                <span class="n">disambiguation_method</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"SemanticSimilarityScorer: dackar.similarity unavailable (</span><span class="si">%s</span><span class="s2">); "</span>
+                <span class="s2">"using trigram-Jaccard fallback"</span><span class="p">,</span>
+                <span class="n">exc</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># noqa: BLE001  (e.g. NLTK data missing)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"SemanticSimilarityScorer: SentenceSimilarity initialisation failed (</span><span class="si">%s</span><span class="s2">); "</span>
+                <span class="s2">"using trigram-Jaccard fallback"</span><span class="p">,</span>
+                <span class="n">exc</span><span class="p">,</span>
+            <span class="p">)</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Public interface expected by SimilarityEngine</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="SemanticSimilarityScorer.score">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/semantic_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity.SemanticSimilarityScorer.score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return a similarity score in [0, 1] between activities *a* and *b*."""</span>
+        <span class="n">text_a</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">cleaned_description</span> <span class="ow">or</span> <span class="n">a</span><span class="o">.</span><span class="n">raw_description</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">text_b</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="n">cleaned_description</span> <span class="ow">or</span> <span class="n">b</span><span class="o">.</span><span class="n">raw_description</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">text_a</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">text_b</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scorer</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dackar_score</span><span class="p">(</span><span class="n">text_a</span><span class="p">,</span> <span class="n">text_b</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_trigram_jaccard</span><span class="p">(</span><span class="n">text_a</span><span class="p">,</span> <span class="n">text_b</span><span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Private helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="SemanticSimilarityScorer._dackar_score">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/semantic_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity.SemanticSimilarityScorer._dackar_score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_dackar_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text_a</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">text_b</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Call the DACKAR WordNet scorer; fall back to trigrams on error."""</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scorer</span><span class="o">.</span><span class="n">sentenceSimilarity</span><span class="p">(</span>
+                <span class="n">text_a</span><span class="p">,</span> <span class="n">text_b</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">"pm_disambiguation"</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">result</span><span class="p">)))</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">"SemanticSimilarityScorer: dackar scoring failed (</span><span class="si">%s</span><span class="s2">); using fallback"</span><span class="p">,</span>
+                <span class="n">exc</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_trigram_jaccard</span><span class="p">(</span><span class="n">text_a</span><span class="p">,</span> <span class="n">text_b</span><span class="p">)</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="SemanticSimilarityScorer._trigram_jaccard">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/semantic_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity.SemanticSimilarityScorer._trigram_jaccard">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_trigram_jaccard</span><span class="p">(</span><span class="n">text_a</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">text_b</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Character-trigram Jaccard index — lightweight dependency-free fallback.</span>
+
+<span class="sd">        Delegates to :func:`dackar.similarity.stringSimilarity.trigram_jaccard`.</span>
+<span class="sd">        Retained as a static method because</span>
+<span class="sd">        :class:`EmbeddingSemanticScorer` calls it by name as its own fallback.</span>
+<span class="sd">        """</span>
+        <span class="k">return</span> <span class="n">trigram_jaccard</span><span class="p">(</span><span class="n">text_a</span><span class="p">,</span> <span class="n">text_b</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># EmbeddingSemanticScorer — drop-in replacement backed by Ollama embeddings</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_EMBEDDING_KEY">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/semantic_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity._EMBEDDING_KEY">[docs]</a>
+<span class="n">_EMBEDDING_KEY</span> <span class="o">=</span> <span class="s2">"text_embedding"</span></div>
+
+
+
+<div class="viewcode-block" id="EmbeddingSemanticScorer">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/semantic_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity.EmbeddingSemanticScorer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EmbeddingSemanticScorer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Scores semantic similarity using pre-computed dense embeddings.</span>
+
+<span class="sd">    Embeddings are stored in ``activity.metadata["features"]["text_embedding"]``</span>
+<span class="sd">    by :class:`ActivityFeatureBuilder` during ingestion.  Scoring is a single</span>
+<span class="sd">    cosine dot-product — no external calls at query time.</span>
+
+<span class="sd">    Graceful degradation</span>
+<span class="sd">    --------------------</span>
+<span class="sd">    If either activity lacks a stored embedding (e.g. test fixtures, cold-start</span>
+<span class="sd">    before the first ingestion) the scorer falls back to character-trigram</span>
+<span class="sd">    Jaccard and logs a DEBUG message.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        embedder: An :class:`OllamaEmbedder` instance used to encode the query</span>
+<span class="sd">            activity on-the-fly when its embedding has not yet been cached.</span>
+<span class="sd">            When ``None``, the scorer can only use pre-stored embeddings (any</span>
+<span class="sd">            activity without one will trigger the trigram fallback).</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">embedder</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="EmbeddingSemanticScorer._embedder">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/semantic_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity.EmbeddingSemanticScorer._embedder">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_embedder</span> <span class="o">=</span> <span class="n">embedder</span></div>
+
+
+<div class="viewcode-block" id="EmbeddingSemanticScorer.score">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/semantic_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity.EmbeddingSemanticScorer.score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return cosine similarity in [0, 1] between *a* and *b*.</span>
+
+<span class="sd">        Retrieves embeddings from ``metadata["features"]["text_embedding"]``.</span>
+<span class="sd">        If the embedding is missing for *a* it is computed on the fly using</span>
+<span class="sd">        the embedder (and cached back on the activity).  If it is missing for</span>
+<span class="sd">        *b* (historical activity, should always be pre-computed) the scorer</span>
+<span class="sd">        falls back to trigram Jaccard.</span>
+<span class="sd">        """</span>
+        <span class="n">emb_a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_embedding</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+        <span class="n">emb_b</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_embedding</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">emb_a</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">emb_b</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">text_a</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">cleaned_description</span> <span class="ow">or</span> <span class="n">a</span><span class="o">.</span><span class="n">raw_description</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="n">text_b</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="n">cleaned_description</span> <span class="ow">or</span> <span class="n">b</span><span class="o">.</span><span class="n">raw_description</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">"EmbeddingSemanticScorer: missing embedding for activity "</span>
+                <span class="s2">"'</span><span class="si">%s</span><span class="s2">' or '</span><span class="si">%s</span><span class="s2">'; using trigram-Jaccard fallback"</span><span class="p">,</span>
+                <span class="n">a</span><span class="o">.</span><span class="n">activity_id</span><span class="p">,</span>
+                <span class="n">b</span><span class="o">.</span><span class="n">activity_id</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">SemanticSimilarityScorer</span><span class="o">.</span><span class="n">_trigram_jaccard</span><span class="p">(</span><span class="n">text_a</span><span class="p">,</span> <span class="n">text_b</span><span class="p">)</span>
+
+        <span class="c1"># Dimension mismatch indicates the query and the historical corpus were</span>
+        <span class="c1"># embedded with different models (e.g. after a model upgrade without</span>
+        <span class="c1"># re-embedding).  cosine_similarity() returns 0.0 silently on mismatch,</span>
+        <span class="c1"># which looks like "completely unrelated activities" and causes the</span>
+        <span class="c1"># selector to flag low coverage across the board.  Warn loudly and fall</span>
+        <span class="c1"># back to trigram Jaccard so retrieval degrades gracefully rather than</span>
+        <span class="c1"># silently producing wrong rankings.</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">emb_a</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">emb_b</span><span class="p">):</span>
+            <span class="n">text_a</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">cleaned_description</span> <span class="ow">or</span> <span class="n">a</span><span class="o">.</span><span class="n">raw_description</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="n">text_b</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="n">cleaned_description</span> <span class="ow">or</span> <span class="n">b</span><span class="o">.</span><span class="n">raw_description</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"EmbeddingSemanticScorer: embedding dimension mismatch "</span>
+                <span class="s2">"(</span><span class="si">%d</span><span class="s2"> vs </span><span class="si">%d</span><span class="s2">) for activities '</span><span class="si">%s</span><span class="s2">' and '</span><span class="si">%s</span><span class="s2">'. "</span>
+                <span class="s2">"This typically means the historical corpus was embedded "</span>
+                <span class="s2">"with a different model than the query — re-embed the corpus "</span>
+                <span class="s2">"with the current model to restore full scoring. "</span>
+                <span class="s2">"Falling back to trigram-Jaccard."</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">emb_a</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">emb_b</span><span class="p">),</span> <span class="n">a</span><span class="o">.</span><span class="n">activity_id</span><span class="p">,</span> <span class="n">b</span><span class="o">.</span><span class="n">activity_id</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">SemanticSimilarityScorer</span><span class="o">.</span><span class="n">_trigram_jaccard</span><span class="p">(</span><span class="n">text_a</span><span class="p">,</span> <span class="n">text_b</span><span class="p">)</span>
+
+        <span class="n">sim</span> <span class="o">=</span> <span class="n">cosine_similarity</span><span class="p">(</span><span class="n">emb_a</span><span class="p">,</span> <span class="n">emb_b</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">sim</span><span class="p">)))</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Private helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="EmbeddingSemanticScorer._get_embedding">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/semantic_similarity/index.html#src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity.EmbeddingSemanticScorer._get_embedding">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_embedding</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return the stored embedding, computing it on-the-fly if needed.</span>
+
+<span class="sd">        **Side-effect**: when the embedding is not already cached and the</span>
+<span class="sd">        embedder produces one, the result is written back into</span>
+<span class="sd">        ``activity.metadata["features"]["text_embedding"]``.  This mutation</span>
+<span class="sd">        is intentional — it makes all subsequent ``score()`` calls for the</span>
+<span class="sd">        same activity free (no re-encoding).</span>
+
+<span class="sd">        Callers must be aware of this write-back if they:</span>
+
+<span class="sd">        * Pass frozen or read-only ``ActivityCase`` objects (mutation will</span>
+<span class="sd">          raise ``AttributeError`` on the dict assignment).</span>
+<span class="sd">        * Share the same ``ActivityCase`` instance across concurrent threads —</span>
+<span class="sd">          the write is not protected by a lock and is subject to a TOCTOU</span>
+<span class="sd">          race if two threads encode the same activity simultaneously.</span>
+
+<span class="sd">        For the current single-threaded pipeline neither case applies, but</span>
+<span class="sd">        both should be revisited before introducing concurrency.</span>
+<span class="sd">        """</span>
+        <span class="n">features</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="n">activity</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"features"</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="n">emb</span> <span class="o">=</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">_EMBEDDING_KEY</span><span class="p">)</span>
+
+        <span class="c1"># Already stored and non-trivial — return immediately, no side-effect.</span>
+        <span class="k">if</span> <span class="n">emb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">emb</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">emb</span>
+
+        <span class="c1"># Try to compute on-the-fly using the embedder.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embedder</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="n">activity</span><span class="o">.</span><span class="n">cleaned_description</span> <span class="ow">or</span> <span class="n">activity</span><span class="o">.</span><span class="n">raw_description</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="k">if</span> <span class="n">text</span><span class="p">:</span>
+                <span class="n">emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embedder</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">emb</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="c1"># Write-back cache: store the embedding so future score()</span>
+                    <span class="c1"># calls for this activity skip re-encoding entirely.</span>
+                    <span class="c1"># NOTE: mutates activity.metadata in-place (see docstring).</span>
+                    <span class="k">if</span> <span class="s2">"features"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">activity</span><span class="o">.</span><span class="n">metadata</span><span class="p">:</span>
+                        <span class="n">activity</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"features"</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+                    <span class="n">activity</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"features"</span><span class="p">][</span><span class="n">_EMBEDDING_KEY</span><span class="p">]</span> <span class="o">=</span> <span class="n">emb</span>
+                    <span class="k">return</span> <span class="n">emb</span>
+
+        <span class="k">return</span> <span class="kc">None</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

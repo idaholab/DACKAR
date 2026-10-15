@@ -1,0 +1,126 @@
+src.dackar.text_processing.VocabSpellChecker
+============================================
+
+.. py:module:: src.dackar.text_processing.VocabSpellChecker
+
+.. autoapi-nested-parse::
+
+   Closed-vocabulary spell corrector.
+
+   Unlike the dictionary- and model-based
+   :class:`~dackar.text_processing.SpellChecker.SpellChecker`, this corrector only
+   ever substitutes a token with a word that is already present in a
+   caller-supplied vocabulary.  It never proposes a correction outside that set, so
+   it is safe for specialised corpora whose terms are absent from general English
+   dictionaries (domain jargon, part names, un-expanded abbreviations): an unknown
+   token with no close vocabulary match is left untouched rather than mangled.  It
+   has no dependencies beyond the standard library.
+
+   Algorithm
+   ---------
+   For each whitespace-separated token in the (lower-cased) text:
+
+   1. Pass through unchanged if the token is shorter than ``min_token_len`` or is
+      already in the vocabulary.
+   2. Otherwise take the single nearest vocabulary word via
+      :func:`difflib.get_close_matches` at ``cutoff`` (the SequenceMatcher ratio
+      threshold).
+   3. Substitute when a match is found; otherwise keep the original token.
+
+   The corrector is deterministic.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.text_processing.VocabSpellChecker.logger
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.text_processing.VocabSpellChecker.VocabSpellChecker
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:class:: VocabSpellChecker(vocabulary, cutoff = 0.85, min_token_len = 5)
+
+   Correct tokens against a fixed vocabulary using difflib ratios.
+
+   The corrector is intentionally conservative: it only accepts a correction
+   whose SequenceMatcher ratio meets ``cutoff`` and only acts on tokens longer
+   than ``min_token_len``.  Out-of-vocabulary tokens with no close match are
+   left unchanged.
+
+   :param vocabulary: The valid words.  Corrections are only ever drawn from this
+                      set; entries are lower-cased on construction.
+   :param cutoff: Minimum SequenceMatcher ratio for a correction to be accepted.
+                  Default 0.85.  Lower values raise recall but also the risk of false
+                  corrections.
+   :param min_token_len: Tokens shorter than this are never corrected (too short
+                         to tell a typo from a valid short word).  Default 5.
+
+
+   .. py:attribute:: _cutoff
+      :value: 0.85
+
+
+
+   .. py:attribute:: _min_len
+      :value: 5
+
+
+
+   .. py:attribute:: _vocab
+      :type:  frozenset[str]
+
+
+   .. py:attribute:: _vocab_list
+      :type:  list[str]
+
+
+   .. py:method:: transform(text)
+
+      Return *text* with out-of-vocabulary tokens replaced by their nearest
+      vocabulary match.  Tokens already in the vocabulary or shorter than
+      ``min_token_len`` are passed through unchanged.
+
+      The text is lower-cased before tokenising, so every returned token is
+      lower-case — including tokens that were *not* corrected.  Callers that
+      surface the result to users (e.g. a ``cleaned_description`` field)
+      should expect this normalisation.
+
+
+
+   .. py:method:: _correct(token)
+
+      Return the corrected form of a single token.
+
+
+
+   .. py:method:: _is_affix_variant(token, candidate)
+      :staticmethod:
+
+
+      Return True when *candidate* is *token* with a prefix/suffix dropped.
+
+      A closed-vocabulary match that is a strict substring of the token (two
+      or more characters shorter) is almost never a typo correction — it is
+      the token with an affix removed.  For prefixed domain verbs that often
+      inverts the meaning (``uninstall`` -> ``install``, ``unisolate`` ->
+      ``isolate``, ``reenergize`` -> ``energize``, ``retorque`` -> ``torque``).
+      Refusing these keeps the corrector from turning an operation into its
+      opposite; a genuine typo (transposition, single substitution) is not a
+      substring of the original and is unaffected.
+
+
+

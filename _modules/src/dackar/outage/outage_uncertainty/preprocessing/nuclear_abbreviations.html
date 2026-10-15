@@ -1,0 +1,178 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.preprocessing.nuclear_abbreviations &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.preprocessing.nuclear_abbreviations</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.preprocessing.nuclear_abbreviations</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Nuclear-outage abbreviation layer applied on top of the shared Excel file.</span>
+
+<span class="sd">The bulk of the nuclear vocabulary now lives in the shared DACKAR</span>
+<span class="sd">``data/abbreviations.xlsx`` (loaded by :class:`AbbreviationResolver` and by the</span>
+<span class="sd">rest of DACKAR via ``dackar.text_processing``).  This module holds only the</span>
+<span class="sd">entries that *cannot* live in that shared file without changing behaviour for</span>
+<span class="sd">other, non-outage consumers:</span>
+
+<span class="sd">1. **Context overrides** — abbreviations whose shared-file expansion is correct</span>
+<span class="sd">   in general engineering text but wrong in a nuclear-outage context (e.g.</span>
+<span class="sd">   ``cont`` → "continuous" generally, but "containment" in an outage).  Listed</span>
+<span class="sd">   first; they override the shared-file resolution.</span>
+
+<span class="sd">2. **Outage-context-only shorthand** — short or English-colliding tokens that</span>
+<span class="sd">   are deliberately absent from the shared file because adding them there would</span>
+<span class="sd">   mis-expand ordinary text everywhere else in DACKAR (e.g. ``pm`` →</span>
+<span class="sd">   "preventive maintenance", ``prev`` → "preventive").  They are safe only</span>
+<span class="sd">   inside the outage preprocessing pipeline, so they are applied here.</span>
+
+<span class="sd">Resolution order (highest priority last):</span>
+<span class="sd">    shared Excel file  →  this supplement  →  caller-supplied ``extra_abbreviations``</span>
+
+<span class="sd">All keys are lowercase; :class:`AbbreviationResolver` handles case</span>
+<span class="sd">normalisation internally.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<div class="viewcode-block" id="NUCLEAR_OUTAGE_ABBREVIATIONS">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/preprocessing/nuclear_abbreviations/index.html#src.dackar.outage.outage_uncertainty.preprocessing.nuclear_abbreviations.NUCLEAR_OUTAGE_ABBREVIATIONS">[docs]</a>
+<span class="n">NUCLEAR_OUTAGE_ABBREVIATIONS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Context overrides — present in abbreviations.xlsx with a general</span>
+    <span class="c1"># meaning that is wrong in a nuclear-outage context.  These win.</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="s2">"cont"</span><span class="p">:</span>   <span class="s2">"containment"</span><span class="p">,</span>    <span class="c1"># sheet: "continuous"</span>
+    <span class="s2">"rep"</span><span class="p">:</span>    <span class="s2">"replace"</span><span class="p">,</span>        <span class="c1"># sheet: "report"</span>
+    <span class="s2">"comp"</span><span class="p">:</span>   <span class="s2">"component"</span><span class="p">,</span>      <span class="c1"># sheet: "composite"</span>
+    <span class="s2">"mtg"</span><span class="p">:</span>    <span class="s2">"mounting"</span><span class="p">,</span>       <span class="c1"># sheet: "meeting"</span>
+    <span class="s2">"gen"</span><span class="p">:</span>    <span class="s2">"generator"</span><span class="p">,</span>      <span class="c1"># sheet: "general"</span>
+    <span class="s2">"cal"</span><span class="p">:</span>    <span class="s2">"calibrate"</span><span class="p">,</span>      <span class="c1"># sheet: "calibration"</span>
+    <span class="s2">"surv"</span><span class="p">:</span>   <span class="s2">"surveillance"</span><span class="p">,</span>   <span class="c1"># sheet: "survey"</span>
+    <span class="s2">"verif"</span><span class="p">:</span>  <span class="s2">"verification"</span><span class="p">,</span>   <span class="c1"># sheet: "verify"</span>
+    <span class="s2">"fdwtr"</span><span class="p">:</span>  <span class="s2">"feedwater"</span><span class="p">,</span>      <span class="c1"># sheet: "feed water"</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Outage-context-only shorthand — deliberately NOT in the shared file</span>
+    <span class="c1"># because these tokens collide with common English words or are too</span>
+    <span class="c1"># short to disambiguate outside an outage schedule.</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="s2">"pm"</span><span class="p">:</span>     <span class="s2">"preventive maintenance"</span><span class="p">,</span>
+    <span class="s2">"prev"</span><span class="p">:</span>   <span class="s2">"preventive"</span><span class="p">,</span>
+    <span class="s2">"corr"</span><span class="p">:</span>   <span class="s2">"corrective"</span><span class="p">,</span>
+    <span class="s2">"func"</span><span class="p">:</span>   <span class="s2">"functional"</span><span class="p">,</span>
+    <span class="s2">"adj"</span><span class="p">:</span>    <span class="s2">"adjust"</span><span class="p">,</span>
+    <span class="s2">"si"</span><span class="p">:</span>     <span class="s2">"safety injection"</span><span class="p">,</span>
+    <span class="s2">"rp"</span><span class="p">:</span>     <span class="s2">"radiation protection"</span><span class="p">,</span>
+    <span class="s2">"dg"</span><span class="p">:</span>     <span class="s2">"diesel generator"</span><span class="p">,</span>
+    <span class="s2">"wo"</span><span class="p">:</span>     <span class="s2">"work order"</span><span class="p">,</span>
+    <span class="s2">"ts"</span><span class="p">:</span>     <span class="s2">"technical specification"</span><span class="p">,</span>
+    <span class="s2">"ot"</span><span class="p">:</span>     <span class="s2">"outage"</span><span class="p">,</span>
+    <span class="s2">"mn"</span><span class="p">:</span>     <span class="s2">"main"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

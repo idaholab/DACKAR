@@ -1,0 +1,362 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.uncertainty.distribution_fitter &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.uncertainty.distribution_fitter</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.uncertainty.distribution_fitter</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Empirical distribution fitter with weighted percentile support.</span>
+
+<span class="sd">Weighted percentiles</span>
+<span class="sd">--------------------</span>
+<span class="sd">Each duration in the routine group carries a ``relevance_weight`` assigned by</span>
+<span class="sd">:class:`~outage_uncertainty.retrieval.neighbor_selector.NeighborSelector`.</span>
+<span class="sd">High-similarity neighbours receive proportionally more weight, so the P50/P80</span>
+<span class="sd">estimate is dominated by the closest historical analogs rather than treating</span>
+<span class="sd">all matches as equally informative.</span>
+
+<span class="sd">Algorithm (weighted Hazen / midpoint percentile)</span>
+<span class="sd">    1. Sort ``(duration, weight)`` pairs by duration.</span>
+<span class="sd">    2. Build a weighted CDF placing each point at its midpoint position</span>
+<span class="sd">       ``(cumulative_weight_before + 0.5 * weight) / total``.</span>
+<span class="sd">    3. Interpolate linearly between adjacent points to find the value at</span>
+<span class="sd">       quantile *q*.</span>
+
+<span class="sd">With uniform weights this reduces to NumPy's Hazen percentile</span>
+<span class="sd">(``np.percentile(..., method="hazen")``), i.e. plotting position</span>
+<span class="sd">``(i + 0.5) / n`` — **not** the default linear/Type-7 method.  For uniform</span>
+<span class="sd">1..10 this gives P90 = 9.5 and P10 = 1.5 (vs 9.1 / 1.9 for Type-7); the</span>
+<span class="sd">midpoint convention is deliberate so the tail quantiles are not pulled inward</span>
+<span class="sd">by the small historical-analog samples typical here.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.domain.duration</span><span class="w"> </span><span class="kn">import</span> <span class="n">DurationDistribution</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.uncertainty.outlier_handler</span><span class="w"> </span><span class="kn">import</span> <span class="n">OutlierSeparation</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/distribution_fitter/index.html#src.dackar.outage.outage_uncertainty.uncertainty.distribution_fitter.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="DistributionFitter">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/distribution_fitter/index.html#src.dackar.outage.outage_uncertainty.uncertainty.distribution_fitter.DistributionFitter">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DistributionFitter</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Fit an empirical :class:`DurationDistribution` from a sample.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        percentiles: Quantile levels to compute.  Default ``(0.10, 0.50,</span>
+<span class="sd">            0.80, 0.90)``.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">percentiles</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.10</span><span class="p">,</span> <span class="mf">0.50</span><span class="p">,</span> <span class="mf">0.80</span><span class="p">,</span> <span class="mf">0.90</span><span class="p">),</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="DistributionFitter.percentiles">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/distribution_fitter/index.html#src.dackar.outage.outage_uncertainty.uncertainty.distribution_fitter.DistributionFitter.percentiles">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">percentiles</span> <span class="o">=</span> <span class="n">percentiles</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Public interface</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="DistributionFitter.fit">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/distribution_fitter/index.html#src.dackar.outage.outage_uncertainty.uncertainty.distribution_fitter.DistributionFitter.fit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">durations</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+        <span class="n">weights</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DurationDistribution</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Fit a distribution from *durations* with optional *weights*.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            durations: Duration values (hours).</span>
+<span class="sd">            weights: Relevance weights for each duration.  If ``None``,</span>
+<span class="sd">                uniform weights are assumed.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A :class:`DurationDistribution` with ``distribution_type``</span>
+<span class="sd">            ``"empirical"`` and weighted p10/p50/p80/p90 percentiles.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">durations</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">DurationDistribution</span><span class="p">(</span><span class="n">distribution_type</span><span class="o">=</span><span class="s2">"empirical"</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">weights</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">weights</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">durations</span><span class="p">):</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"DistributionFitter.fit: weights length </span><span class="si">%d</span><span class="s2"> != durations length </span><span class="si">%d</span><span class="s2">; "</span>
+                <span class="s2">"falling back to uniform weights"</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">weights</span><span class="p">),</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">durations</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="n">weights</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">w</span> <span class="o">=</span> <span class="n">weights</span> <span class="k">if</span> <span class="n">weights</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[</span><span class="mf">1.0</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">durations</span><span class="p">)]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">durations</span><span class="p">)</span>
+
+        <span class="c1"># Map each configured quantile to its named p10/p50/p80/p90 field when it</span>
+        <span class="c1"># matches; always keep the full set under parameters["percentiles"] so a</span>
+        <span class="c1"># non-default ``percentiles`` tuple neither crashes on unpacking nor is</span>
+        <span class="c1"># silently lost.</span>
+        <span class="n">quantile_values</span> <span class="o">=</span> <span class="p">{</span><span class="n">q</span><span class="p">:</span> <span class="n">_weighted_percentile</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="n">q</span><span class="p">)</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">percentiles</span><span class="p">}</span>
+        <span class="n">named</span> <span class="o">=</span> <span class="p">{</span><span class="mf">0.10</span><span class="p">:</span> <span class="s2">"p10"</span><span class="p">,</span> <span class="mf">0.50</span><span class="p">:</span> <span class="s2">"p50"</span><span class="p">,</span> <span class="mf">0.80</span><span class="p">:</span> <span class="s2">"p80"</span><span class="p">,</span> <span class="mf">0.90</span><span class="p">:</span> <span class="s2">"p90"</span><span class="p">}</span>
+        <span class="n">field_kwargs</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">named</span><span class="p">[</span><span class="n">q</span><span class="p">]:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">q</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">quantile_values</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">named</span>
+        <span class="p">}</span>
+        <span class="n">dist</span> <span class="o">=</span> <span class="n">DurationDistribution</span><span class="p">(</span>
+            <span class="n">distribution_type</span><span class="o">=</span><span class="s2">"empirical"</span><span class="p">,</span>
+            <span class="n">samples</span><span class="o">=</span><span class="nb">sorted</span><span class="p">(</span><span class="n">durations</span><span class="p">),</span>
+            <span class="o">**</span><span class="n">field_kwargs</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">dist</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">"percentiles"</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="nb">str</span><span class="p">(</span><span class="n">q</span><span class="p">):</span> <span class="n">v</span> <span class="k">for</span> <span class="n">q</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">quantile_values</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+        <span class="k">return</span> <span class="n">dist</span></div>
+
+
+<div class="viewcode-block" id="DistributionFitter.fit_from_separation">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/distribution_fitter/index.html#src.dackar.outage.outage_uncertainty.uncertainty.distribution_fitter.DistributionFitter.fit_from_separation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fit_from_separation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">separation</span><span class="p">:</span> <span class="n">OutlierSeparation</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DurationDistribution</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Fit a two-component mixture distribution from an :class:`OutlierSeparation`.</span>
+
+<span class="sd">        The routine group drives the primary percentile estimates (``p10`` …</span>
+<span class="sd">        ``p90``).  When an extended group is also present:</span>
+
+<span class="sd">        * ``dist.extended_samples`` and ``dist.mixture_weight`` are populated so</span>
+<span class="sd">          that :meth:`~DurationDistribution.sample`, :meth:`~DurationDistribution.mean`,</span>
+<span class="sd">          and :meth:`~DurationDistribution.variance` reflect the full mixture.</span>
+<span class="sd">        * Mixture-aware ``p80`` / ``p90`` (combining both pools with their</span>
+<span class="sd">          respective mixture weights) are stored under</span>
+<span class="sd">          ``parameters["mixture_p80"]`` / ``"mixture_p90"]`` for planners who</span>
+<span class="sd">          want a single tail quantile that accounts for disrupted executions.</span>
+<span class="sd">        """</span>
+        <span class="n">dist</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">separation</span><span class="o">.</span><span class="n">routine</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="n">separation</span><span class="o">.</span><span class="n">routine_weights</span><span class="p">)</span>
+        <span class="n">dist</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">"extended_fraction"</span><span class="p">]</span> <span class="o">=</span> <span class="n">separation</span><span class="o">.</span><span class="n">extended_fraction</span>
+        <span class="n">dist</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">"n_routine"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">separation</span><span class="o">.</span><span class="n">n_routine</span><span class="p">)</span>
+        <span class="n">dist</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">"n_total"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">separation</span><span class="o">.</span><span class="n">n_total</span><span class="p">)</span>
+        <span class="n">dist</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">"outlier_method"</span><span class="p">]</span> <span class="o">=</span> <span class="n">separation</span><span class="o">.</span><span class="n">method</span>
+        <span class="k">if</span> <span class="n">separation</span><span class="o">.</span><span class="n">threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">dist</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">"outlier_threshold"</span><span class="p">]</span> <span class="o">=</span> <span class="n">separation</span><span class="o">.</span><span class="n">threshold</span>
+
+        <span class="c1"># Gap 1: populate mixture fields when disruption-driven samples exist</span>
+        <span class="k">if</span> <span class="n">separation</span><span class="o">.</span><span class="n">extended</span><span class="p">:</span>
+            <span class="n">ef</span> <span class="o">=</span> <span class="n">separation</span><span class="o">.</span><span class="n">extended_fraction</span>
+            <span class="n">dist</span><span class="o">.</span><span class="n">extended_samples</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">separation</span><span class="o">.</span><span class="n">extended</span><span class="p">)</span>
+            <span class="n">dist</span><span class="o">.</span><span class="n">mixture_weight</span> <span class="o">=</span> <span class="n">ef</span>
+
+            <span class="c1"># Mixture-aware percentiles: combine both pools with mass-weighted weights.</span>
+            <span class="c1"># Routine samples carry total mass (1 - ef); extended carry ef.</span>
+            <span class="c1"># Fall back to uniform extended weights when extended_weights is</span>
+            <span class="c1"># empty (e.g. OutlierSeparation constructed directly without</span>
+            <span class="c1"># populating the field) so mixture percentiles are never silently</span>
+            <span class="c1"># skipped just because the weight list was omitted.</span>
+            <span class="k">if</span> <span class="n">ef</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">:</span>
+                <span class="n">ext_w</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">separation</span><span class="o">.</span><span class="n">extended_weights</span>
+                    <span class="k">if</span> <span class="n">separation</span><span class="o">.</span><span class="n">extended_weights</span>
+                    <span class="k">else</span> <span class="p">[</span><span class="mf">1.0</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">separation</span><span class="o">.</span><span class="n">extended</span><span class="p">)]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">separation</span><span class="o">.</span><span class="n">extended</span><span class="p">)</span>
+                <span class="p">)</span>
+                <span class="n">combined_d</span> <span class="o">=</span> <span class="n">separation</span><span class="o">.</span><span class="n">routine</span> <span class="o">+</span> <span class="n">separation</span><span class="o">.</span><span class="n">extended</span>
+                <span class="n">combined_w</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="p">[</span><span class="n">w</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">ef</span><span class="p">)</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">separation</span><span class="o">.</span><span class="n">routine_weights</span><span class="p">]</span>
+                    <span class="o">+</span> <span class="p">[</span><span class="n">w</span> <span class="o">*</span> <span class="n">ef</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">ext_w</span><span class="p">]</span>
+                <span class="p">)</span>
+                <span class="n">dist</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">"mixture_p80"</span><span class="p">]</span> <span class="o">=</span> <span class="n">_weighted_percentile</span><span class="p">(</span>
+                    <span class="n">combined_d</span><span class="p">,</span> <span class="n">combined_w</span><span class="p">,</span> <span class="mf">0.80</span>
+                <span class="p">)</span>
+                <span class="n">dist</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">"mixture_p90"</span><span class="p">]</span> <span class="o">=</span> <span class="n">_weighted_percentile</span><span class="p">(</span>
+                    <span class="n">combined_d</span><span class="p">,</span> <span class="n">combined_w</span><span class="p">,</span> <span class="mf">0.90</span>
+                <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">dist</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Weighted percentile helper</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_weighted_percentile">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/distribution_fitter/index.html#src.dackar.outage.outage_uncertainty.uncertainty.distribution_fitter._weighted_percentile">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_weighted_percentile</span><span class="p">(</span>
+    <span class="n">values</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="n">weights</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="n">q</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Compute the *q*-th weighted percentile of *values*.</span>
+
+<span class="sd">    Uses linear interpolation between adjacent CDF points placed at midpoint</span>
+<span class="sd">    positions ``(cumulative_before + 0.5 * w) / total``.  With uniform weights</span>
+<span class="sd">    this is NumPy's Hazen percentile (``method="hazen"``), not the default</span>
+<span class="sd">    Type-7 method.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        values: Data points.</span>
+<span class="sd">        weights: Non-negative weights (need not sum to 1).</span>
+<span class="sd">        q: Quantile in [0, 1].</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Interpolated percentile value.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">values</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+
+    <span class="c1"># Sort by value, keeping weights aligned</span>
+    <span class="n">pairs</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">weights</span><span class="p">),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">sorted_vals</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pairs</span><span class="p">]</span>
+    <span class="n">sorted_w</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pairs</span><span class="p">]</span>
+
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">sorted_vals</span><span class="p">)</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">sorted_w</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">total</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="c1"># Degenerate case: all zero weights → uniform</span>
+        <span class="n">sorted_w</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">]</span> <span class="o">*</span> <span class="n">n</span>
+        <span class="n">total</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+
+    <span class="c1"># Validate non-negative weights.  Negative weights produce a non-monotone</span>
+    <span class="c1"># CDF and silently incorrect interpolation; raise early so callers are</span>
+    <span class="c1"># forced to fix the upstream source rather than receiving wrong percentiles.</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">w</span> <span class="o">&lt;</span> <span class="mf">0.0</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">sorted_w</span><span class="p">):</span>
+        <span class="n">min_w</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">sorted_w</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"_weighted_percentile: all weights must be non-negative; "</span>
+            <span class="sa">f</span><span class="s2">"got minimum weight </span><span class="si">{</span><span class="n">min_w</span><span class="si">:</span><span class="s2">.6g</span><span class="si">}</span><span class="s2">.  Check the upstream weight "</span>
+            <span class="sa">f</span><span class="s2">"source (e.g. NeighborSelector relevance_weights or manual "</span>
+            <span class="sa">f</span><span class="s2">"weight lists passed to DistributionFitter)."</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Build cumulative CDF as midpoint positions:</span>
+    <span class="c1"># place point i at (cumulative_weight_before_i + 0.5 * w_i) / total</span>
+    <span class="c1"># This is the weighted analogue of (i + 0.5) / n positioning.</span>
+    <span class="n">cdf</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">cumulative</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">sorted_w</span><span class="p">:</span>
+        <span class="n">cdf</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">cumulative</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">w</span><span class="p">)</span> <span class="o">/</span> <span class="n">total</span><span class="p">)</span>
+        <span class="n">cumulative</span> <span class="o">+=</span> <span class="n">w</span>
+
+    <span class="c1"># Clamp q to the data range</span>
+    <span class="k">if</span> <span class="n">q</span> <span class="o">&lt;=</span> <span class="n">cdf</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="n">sorted_vals</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">q</span> <span class="o">&gt;=</span> <span class="n">cdf</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="n">sorted_vals</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="c1"># Linear interpolation between adjacent CDF points</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">cdf</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">q</span><span class="p">:</span>
+            <span class="c1"># Interpolate between i-1 and i</span>
+            <span class="n">span</span> <span class="o">=</span> <span class="n">cdf</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">cdf</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">span</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">sorted_vals</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">frac</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">-</span> <span class="n">cdf</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">])</span> <span class="o">/</span> <span class="n">span</span>
+            <span class="k">return</span> <span class="n">sorted_vals</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">frac</span> <span class="o">*</span> <span class="p">(</span><span class="n">sorted_vals</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">sorted_vals</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">sorted_vals</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

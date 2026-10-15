@@ -1,0 +1,367 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.retrieval.retrieval_index &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.retrieval.retrieval_index</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.retrieval.retrieval_index</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Historical activity index with two-stage retrieval.</span>
+
+<span class="sd">Retrieval pipeline</span>
+<span class="sd">------------------</span>
+<span class="sd">1. ``LexicalContextPrescorer``  (cheap — O(N × fast set/field ops))</span>
+<span class="sd">   Narrows the full historical corpus to a candidate set of ~200 activities</span>
+<span class="sd">   using token Jaccard on the cleaned description plus exact-match context</span>
+<span class="sd">   fields with weight redistribution for missing (None) values.</span>
+
+<span class="sd">2. ``SimilarityEngine.compare()``  (expensive — called only on the ~200</span>
+<span class="sd">   candidates; may invoke WordNet via ``SemanticSimilarityScorer``)</span>
+
+<span class="sd">3. ``NeighborSelector.select()``  (cheap — final soft top-k from the ~200)</span>
+
+<span class="sd">Separating the cheap pre-filter from the expensive scorer ensures the</span>
+<span class="sd">system scales to corpora of tens of thousands of activities without</span>
+<span class="sd">running WordNet on every pair.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.domain.activity</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActivityCase</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="c1"># Context fields considered by the prescorer (must be valid attributes of</span>
+<span class="c1"># ActivityCase).  Order does not matter; each gets an equal share of the</span>
+<span class="c1"># context half-weight after redistribution.</span>
+<div class="viewcode-block" id="_DEFAULT_CONTEXT_FIELDS">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index._DEFAULT_CONTEXT_FIELDS">[docs]</a>
+<span class="n">_DEFAULT_CONTEXT_FIELDS</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">"discipline"</span><span class="p">,</span>
+    <span class="s2">"task_family"</span><span class="p">,</span>
+    <span class="s2">"component_family"</span><span class="p">,</span>
+    <span class="s2">"plant_id"</span><span class="p">,</span>
+    <span class="s2">"outage_phase"</span><span class="p">,</span>
+<span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="LexicalContextPrescorer">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.LexicalContextPrescorer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LexicalContextPrescorer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Cheap pre-filter that combines token Jaccard + exact-match context.</span>
+
+<span class="sd">    Designed to rapidly eliminate clearly dissimilar activities before the</span>
+<span class="sd">    expensive semantic scorer runs.  Intentionally simpler than</span>
+<span class="sd">    ``ContextSimilarityScorer``:</span>
+
+<span class="sd">    - No partial credit (exact match only)</span>
+<span class="sd">    - Equal per-field weighting (not configurable per field)</span>
+<span class="sd">    - Weight redistribution: ``None`` fields are skipped and the remaining</span>
+<span class="sd">      field scores are re-normalised — unknown metadata does not penalise</span>
+
+<span class="sd">    Score formula::</span>
+
+<span class="sd">        score = text_weight × token_jaccard(a, b)</span>
+<span class="sd">                + (1 − text_weight) × context_match(a, b)</span>
+
+<span class="sd">    where ``context_match`` is the fraction of *available* (non-None) fields</span>
+<span class="sd">    that match exactly, averaged over those fields only.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        text_weight: Share of the score attributed to text similarity.</span>
+<span class="sd">            The rest goes to context.  Default 0.5.</span>
+<span class="sd">        context_fields: Activity attributes to compare.  Defaults to</span>
+<span class="sd">            ``['discipline', 'task_family', 'component_family',</span>
+<span class="sd">            'plant_id', 'outage_phase']``.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">text_weight</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
+        <span class="n">context_fields</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">text_weight</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"text_weight must be in [0, 1]; got </span><span class="si">{</span><span class="n">text_weight</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<div class="viewcode-block" id="LexicalContextPrescorer.text_weight">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.LexicalContextPrescorer.text_weight">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">text_weight</span> <span class="o">=</span> <span class="n">text_weight</span></div>
+
+<div class="viewcode-block" id="LexicalContextPrescorer.context_weight">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.LexicalContextPrescorer.context_weight">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">context_weight</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">text_weight</span></div>
+
+<div class="viewcode-block" id="LexicalContextPrescorer.context_fields">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.LexicalContextPrescorer.context_fields">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">context_fields</span> <span class="o">=</span> <span class="n">context_fields</span> <span class="ow">or</span> <span class="nb">list</span><span class="p">(</span><span class="n">_DEFAULT_CONTEXT_FIELDS</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LexicalContextPrescorer.score">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.LexicalContextPrescorer.score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">,</span> <span class="n">candidate</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return a pre-filter score in [0, 1]."""</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_token_jaccard</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">candidate</span><span class="p">)</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_context_match</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">candidate</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">text_weight</span> <span class="o">*</span> <span class="n">text</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">context_weight</span> <span class="o">*</span> <span class="n">context</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Private helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="LexicalContextPrescorer._token_jaccard">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.LexicalContextPrescorer._token_jaccard">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_token_jaccard</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="n">a_tok</span> <span class="o">=</span> <span class="nb">set</span><span class="p">((</span><span class="n">a</span><span class="o">.</span><span class="n">cleaned_description</span> <span class="ow">or</span> <span class="n">a</span><span class="o">.</span><span class="n">raw_description</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+        <span class="n">b_tok</span> <span class="o">=</span> <span class="nb">set</span><span class="p">((</span><span class="n">b</span><span class="o">.</span><span class="n">cleaned_description</span> <span class="ow">or</span> <span class="n">b</span><span class="o">.</span><span class="n">raw_description</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">a_tok</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">b_tok</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">1.0</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">a_tok</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">b_tok</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">a_tok</span> <span class="o">&amp;</span> <span class="n">b_tok</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">a_tok</span> <span class="o">|</span> <span class="n">b_tok</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LexicalContextPrescorer._context_match">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.LexicalContextPrescorer._context_match">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_context_match</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Fraction of available field pairs that are identical.</span>
+
+<span class="sd">        Pairs where either side is ``None`` are skipped entirely so that</span>
+<span class="sd">        missing taxonomy labels do not penalise the score.</span>
+<span class="sd">        """</span>
+        <span class="n">hits</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">available</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">context_fields</span><span class="p">:</span>
+            <span class="n">val_a</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">val_b</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">val_a</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">val_b</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">available</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="n">val_a</span> <span class="o">==</span> <span class="n">val_b</span><span class="p">:</span>
+                <span class="n">hits</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">return</span> <span class="n">hits</span> <span class="o">/</span> <span class="n">available</span> <span class="k">if</span> <span class="n">available</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mf">0.0</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="HistoricalActivityIndex">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.HistoricalActivityIndex">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">HistoricalActivityIndex</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""In-memory index of historical activities with prescored candidate search.</span>
+
+<span class="sd">    ``build()`` stores all activities.  ``search()`` uses</span>
+<span class="sd">    :class:`LexicalContextPrescorer` to cheaply rank the corpus and returns</span>
+<span class="sd">    the top-``top_k`` candidate IDs for downstream full scoring.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        prescorer: Pre-filter scorer instance.  Defaults to</span>
+<span class="sd">            ``LexicalContextPrescorer()`` with equal text/context weighting.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prescorer</span><span class="p">:</span> <span class="n">LexicalContextPrescorer</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="HistoricalActivityIndex._activities">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.HistoricalActivityIndex._activities">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_activities</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ActivityCase</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+<div class="viewcode-block" id="HistoricalActivityIndex._prescorer">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.HistoricalActivityIndex._prescorer">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_prescorer</span> <span class="o">=</span> <span class="n">prescorer</span> <span class="ow">or</span> <span class="n">LexicalContextPrescorer</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="HistoricalActivityIndex.build">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.HistoricalActivityIndex.build">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activities</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">ActivityCase</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Index a list of historical activities (replaces any prior index)."""</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_activities</span> <span class="o">=</span> <span class="p">{</span><span class="n">a</span><span class="o">.</span><span class="n">activity_id</span><span class="p">:</span> <span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">activities</span><span class="p">}</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"HistoricalActivityIndex: indexed </span><span class="si">%d</span><span class="s2"> activities"</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_activities</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="HistoricalActivityIndex.search">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.HistoricalActivityIndex.search">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">search</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">,</span> <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">200</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Return up to *top_k* candidate IDs ranked by pre-filter score.</span>
+
+<span class="sd">        All activities in the index are scored cheaply; only the top-*top_k*</span>
+<span class="sd">        proceed to the expensive full ``SimilarityEngine`` stage.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_activities</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="n">scored</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">(</span><span class="n">activity_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prescorer</span><span class="o">.</span><span class="n">score</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">activity</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">activity_id</span><span class="p">,</span> <span class="n">activity</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_activities</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">]</span>
+        <span class="n">scored</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">activity_id</span> <span class="k">for</span> <span class="n">activity_id</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">scored</span><span class="p">[:</span><span class="n">top_k</span><span class="p">]]</span></div>
+
+
+<div class="viewcode-block" id="HistoricalActivityIndex.get">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.HistoricalActivityIndex.get">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ActivityCase</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Retrieve a single activity by ID, or ``None`` if not found.</span>
+
+<span class="sd">        Returns ``None`` rather than raising ``KeyError`` so callers can use</span>
+<span class="sd">        a simple ``if activity is not None`` guard.  This matches ``dict.get()``</span>
+<span class="sd">        semantics and avoids silent swallowing of ``KeyError`` in broad</span>
+<span class="sd">        ``except Exception`` blocks (which could mask unrelated bugs).</span>
+
+<span class="sd">        Callers that treat a missing ID as a programming error can assert::</span>
+
+<span class="sd">            activity = index.get(activity_id)</span>
+<span class="sd">            assert activity is not None, f"expected {activity_id} in index"</span>
+<span class="sd">        """</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_activities</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">activity_id</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HistoricalActivityIndex.upsert">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.HistoricalActivityIndex.upsert">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">upsert</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity</span><span class="p">:</span> <span class="n">ActivityCase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Add or replace one activity without rebuilding the full index.</span>
+
+<span class="sd">        Typical use: the completion feedback loop writes back an emergent</span>
+<span class="sd">        activity with ``actual_duration_hours`` set so the current session's</span>
+<span class="sd">        Stage D retrievals immediately use the real execution time.</span>
+
+<span class="sd">        The prescorer is stateless (scores on demand over ``_activities``), so</span>
+<span class="sd">        no rebuild is required — the updated activity is visible to ``search()``</span>
+<span class="sd">        on the very next call.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            activity: Updated ActivityCase.  Must have a non-empty</span>
+<span class="sd">                ``activity_id``.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError: If ``activity.activity_id`` is empty or ``None``.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">activity</span><span class="o">.</span><span class="n">activity_id</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">"activity.activity_id must be non-empty for upsert; "</span>
+                <span class="s2">"received an ActivityCase with no ID"</span>
+            <span class="p">)</span>
+        <span class="n">is_new</span> <span class="o">=</span> <span class="n">activity</span><span class="o">.</span><span class="n">activity_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_activities</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_activities</span><span class="p">[</span><span class="n">activity</span><span class="o">.</span><span class="n">activity_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">activity</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">"HistoricalActivityIndex.upsert: activity </span><span class="si">%s</span><span class="s2"> </span><span class="si">%s</span><span class="s2"> (</span><span class="si">%d</span><span class="s2"> total)"</span><span class="p">,</span>
+            <span class="n">activity</span><span class="o">.</span><span class="n">activity_id</span><span class="p">,</span>
+            <span class="s2">"added"</span> <span class="k">if</span> <span class="n">is_new</span> <span class="k">else</span> <span class="s2">"updated in place"</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_activities</span><span class="p">),</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HistoricalActivityIndex.__len__">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/retrieval/retrieval_index/index.html#src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.HistoricalActivityIndex.__len__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_activities</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

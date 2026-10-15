@@ -1,0 +1,179 @@
+src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity
+==================================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity
+
+.. autoapi-nested-parse::
+
+   Semantic similarity scorers for outage activity descriptions.
+
+   Two implementations are provided:
+
+   EmbeddingSemanticScorer (recommended)
+   --------------------------------------
+   Computes cosine similarity between dense embedding vectors produced by a
+   local Ollama model (see :mod:`preprocessing.ollama_embedder`).  Embeddings
+   are pre-computed during ingestion and stored in
+   ``activity.metadata["features"]["text_embedding"]``, so scoring at query
+   time is a single dot-product — O(d) where d is the embedding dimension.
+
+   Benchmark results on ``outage_cleaning_benchmark.csv`` (175 activity pairs):
+
+   * ``nomic-embed-text`` — disc. ratio 1.415, P@5 0.619
+   * ``mxbai-embed-large`` — disc. ratio 1.252, P@5 0.648
+
+   Falls back transparently to character-trigram Jaccard when the embedder is
+   unavailable or when the activity has no stored embedding (e.g. during unit
+   tests that build minimal ``ActivityCase`` fixtures).
+
+   SemanticSimilarityScorer (legacy / WordNet)
+   --------------------------------------------
+   Wraps ``dackar.similarity.SentenceSimilarity``, which implements the
+   Pawar-Mago (2018) method: word-sense disambiguation via ``pywsd``
+   (simple_lesk by default) followed by bidirectional synset-similarity
+   vector comparison using WordNet path + Wu-Palmer similarity.
+
+   Falls back to character-trigram Jaccard when ``dackar.similarity`` or its
+   NLTK/pywsd dependencies are absent.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity.logger
+   src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity._EMBEDDING_KEY
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity.SemanticSimilarityScorer
+   src.dackar.outage.outage_uncertainty.retrieval.semantic_similarity.EmbeddingSemanticScorer
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:class:: SemanticSimilarityScorer(disambiguation_method = 'simple_lesk', similarity_method = 'semantic_similarity_synsets')
+
+   Scores semantic similarity between two cleaned activity descriptions.
+
+   :param disambiguation_method: Word-sense disambiguation strategy passed to
+                                 ``SentenceSimilarity``.  Choices: ``'simple_lesk'`` (default),
+                                 ``'original_lesk'``, ``'cosine_lesk'``, ``'adapted_lesk'``,
+                                 ``'max_similarity'``.
+   :param similarity_method: Synset comparison method.  Default
+                             ``'semantic_similarity_synsets'`` uses a harmonic mean of WordNet
+                             path similarity and Wu-Palmer similarity.
+
+
+   .. py:attribute:: _scorer
+      :value: None
+
+
+
+   .. py:attribute:: _disambiguation_method
+      :value: 'simple_lesk'
+
+
+
+   .. py:attribute:: _similarity_method
+      :value: 'semantic_similarity_synsets'
+
+
+
+   .. py:method:: score(a, b)
+
+      Return a similarity score in [0, 1] between activities *a* and *b*.
+
+
+
+   .. py:method:: _dackar_score(text_a, text_b)
+
+      Call the DACKAR WordNet scorer; fall back to trigrams on error.
+
+
+
+   .. py:method:: _trigram_jaccard(text_a, text_b)
+      :staticmethod:
+
+
+      Character-trigram Jaccard index — lightweight dependency-free fallback.
+
+      Delegates to :func:`dackar.similarity.stringSimilarity.trigram_jaccard`.
+      Retained as a static method because
+      :class:`EmbeddingSemanticScorer` calls it by name as its own fallback.
+
+
+
+.. py:data:: _EMBEDDING_KEY
+   :value: 'text_embedding'
+
+
+.. py:class:: EmbeddingSemanticScorer(embedder=None)
+
+   Scores semantic similarity using pre-computed dense embeddings.
+
+   Embeddings are stored in ``activity.metadata["features"]["text_embedding"]``
+   by :class:`ActivityFeatureBuilder` during ingestion.  Scoring is a single
+   cosine dot-product — no external calls at query time.
+
+   Graceful degradation
+   --------------------
+   If either activity lacks a stored embedding (e.g. test fixtures, cold-start
+   before the first ingestion) the scorer falls back to character-trigram
+   Jaccard and logs a DEBUG message.
+
+   :param embedder: An :class:`OllamaEmbedder` instance used to encode the query
+                    activity on-the-fly when its embedding has not yet been cached.
+                    When ``None``, the scorer can only use pre-stored embeddings (any
+                    activity without one will trigger the trigram fallback).
+
+
+   .. py:attribute:: _embedder
+      :value: None
+
+
+
+   .. py:method:: score(a, b)
+
+      Return cosine similarity in [0, 1] between *a* and *b*.
+
+      Retrieves embeddings from ``metadata["features"]["text_embedding"]``.
+      If the embedding is missing for *a* it is computed on the fly using
+      the embedder (and cached back on the activity).  If it is missing for
+      *b* (historical activity, should always be pre-computed) the scorer
+      falls back to trigram Jaccard.
+
+
+
+   .. py:method:: _get_embedding(activity)
+
+      Return the stored embedding, computing it on-the-fly if needed.
+
+      **Side-effect**: when the embedding is not already cached and the
+      embedder produces one, the result is written back into
+      ``activity.metadata["features"]["text_embedding"]``.  This mutation
+      is intentional — it makes all subsequent ``score()`` calls for the
+      same activity free (no re-encoding).
+
+      Callers must be aware of this write-back if they:
+
+      * Pass frozen or read-only ``ActivityCase`` objects (mutation will
+        raise ``AttributeError`` on the dict assignment).
+      * Share the same ``ActivityCase`` instance across concurrent threads —
+        the write is not protected by a lock and is subject to a TOCTOU
+        race if two threads encode the same activity simultaneously.
+
+      For the current single-threaded pipeline neither case applies, but
+      both should be revisited before introducing concurrency.
+
+
+

@@ -1,0 +1,190 @@
+src.dackar.outage.outage_uncertainty.retrieval.retrieval_index
+==============================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.retrieval.retrieval_index
+
+.. autoapi-nested-parse::
+
+   Historical activity index with two-stage retrieval.
+
+   Retrieval pipeline
+   ------------------
+   1. ``LexicalContextPrescorer``  (cheap — O(N × fast set/field ops))
+      Narrows the full historical corpus to a candidate set of ~200 activities
+      using token Jaccard on the cleaned description plus exact-match context
+      fields with weight redistribution for missing (None) values.
+
+   2. ``SimilarityEngine.compare()``  (expensive — called only on the ~200
+      candidates; may invoke WordNet via ``SemanticSimilarityScorer``)
+
+   3. ``NeighborSelector.select()``  (cheap — final soft top-k from the ~200)
+
+   Separating the cheap pre-filter from the expensive scorer ensures the
+   system scales to corpora of tens of thousands of activities without
+   running WordNet on every pair.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.logger
+   src.dackar.outage.outage_uncertainty.retrieval.retrieval_index._DEFAULT_CONTEXT_FIELDS
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.LexicalContextPrescorer
+   src.dackar.outage.outage_uncertainty.retrieval.retrieval_index.HistoricalActivityIndex
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: _DEFAULT_CONTEXT_FIELDS
+   :type:  list[str]
+   :value: ['discipline', 'task_family', 'component_family', 'plant_id', 'outage_phase']
+
+
+.. py:class:: LexicalContextPrescorer(text_weight = 0.5, context_fields = None)
+
+   Cheap pre-filter that combines token Jaccard + exact-match context.
+
+   Designed to rapidly eliminate clearly dissimilar activities before the
+   expensive semantic scorer runs.  Intentionally simpler than
+   ``ContextSimilarityScorer``:
+
+   - No partial credit (exact match only)
+   - Equal per-field weighting (not configurable per field)
+   - Weight redistribution: ``None`` fields are skipped and the remaining
+     field scores are re-normalised — unknown metadata does not penalise
+
+   Score formula::
+
+       score = text_weight × token_jaccard(a, b)
+               + (1 − text_weight) × context_match(a, b)
+
+   where ``context_match`` is the fraction of *available* (non-None) fields
+   that match exactly, averaged over those fields only.
+
+   :param text_weight: Share of the score attributed to text similarity.
+                       The rest goes to context.  Default 0.5.
+   :param context_fields: Activity attributes to compare.  Defaults to
+                          ``['discipline', 'task_family', 'component_family',
+                          'plant_id', 'outage_phase']``.
+
+
+   .. py:attribute:: text_weight
+      :value: 0.5
+
+
+
+   .. py:attribute:: context_weight
+      :value: 0.5
+
+
+
+   .. py:attribute:: context_fields
+      :value: ['discipline', 'task_family', 'component_family', 'plant_id', 'outage_phase']
+
+
+
+   .. py:method:: score(query, candidate)
+
+      Return a pre-filter score in [0, 1].
+
+
+
+   .. py:method:: _token_jaccard(a, b)
+      :staticmethod:
+
+
+
+   .. py:method:: _context_match(a, b)
+
+      Fraction of available field pairs that are identical.
+
+      Pairs where either side is ``None`` are skipped entirely so that
+      missing taxonomy labels do not penalise the score.
+
+
+
+.. py:class:: HistoricalActivityIndex(prescorer = None)
+
+   In-memory index of historical activities with prescored candidate search.
+
+   ``build()`` stores all activities.  ``search()`` uses
+   :class:`LexicalContextPrescorer` to cheaply rank the corpus and returns
+   the top-``top_k`` candidate IDs for downstream full scoring.
+
+   :param prescorer: Pre-filter scorer instance.  Defaults to
+                     ``LexicalContextPrescorer()`` with equal text/context weighting.
+
+
+   .. py:attribute:: _activities
+      :type:  dict[str, dackar.outage.outage_uncertainty.domain.activity.ActivityCase]
+
+
+   .. py:attribute:: _prescorer
+
+
+   .. py:method:: build(activities)
+
+      Index a list of historical activities (replaces any prior index).
+
+
+
+   .. py:method:: search(query, top_k = 200)
+
+      Return up to *top_k* candidate IDs ranked by pre-filter score.
+
+      All activities in the index are scored cheaply; only the top-*top_k*
+      proceed to the expensive full ``SimilarityEngine`` stage.
+
+
+
+   .. py:method:: get(activity_id)
+
+      Retrieve a single activity by ID, or ``None`` if not found.
+
+      Returns ``None`` rather than raising ``KeyError`` so callers can use
+      a simple ``if activity is not None`` guard.  This matches ``dict.get()``
+      semantics and avoids silent swallowing of ``KeyError`` in broad
+      ``except Exception`` blocks (which could mask unrelated bugs).
+
+      Callers that treat a missing ID as a programming error can assert::
+
+          activity = index.get(activity_id)
+          assert activity is not None, f"expected {activity_id} in index"
+
+
+
+   .. py:method:: upsert(activity)
+
+      Add or replace one activity without rebuilding the full index.
+
+      Typical use: the completion feedback loop writes back an emergent
+      activity with ``actual_duration_hours`` set so the current session's
+      Stage D retrievals immediately use the real execution time.
+
+      The prescorer is stateless (scores on demand over ``_activities``), so
+      no rebuild is required — the updated activity is visible to ``search()``
+      on the very next call.
+
+      :param activity: Updated ActivityCase.  Must have a non-empty
+                       ``activity_id``.
+
+      :raises ValueError: If ``activity.activity_id`` is empty or ``None``.
+
+
+
+   .. py:method:: __len__()
+
+

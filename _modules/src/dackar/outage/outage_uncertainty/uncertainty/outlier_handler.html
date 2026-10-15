@@ -1,0 +1,467 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Outlier separation for historical activity durations.</span>
+
+<span class="sd">The core insight from the PDF: outage task duration distributions are often</span>
+<span class="sd">bimodal — a "routine execution" cluster plus a lower-probability</span>
+<span class="sd">"disruption-driven" tail caused by unexpected findings, rework, or emergent</span>
+<span class="sd">coordination issues.  Pooling both modes into a single distribution inflates</span>
+<span class="sd">the P80/P90 for tasks that almost always run cleanly, and can underestimate</span>
+<span class="sd">when the disruption mode is frequent.</span>
+
+<span class="sd">This module separates the two populations so downstream components can:</span>
+<span class="sd">  - Fit the main distribution on the *routine* group</span>
+<span class="sd">  - Report the *extended_fraction* as a risk signal</span>
+<span class="sd">  - Optionally model the disruption mode separately (future work)</span>
+
+<span class="sd">Separation strategies</span>
+<span class="sd">---------------------</span>
+<span class="sd">keep_all</span>
+<span class="sd">    No separation; all durations are treated as routine.  Safe fallback for</span>
+<span class="sd">    very small samples (n &lt; ``MIN_SAMPLES_FOR_SEPARATION``).</span>
+
+<span class="sd">trim_symmetric</span>
+<span class="sd">    Symmetric percentage trim.  Removes the top and bottom ``trim_pct``</span>
+<span class="sd">    fraction.  Useful when both tails are noise; rarely appropriate for</span>
+<span class="sd">    duration data which is naturally right-skewed.</span>
+
+<span class="sd">iqr</span>
+<span class="sd">    Upper-fence IQR separation: fence = Q3 + 1.5 × IQR.  Durations above</span>
+<span class="sd">    the fence go to the *extended* group.  No lower fence — very short</span>
+<span class="sd">    executions are genuine and should not be removed.</span>
+
+<span class="sd">mad</span>
+<span class="sd">    Median + k × MAD upper threshold (default k = 3.0).  More robust than</span>
+<span class="sd">    IQR for small samples (n ≥ 4) and strongly skewed distributions because</span>
+<span class="sd">    the MAD is insensitive to extreme values.</span>
+
+<span class="sd">Weight alignment</span>
+<span class="sd">----------------</span>
+<span class="sd">Durations and their relevance_weights (from NeighborSelector) are processed</span>
+<span class="sd">as aligned pairs so that the separation preserves the correct weight for each</span>
+<span class="sd">retained duration.  Weights are re-normalised within each group.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="c1"># Separation is unreliable below this sample count — fall back to keep_all</span>
+<div class="viewcode-block" id="MIN_SAMPLES_FOR_SEPARATION">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.MIN_SAMPLES_FOR_SEPARATION">[docs]</a>
+<span class="n">MIN_SAMPLES_FOR_SEPARATION</span> <span class="o">=</span> <span class="mi">4</span></div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="OutlierSeparation">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierSeparation">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">OutlierSeparation</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Result of separating routine from disruption-driven durations.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    routine, routine_weights</span>
+<span class="sd">        Durations (and their re-normalised relevance weights) that fall</span>
+<span class="sd">        within the normal execution range.</span>
+<span class="sd">    extended, extended_weights</span>
+<span class="sd">        Durations classified as disruption-driven (above the fence).</span>
+<span class="sd">    extended_fraction</span>
+<span class="sd">        Fraction of the total sample that was classified as extended.</span>
+<span class="sd">    method</span>
+<span class="sd">        Which strategy produced this separation.</span>
+<span class="sd">    threshold</span>
+<span class="sd">        The computed upper fence value (``None`` for keep_all / trim).</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="OutlierSeparation.routine">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierSeparation.routine">[docs]</a>
+    <span class="n">routine</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="OutlierSeparation.routine_weights">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierSeparation.routine_weights">[docs]</a>
+    <span class="n">routine_weights</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="OutlierSeparation.extended">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierSeparation.extended">[docs]</a>
+    <span class="n">extended</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="OutlierSeparation.extended_weights">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierSeparation.extended_weights">[docs]</a>
+    <span class="n">extended_weights</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="OutlierSeparation.method">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierSeparation.method">[docs]</a>
+    <span class="n">method</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"keep_all"</span></div>
+
+<div class="viewcode-block" id="OutlierSeparation.threshold">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierSeparation.threshold">[docs]</a>
+    <span class="n">threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+    <span class="nd">@property</span>
+<div class="viewcode-block" id="OutlierSeparation.extended_fraction">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierSeparation.extended_fraction">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">extended_fraction</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Fraction of the routine+extended sample classified as extended."""</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">routine</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">extended</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">extended</span><span class="p">)</span> <span class="o">/</span> <span class="n">n</span> <span class="k">if</span> <span class="n">n</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mf">0.0</span></div>
+
+
+    <span class="nd">@property</span>
+<div class="viewcode-block" id="OutlierSeparation.n_routine">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierSeparation.n_routine">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">n_routine</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Number of durations in the routine group."""</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">routine</span><span class="p">)</span></div>
+
+
+    <span class="nd">@property</span>
+<div class="viewcode-block" id="OutlierSeparation.n_total">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierSeparation.n_total">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">n_total</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Combined count of routine and extended durations."""</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">routine</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">extended</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="OutlierHandler">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierHandler">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">OutlierHandler</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Separate routine durations from disruption-driven outliers.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        strategy: One of ``'keep_all'``, ``'trim_symmetric'``, ``'iqr'``,</span>
+<span class="sd">            ``'mad'``.  Default ``'iqr'``.</span>
+<span class="sd">        trim_pct: Fraction to remove from each tail when</span>
+<span class="sd">            ``strategy='trim_symmetric'``.  Default 0.10 (10 %).</span>
+<span class="sd">        mad_scale: Multiplier k for the MAD upper threshold</span>
+<span class="sd">            (threshold = median + k × MAD).  Default 3.0.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="OutlierHandler.VALID_STRATEGIES">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierHandler.VALID_STRATEGIES">[docs]</a>
+    <span class="n">VALID_STRATEGIES</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">"keep_all"</span><span class="p">,</span> <span class="s2">"trim_symmetric"</span><span class="p">,</span> <span class="s2">"iqr"</span><span class="p">,</span> <span class="s2">"mad"</span><span class="p">})</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">strategy</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"iqr"</span><span class="p">,</span>
+        <span class="n">trim_pct</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.10</span><span class="p">,</span>
+        <span class="n">mad_scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span>
+        <span class="n">iqr_multiplier</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.5</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">strategy</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">VALID_STRATEGIES</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"strategy must be one of </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">VALID_STRATEGIES</span><span class="p">)</span><span class="si">}</span><span class="s2">; got '</span><span class="si">{</span><span class="n">strategy</span><span class="si">}</span><span class="s2">'"</span>
+            <span class="p">)</span>
+<div class="viewcode-block" id="OutlierHandler.strategy">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierHandler.strategy">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span> <span class="o">=</span> <span class="n">strategy</span></div>
+
+<div class="viewcode-block" id="OutlierHandler.trim_pct">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierHandler.trim_pct">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">trim_pct</span> <span class="o">=</span> <span class="n">trim_pct</span></div>
+
+<div class="viewcode-block" id="OutlierHandler.mad_scale">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierHandler.mad_scale">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mad_scale</span> <span class="o">=</span> <span class="n">mad_scale</span></div>
+
+<div class="viewcode-block" id="OutlierHandler.iqr_multiplier">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierHandler.iqr_multiplier">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">iqr_multiplier</span> <span class="o">=</span> <span class="n">iqr_multiplier</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Public interface</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="OutlierHandler.separate">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierHandler.separate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">separate</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">durations</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+        <span class="n">weights</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">OutlierSeparation</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Separate *durations* into routine and extended groups.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            durations: List of historical actual durations (hours).</span>
+<span class="sd">            weights: Corresponding relevance weights from</span>
+<span class="sd">                :class:`~outage_uncertainty.retrieval.neighbor_selector.NeighborSelector`.</span>
+<span class="sd">                If ``None``, uniform weights are used.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            :class:`OutlierSeparation` with both groups and their weights.</span>
+<span class="sd">        """</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">durations</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">n</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">OutlierSeparation</span><span class="p">(</span><span class="n">method</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="p">)</span>
+
+        <span class="c1"># Build / validate weights</span>
+        <span class="n">w</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">weights</span><span class="p">)</span> <span class="k">if</span> <span class="n">weights</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">n</span><span class="p">]</span> <span class="o">*</span> <span class="n">n</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">w</span><span class="p">)</span> <span class="o">!=</span> <span class="n">n</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"OutlierHandler: weights length </span><span class="si">%d</span><span class="s2"> ≠ durations length </span><span class="si">%d</span><span class="s2">; "</span>
+                <span class="s2">"using uniform weights"</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">w</span><span class="p">),</span>
+                <span class="n">n</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">w</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">n</span><span class="p">]</span> <span class="o">*</span> <span class="n">n</span>
+
+        <span class="c1"># Fall through to keep_all for tiny samples regardless of strategy</span>
+        <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;</span> <span class="n">MIN_SAMPLES_FOR_SEPARATION</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span> <span class="o">!=</span> <span class="s2">"keep_all"</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">"OutlierHandler: n=</span><span class="si">%d</span><span class="s2"> &lt; </span><span class="si">%d</span><span class="s2">; using keep_all"</span><span class="p">,</span>
+                <span class="n">n</span><span class="p">,</span>
+                <span class="n">MIN_SAMPLES_FOR_SEPARATION</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_keep_all</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="n">w</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span> <span class="o">==</span> <span class="s2">"keep_all"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_keep_all</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="n">w</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span> <span class="o">==</span> <span class="s2">"trim_symmetric"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_trim_symmetric</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="n">w</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span> <span class="o">==</span> <span class="s2">"iqr"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_iqr</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="n">w</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span> <span class="o">==</span> <span class="s2">"mad"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mad</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="n">w</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_keep_all</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="n">w</span><span class="p">)</span>  <span class="c1"># unreachable, but safe</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Strategy implementations</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="OutlierHandler._keep_all">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierHandler._keep_all">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_keep_all</span><span class="p">(</span><span class="n">durations</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">weights</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">OutlierSeparation</span><span class="p">:</span>
+        <span class="n">nw</span> <span class="o">=</span> <span class="n">_normalise</span><span class="p">(</span><span class="n">weights</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">OutlierSeparation</span><span class="p">(</span>
+            <span class="n">routine</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">durations</span><span class="p">),</span>
+            <span class="n">routine_weights</span><span class="o">=</span><span class="n">nw</span><span class="p">,</span>
+            <span class="n">method</span><span class="o">=</span><span class="s2">"keep_all"</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="OutlierHandler._trim_symmetric">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierHandler._trim_symmetric">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_trim_symmetric</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">durations</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">weights</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">OutlierSeparation</span><span class="p">:</span>
+        <span class="c1"># Note: trim_symmetric discards BOTH tails as noise by design (see the</span>
+        <span class="c1"># module docstring), so the trimmed points are intentionally absent from</span>
+        <span class="c1"># n_total / extended_fraction.  They are not routed to `extended`, which</span>
+        <span class="c1"># specifically means the disruption-driven upper tail (iqr / mad) and</span>
+        <span class="c1"># feeds the mixture percentile — a low-tail trim is not a disruption.</span>
+        <span class="n">pairs</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="n">weights</span><span class="p">),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">cut</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">pairs</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">trim_pct</span><span class="p">))</span>
+        <span class="n">kept</span> <span class="o">=</span> <span class="n">pairs</span><span class="p">[</span><span class="n">cut</span><span class="p">:</span><span class="o">-</span><span class="n">cut</span><span class="p">]</span> <span class="k">if</span> <span class="n">cut</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">pairs</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span> <span class="k">else</span> <span class="n">pairs</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">kept</span><span class="p">:</span>
+            <span class="n">kept</span> <span class="o">=</span> <span class="n">pairs</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">kept</span><span class="p">]</span>
+        <span class="n">w</span> <span class="o">=</span> <span class="n">_normalise</span><span class="p">([</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">kept</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">OutlierSeparation</span><span class="p">(</span><span class="n">routine</span><span class="o">=</span><span class="n">d</span><span class="p">,</span> <span class="n">routine_weights</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">"trim_symmetric"</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="OutlierHandler._iqr">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierHandler._iqr">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_iqr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">durations</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">weights</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">OutlierSeparation</span><span class="p">:</span>
+        <span class="n">q1</span><span class="p">,</span> <span class="n">q3</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="p">[</span><span class="mf">25.0</span><span class="p">,</span> <span class="mf">75.0</span><span class="p">])</span>
+        <span class="n">iqr</span> <span class="o">=</span> <span class="n">q3</span> <span class="o">-</span> <span class="n">q1</span>
+        <span class="c1"># Zero spread (tied / discrete durations): the fence collapses onto Q3</span>
+        <span class="c1"># and would flag genuine ties as disruption.  Treat as no separation.</span>
+        <span class="k">if</span> <span class="n">iqr</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_keep_all</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="n">weights</span><span class="p">)</span>
+        <span class="n">fence</span> <span class="o">=</span> <span class="n">q3</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">iqr_multiplier</span> <span class="o">*</span> <span class="n">iqr</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_split_at</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">fence</span><span class="p">),</span> <span class="n">method</span><span class="o">=</span><span class="s2">"iqr"</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="OutlierHandler._mad">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierHandler._mad">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_mad</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">durations</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">weights</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">OutlierSeparation</span><span class="p">:</span>
+        <span class="n">median</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">durations</span><span class="p">)</span>
+        <span class="n">mad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span> <span class="o">-</span> <span class="n">median</span><span class="p">))</span>
+        <span class="c1"># Zero MAD (tied / discrete durations): the fence collapses onto the</span>
+        <span class="c1"># median and would flag ties above it as disruption.  No separation.</span>
+        <span class="k">if</span> <span class="n">mad</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_keep_all</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="n">weights</span><span class="p">)</span>
+        <span class="n">fence</span> <span class="o">=</span> <span class="n">median</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">mad_scale</span> <span class="o">*</span> <span class="n">mad</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_split_at</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">fence</span><span class="p">),</span> <span class="n">method</span><span class="o">=</span><span class="s2">"mad"</span><span class="p">)</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="OutlierHandler._split_at">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler.OutlierHandler._split_at">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_split_at</span><span class="p">(</span>
+        <span class="n">durations</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+        <span class="n">weights</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+        <span class="n">fence</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">method</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">OutlierSeparation</span><span class="p">:</span>
+        <span class="n">routine_d</span><span class="p">,</span> <span class="n">routine_w</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+        <span class="n">extended_d</span><span class="p">,</span> <span class="n">extended_w</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">d</span><span class="p">,</span> <span class="n">w</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">durations</span><span class="p">,</span> <span class="n">weights</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">d</span> <span class="o">&lt;=</span> <span class="n">fence</span><span class="p">:</span>
+                <span class="n">routine_d</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+                <span class="n">routine_w</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">w</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">extended_d</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+                <span class="n">extended_w</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">w</span><span class="p">)</span>
+
+        <span class="c1"># Guarantee at least one routine sample (avoid empty routine group)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">routine_d</span><span class="p">:</span>
+            <span class="n">routine_d</span><span class="p">,</span> <span class="n">routine_w</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">durations</span><span class="p">),</span> <span class="nb">list</span><span class="p">(</span><span class="n">weights</span><span class="p">)</span>
+            <span class="n">extended_d</span><span class="p">,</span> <span class="n">extended_w</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+
+        <span class="k">return</span> <span class="n">OutlierSeparation</span><span class="p">(</span>
+            <span class="n">routine</span><span class="o">=</span><span class="n">routine_d</span><span class="p">,</span>
+            <span class="n">routine_weights</span><span class="o">=</span><span class="n">_normalise</span><span class="p">(</span><span class="n">routine_w</span><span class="p">),</span>
+            <span class="n">extended</span><span class="o">=</span><span class="n">extended_d</span><span class="p">,</span>
+            <span class="n">extended_weights</span><span class="o">=</span><span class="n">_normalise</span><span class="p">(</span><span class="n">extended_w</span><span class="p">)</span> <span class="k">if</span> <span class="n">extended_w</span> <span class="k">else</span> <span class="p">[],</span>
+            <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span>
+            <span class="n">threshold</span><span class="o">=</span><span class="n">fence</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Module-level helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_normalise">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/uncertainty/outlier_handler/index.html#src.dackar.outage.outage_uncertainty.uncertainty.outlier_handler._normalise">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalise</span><span class="p">(</span><span class="n">weights</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Return weights normalised to sum to 1.0; uniform if all zero."""</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">weights</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">total</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">weights</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">n</span><span class="p">]</span> <span class="o">*</span> <span class="n">n</span> <span class="k">if</span> <span class="n">n</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="p">[]</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">w</span> <span class="o">/</span> <span class="n">total</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">weights</span><span class="p">]</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

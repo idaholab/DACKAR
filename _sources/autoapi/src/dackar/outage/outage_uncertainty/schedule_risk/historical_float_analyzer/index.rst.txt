@@ -1,0 +1,101 @@
+src.dackar.outage.outage_uncertainty.schedule_risk.historical_float_analyzer
+============================================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.schedule_risk.historical_float_analyzer
+
+.. autoapi-nested-parse::
+
+   Historical float consumption analyzer for pre-outage risk prediction.
+
+   Computes per-component empirical schedule-impact metrics derived from
+   training-outage history, as a complement to the Monte Carlo / critical-path
+   analysis performed by the Stage E schedule stage.
+
+   While Stage E summarises *simulated* project-finish distributions, this module
+   answers a different question: *how much critical-path float did emergent work
+   historically consume for a specific component, and how often did it hit the
+   critical path?*
+
+   These empirical figures serve as Bayesian priors when sizing schedule reserve
+   recommendations in the tier synthesis stage.
+
+   Intended caller
+   ---------------
+   :class:`~outage_uncertainty.workflows.pre_outage_risk_workflow.PreOutageRiskWorkflow`
+   (Stage F).
+
+   Input shape
+   -----------
+   ``component_histories`` — see :mod:`trend_analysis_service` for the full spec.
+
+   Each activity dict must have at least:
+       ``emergent_flag``     (bool)
+       ``activity_id``       (str)
+       ``on_critical_path``  (bool)
+
+   ``schedule_by_id`` maps ``activity_id`` → schedule record with
+   ``float_consumed_hrs`` (float | None).
+
+   Output shape (per component)
+   ----------------------------
+   ::
+
+       {
+           "component_id":             str,
+           "historical_cp_impacts":    [
+               {
+                   "outage_id":              str,
+                   "float_consumed_hrs":     float,
+                   "on_critical_path":       bool,
+                   "emergent_activity_ids":  [str],
+               },
+               ...
+           ],
+           "mean_cp_float_consumed":   float,   # mean across outages with emergent work
+           "max_cp_float_consumed":    float,
+           "cp_impact_frequency":      float,   # fraction of training outages with CP impact
+       }
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.schedule_risk.historical_float_analyzer.JsonDict
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.schedule_risk.historical_float_analyzer.HistoricalFloatAnalyzer
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:class:: HistoricalFloatAnalyzer
+
+   Derive empirical CP-float consumption metrics from training-outage history.
+
+
+   .. py:method:: compute(component_histories, schedule_by_id, training_outages)
+
+      Compute float-consumption metrics for every component.
+
+      :param component_histories: Mapping of ``component_id`` → history dict.
+      :param schedule_by_id: Mapping of ``activity_id`` → schedule record.
+      :param training_outages: Ordered list of training outage IDs, e.g. ``["RF-20", "RF-21"]``.
+
+      :rtype: Dict mapping ``component_id`` → float-impact result dict.
+
+
+
+   .. py:method:: _analyze(component_id, history, schedule_by_id, training_outages)
+
+

@@ -1,0 +1,106 @@
+src.dackar.outage.outage_uncertainty.preprocessing.abbreviations
+================================================================
+
+.. py:module:: src.dackar.outage.outage_uncertainty.preprocessing.abbreviations
+
+.. autoapi-nested-parse::
+
+   Abbreviation resolution for outage activity descriptions.
+
+   Loads the curated nuclear-outage and P6 abbreviations from the shared DACKAR
+   Excel file and expands them one whole token at a time.  Whole-token expansion
+   (rather than the substring/suffix matching in
+   ``dackar.text_processing.Abbreviation.abbreviationSub``) keeps an abbreviation
+   that is also a substring of a longer word from leaking into ordinary text
+   (``2pm`` must stay ``2pm``, not become "2 preventive maintenance").
+
+   Sources (lowest priority first; later entries override earlier ones)
+   --------------------------------------------------------------------
+   1. DACKAR Excel file (``abbreviations_file``)
+   2. Nuclear-outage supplement (:data:`NUCLEAR_OUTAGE_ABBREVIATIONS`)
+   3. Extra-abbreviations dict supplied directly by the caller
+
+   Negations (:data:`_NEVER_EXPAND`) are dropped from the final map regardless of
+   source so a token like ``no`` is never rewritten to "number".  If the Excel
+   file cannot be read the supplement and caller extras still apply; an empty map
+   means pass-through (no expansion).
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.preprocessing.abbreviations.logger
+   src.dackar.outage.outage_uncertainty.preprocessing.abbreviations._NEVER_EXPAND
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.outage_uncertainty.preprocessing.abbreviations.AbbreviationResolver
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: _NEVER_EXPAND
+   :type:  frozenset[str]
+
+.. py:class:: AbbreviationResolver(abbreviations_file = None, extra_abbreviations = None)
+
+   Expands abbreviations found in outage activity descriptions.
+
+   The resolver applies abbreviations in the following priority order
+   (highest priority last, so later entries override earlier ones):
+
+   1. **Excel file** (``abbreviations_file``) — shared DACKAR engineering and
+      nuclear vocabulary loaded via ``dackar.text_processing.Abbreviation``.
+   2. **Nuclear outage supplement** (:data:`NUCLEAR_OUTAGE_ABBREVIATIONS`) —
+      built-in, applied unconditionally.  A small set of outage-context
+      overrides and context-only shorthand that must not live in the shared
+      Excel file (they would mis-expand text for other DACKAR consumers).
+      Always active; requires no external dependencies.
+   3. **Caller-supplied extras** (``extra_abbreviations``) — highest priority;
+      overrides both the Excel file and the nuclear supplement.
+
+   :param abbreviations_file: Path to the abbreviations Excel file (.xlsx).
+                              The file must have columns ``Abbreviation`` and ``Full``.
+                              Defaults to ``None``; the nuclear supplement and
+                              ``extra_abbreviations`` still apply.
+   :param extra_abbreviations: Additional ``{abbr: full}`` pairs
+                               (case-insensitive keys). Merged on top of everything else.
+
+
+   .. py:attribute:: _token_map
+      :type:  dict[str, str]
+
+
+   .. py:method:: transform(text)
+
+      Return *text* with whole-token abbreviations expanded.
+
+      Only complete whitespace-delimited tokens are matched, so an
+      abbreviation that is also a substring of a longer word (``pm`` inside
+      ``2pm``, ``ts`` inside ``pump-ts``) is left untouched.  Negations in
+      :data:`_NEVER_EXPAND` are never expanded.
+
+
+
+   .. py:method:: _load_sheet(abbreviations_file)
+      :staticmethod:
+
+
+      Read ``{abbreviation: full}`` pairs from the Excel file.
+
+      Keys and values are lower-cased and stripped.  Returns an empty dict
+      on any failure (missing file, missing pandas, bad columns) so the
+      nuclear supplement and caller extras still apply.
+
+
+

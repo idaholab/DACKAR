@@ -1,0 +1,313 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.outage_uncertainty.services.risk_tier_service &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.outage_uncertainty.services.risk_tier_service</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.outage_uncertainty.services.risk_tier_service</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Risk tier assignment and evidence chain service for pre-outage risk prediction.</span>
+
+<span class="sd">Provides two responsibilities consumed by the recommendation synthesis stage:</span>
+
+<span class="sd">1. **Tier assignment** — maps (causal_score, trend_label, component_id) to a</span>
+<span class="sd">   confidence tier and an explanatory reason code.</span>
+
+<span class="sd">2. **Evidence chain builder** — assembles a chronologically-ordered list of</span>
+<span class="sd">   condition-report and work-order records for a given component, used to</span>
+<span class="sd">   populate the evidence section of a recommendation card.</span>
+
+<span class="sd">Tier definitions</span>
+<span class="sd">----------------</span>
+<span class="sd">``data_supported``</span>
+<span class="sd">    Strong causal evidence: emergent work recurred in most training outages</span>
+<span class="sd">    and was on the critical path.</span>
+
+<span class="sd">``sme_informed``</span>
+<span class="sd">    Partial causal evidence, or an escalating trend with no emergent precedent,</span>
+<span class="sd">    or a component-class override by SME (e.g. progressive degradation</span>
+<span class="sd">    mechanisms where the causal model under-weights historical CRs).</span>
+
+<span class="sd">``low_confidence_watch``</span>
+<span class="sd">    Weak trend signal only — monitor but do not proactively allocate schedule</span>
+<span class="sd">    reserve.</span>
+
+<span class="sd">``None``</span>
+<span class="sd">    No actionable signal — true negative.</span>
+
+<span class="sd">Tier assignment rules (applied in priority order)</span>
+<span class="sd">--------------------------------------------------</span>
+<span class="sd">1. ``causal_score &gt;= 1.5`` AND ``component_id in sme_override_ids``</span>
+<span class="sd">   → ``sme_informed``, ``sme_override_predictable_progressive_degradation``</span>
+<span class="sd">2. ``causal_score &gt;= 1.5``</span>
+<span class="sd">   → ``data_supported``, ``strong_causal_evidence``</span>
+<span class="sd">3. ``causal_score &gt; 0``</span>
+<span class="sd">   → ``sme_informed``, ``partial_causal_evidence``</span>
+<span class="sd">4. ``causal_score == 0.0`` AND ``trend_label == "escalating"``</span>
+<span class="sd">   → ``sme_informed``, ``escalating_trend_no_emergent_precedent``</span>
+<span class="sd">5. ``trend_label == "moderate"``</span>
+<span class="sd">   → ``low_confidence_watch``, ``weak_trend_signal``</span>
+<span class="sd">6. else → ``None``, ``None``</span>
+
+<span class="sd">Intended caller</span>
+<span class="sd">---------------</span>
+<span class="sd">:class:`~outage_uncertainty.workflows.pre_outage_risk_workflow.PreOutageRiskWorkflow`</span>
+<span class="sd">(Stage G).</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/services/risk_tier_service/index.html#src.dackar.outage.outage_uncertainty.services.risk_tier_service.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<span class="c1"># Priority ordering used to sort the risk register</span>
+<div class="viewcode-block" id="TIER_PRIORITY">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/services/risk_tier_service/index.html#src.dackar.outage.outage_uncertainty.services.risk_tier_service.TIER_PRIORITY">[docs]</a>
+<span class="n">TIER_PRIORITY</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"data_supported"</span><span class="p">:</span>       <span class="mi">0</span><span class="p">,</span>
+    <span class="s2">"sme_informed"</span><span class="p">:</span>         <span class="mi">1</span><span class="p">,</span>
+    <span class="s2">"low_confidence_watch"</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+    <span class="kc">None</span><span class="p">:</span>                   <span class="mi">3</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="RiskTierService">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/services/risk_tier_service/index.html#src.dackar.outage.outage_uncertainty.services.risk_tier_service.RiskTierService">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RiskTierService</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Assign confidence tiers and build evidence chains for flagged components.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    sme_override_ids:</span>
+<span class="sd">        Optional set of component IDs for which the SME-override rule (rule 1)</span>
+<span class="sd">        fires when ``causal_score &gt;= 1.5``.  Pass ``None`` to disable the</span>
+<span class="sd">        override for all components.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sme_override_ids</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="RiskTierService._sme_overrides">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/services/risk_tier_service/index.html#src.dackar.outage.outage_uncertainty.services.risk_tier_service.RiskTierService._sme_overrides">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sme_overrides</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">sme_override_ids</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">()</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Tier assignment</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="RiskTierService.assign_tier">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/services/risk_tier_service/index.html#src.dackar.outage.outage_uncertainty.services.risk_tier_service.RiskTierService.assign_tier">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">assign_tier</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">component_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">causal_score</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">trend_label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Return ``(tier, tier_reason)`` for the given component signals.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        component_id:</span>
+<span class="sd">            Canonical component identifier (used for SME override lookup).</span>
+<span class="sd">        causal_score:</span>
+<span class="sd">            Output of :class:`~outage_uncertainty.services.causal_scoring_service.CausalScoringService`.</span>
+<span class="sd">        trend_label:</span>
+<span class="sd">            Output of :class:`~outage_uncertainty.services.trend_analysis_service.TrendAnalysisService`.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Tuple of ``(tier_name, reason_code)`` or ``(None, None)`` when no</span>
+<span class="sd">        actionable signal is present.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">causal_score</span> <span class="o">&gt;=</span> <span class="mf">1.5</span> <span class="ow">and</span> <span class="n">component_id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sme_overrides</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="s2">"sme_informed"</span><span class="p">,</span>
+                <span class="s2">"sme_override_predictable_progressive_degradation"</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">causal_score</span> <span class="o">&gt;=</span> <span class="mf">1.5</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"data_supported"</span><span class="p">,</span> <span class="s2">"strong_causal_evidence"</span>
+        <span class="k">if</span> <span class="n">causal_score</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"sme_informed"</span><span class="p">,</span> <span class="s2">"partial_causal_evidence"</span>
+        <span class="k">if</span> <span class="n">causal_score</span> <span class="o">==</span> <span class="mf">0.0</span> <span class="ow">and</span> <span class="n">trend_label</span> <span class="o">==</span> <span class="s2">"escalating"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"sme_informed"</span><span class="p">,</span> <span class="s2">"escalating_trend_no_emergent_precedent"</span>
+        <span class="k">if</span> <span class="n">trend_label</span> <span class="o">==</span> <span class="s2">"moderate"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"low_confidence_watch"</span><span class="p">,</span> <span class="s2">"weak_trend_signal"</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Evidence chain</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="RiskTierService.build_evidence_chain">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/outage/outage_uncertainty/services/risk_tier_service/index.html#src.dackar.outage.outage_uncertainty.services.risk_tier_service.RiskTierService.build_evidence_chain">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_evidence_chain</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">component_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">component_histories</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">JsonDict</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Build a chronologically-ordered evidence list for *component_id*.</span>
+
+<span class="sd">        Each record in the returned list is one of:</span>
+
+<span class="sd">        * ``{"record_id", "record_type": "condition_report", "outage_cycle",</span>
+<span class="sd">             "cr_category", "description"}``</span>
+<span class="sd">        * ``{"record_id", "record_type": "work_order", "outage_cycle",</span>
+<span class="sd">             "wo_type", "description"}``</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        component_id:</span>
+<span class="sd">            Component to build evidence for.</span>
+<span class="sd">        component_histories:</span>
+<span class="sd">            Full component histories mapping (same dict passed to the</span>
+<span class="sd">            scoring services).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        List of evidence dicts, sorted by ``outage_cycle`` (lexicographic).</span>
+<span class="sd">        """</span>
+        <span class="n">history</span> <span class="o">=</span> <span class="n">component_histories</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">component_id</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="n">crs_by_cycle</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">]</span> <span class="o">=</span> <span class="n">history</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"crs_by_cycle"</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="n">wos_by_cycle</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">]</span> <span class="o">=</span> <span class="n">history</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"wos_by_cycle"</span><span class="p">,</span> <span class="p">{})</span>
+
+        <span class="n">evidence</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">_cycle</span><span class="p">,</span> <span class="n">crs</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">crs_by_cycle</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+            <span class="k">for</span> <span class="n">cr</span> <span class="ow">in</span> <span class="n">crs</span><span class="p">:</span>
+                <span class="n">evidence</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                    <span class="s2">"record_id"</span><span class="p">:</span>    <span class="n">cr</span><span class="p">[</span><span class="s2">"cr_id"</span><span class="p">],</span>
+                    <span class="s2">"record_type"</span><span class="p">:</span>  <span class="s2">"condition_report"</span><span class="p">,</span>
+                    <span class="s2">"outage_cycle"</span><span class="p">:</span> <span class="n">cr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"outage_cycle"</span><span class="p">,</span> <span class="n">_cycle</span><span class="p">),</span>
+                    <span class="s2">"cr_category"</span><span class="p">:</span>  <span class="n">cr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cr_category"</span><span class="p">),</span>
+                    <span class="s2">"description"</span><span class="p">:</span>  <span class="p">(</span>
+                        <span class="n">cr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"description_expanded"</span><span class="p">)</span>
+                        <span class="ow">or</span> <span class="n">cr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"description_raw"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+                    <span class="p">),</span>
+                <span class="p">})</span>
+
+        <span class="k">for</span> <span class="n">_cycle</span><span class="p">,</span> <span class="n">wos</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">wos_by_cycle</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+            <span class="k">for</span> <span class="n">wo</span> <span class="ow">in</span> <span class="n">wos</span><span class="p">:</span>
+                <span class="n">evidence</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                    <span class="s2">"record_id"</span><span class="p">:</span>    <span class="n">wo</span><span class="p">[</span><span class="s2">"wo_id"</span><span class="p">],</span>
+                    <span class="s2">"record_type"</span><span class="p">:</span>  <span class="s2">"work_order"</span><span class="p">,</span>
+                    <span class="s2">"outage_cycle"</span><span class="p">:</span> <span class="n">wo</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"outage_cycle"</span><span class="p">,</span> <span class="n">_cycle</span><span class="p">),</span>
+                    <span class="s2">"wo_type"</span><span class="p">:</span>      <span class="n">wo</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"wo_type"</span><span class="p">),</span>
+                    <span class="s2">"description"</span><span class="p">:</span>  <span class="p">(</span>
+                        <span class="n">wo</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"description_expanded"</span><span class="p">)</span>
+                        <span class="ow">or</span> <span class="n">wo</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"description_raw"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+                    <span class="p">),</span>
+                <span class="p">})</span>
+
+        <span class="k">return</span> <span class="n">evidence</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
