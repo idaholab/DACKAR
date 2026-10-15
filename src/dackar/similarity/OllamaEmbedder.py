@@ -87,8 +87,9 @@ class OllamaEmbedder:
     def encode(self, text: str) -> list[float]:
         """Return the dense embedding vector for *text*.
 
-        Results are cached in memory.  Returns ``[0.0]`` if Ollama is
-        unavailable (logged at WARNING level).
+        Successful results are cached in memory.  Returns the ``[0.0]``
+        fallback singleton if Ollama is unavailable (logged at WARNING level);
+        a fallback is never cached, so a later call retries the server.
         """
         if not text:
             return _FALLBACK_EMBEDDING
@@ -97,7 +98,11 @@ class OllamaEmbedder:
             return self._cache[text]
 
         embedding = self._call_api(text)
-        self._cache[text] = embedding
+        # Do not cache (or later persist) a failure: caching the fallback would
+        # pin this text to cosine 0 even after Ollama recovers, and save_cache()
+        # would write the failure to disk.
+        if embedding is not _FALLBACK_EMBEDDING:
+            self._cache[text] = embedding
         return embedding
 
     def encode_batch(self, texts: list[str]) -> list[list[float]]:
@@ -105,6 +110,7 @@ class OllamaEmbedder:
         return [self.encode(t) for t in texts]
 
     def cache_size(self) -> int:
+        """Return the number of successfully-embedded texts held in memory."""
         return len(self._cache)
 
     def save_cache(self) -> None:

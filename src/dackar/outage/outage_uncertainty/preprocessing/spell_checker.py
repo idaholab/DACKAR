@@ -27,7 +27,12 @@ For each token in the cleaned text:
 2. Otherwise call :func:`difflib.get_close_matches` against the vocabulary
    with a configurable ``cutoff`` (default 0.85).  This is equivalent to
    accepting corrections whose SequenceMatcher ratio ≥ ``cutoff``.
-3. If a match is found, substitute; otherwise leave the original token.
+3. If a match is found, substitute — **unless** the match is simply the token
+   with a prefix or suffix removed (a strict substring ≥ 2 characters shorter).
+   Those are rejected because for prefixed domain verbs the nearest vocabulary
+   word is the opposite operation (``uninstall`` → ``install``, ``unisolate``
+   → ``isolate``, ``reenergize`` → ``energize``, ``retorque`` → ``torque``),
+   not a typo correction.  Otherwise leave the original token.
 
 The 0.85 threshold was validated on a representative set of P6 typos:
 
@@ -37,9 +42,11 @@ The 0.85 threshold was validated on a representative set of P6 typos:
 * ``maintenace``  → ``maintenance``  (ratio 0.95)
 * ``inspcetion``  → ``inspection``   (ratio 0.90)
 
-and confirmed safe against common false-positive pairs
+and against common false-positive pairs
 (``primary`` / ``primate`` ratio 0.71; ``install`` / ``instill`` ratio 0.86
 which is borderline — resolved by ``install`` matching itself exactly at 1.0).
+Affix variants that clear the ratio cutoff but invert meaning are handled by
+the substring guard in step 3 rather than by the ratio alone.
 
 No external dependencies are required.  The checker is deterministic and
 fast enough for the corpus sizes (tens of thousands of activities) encountered

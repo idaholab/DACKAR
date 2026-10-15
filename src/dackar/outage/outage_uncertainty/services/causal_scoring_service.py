@@ -5,15 +5,23 @@ Scores each component on the likelihood of generating emergent work in an
 upcoming outage, using the formula::
 
     causal_score = (N_outages_with_degradation_cr / N_training_outages)
-                 × (N_outages_with_emergent_activity / N_outages_with_degradation_cr)
+                 × (N_outages_with_degradation_cr_AND_emergent
+                    / N_outages_with_degradation_cr)
                  × criticality_weight
 
-where ``criticality_weight`` is 2.0 when emergent activities were on the
+The second factor is P(emergent work | a degradation CR was present), so its
+numerator counts only outages that had **both** a degradation CR and emergent
+work.  ``criticality_weight`` is 2.0 when emergent activities were on the
 critical path in the majority (> 50 %) of training outages that had emergent
 work, and 1.0 otherwise.
 
-A score of 0.0 means there is no causal chain evidence; a component can still
-be flagged by the downstream tier service on trend signal alone.
+Expected range
+--------------
+Both ratios lie in ``[0, 1]``, so ``causal_score ∈ [0.0, 2.0]``: at most 1.0
+without the criticality weight and up to 2.0 when it applies.  ``RiskTierService``
+consumes this range.  A score of 0.0 means there is no causal chain evidence;
+a component can still be flagged by the downstream tier service on trend
+signal alone.
 
 Intended caller
 ---------------
@@ -138,6 +146,12 @@ class CausalScoringService:
 
         n_with_emergent = len(outages_with_emergent)
 
+        # Outages that had BOTH a degradation CR and emergent work — the actual
+        # CR → emergent chain.  Using the unconditioned n_with_emergent here let
+        # the ratio exceed 1 (emergent work in outages that had no degradation
+        # CR does not evidence the chain).
+        n_deg_and_emergent = len(set(outages_with_deg_cr) & set(outages_with_emergent))
+
         # Criticality weight
         criticality_weight = (
             2.0
@@ -145,12 +159,16 @@ class CausalScoringService:
             else 1.0
         )
 
-        # Causal score
+        # Causal score.  The P(emergent | degradation CR) factor is conditioned
+        # on the degradation-CR outages, so ratio_emergent ∈ [0, 1].  The score
+        # can still reach 2.0 when criticality_weight applies (critical-path
+        # emergent work in the majority of emergent outages) — see the class
+        # docstring and RiskTierService for the expected range.
         if n_training == 0 or n_with_deg_cr == 0:
             causal_score = 0.0
         else:
             ratio_deg = n_with_deg_cr / n_training
-            ratio_emergent = n_with_emergent / n_with_deg_cr
+            ratio_emergent = n_deg_and_emergent / n_with_deg_cr
             causal_score = ratio_deg * ratio_emergent * criticality_weight
 
         # Per-outage evidence chain

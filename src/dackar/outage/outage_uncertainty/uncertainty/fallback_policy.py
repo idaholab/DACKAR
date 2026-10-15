@@ -146,11 +146,26 @@ class HierarchicalFallbackPolicy:
         query: ActivityCase,
         fields: tuple[str, ...],
     ) -> list[ActivityCase]:
-        """Return activities matching *query* on all *fields* (non-None only)."""
+        """Return activities matching *query* on all *fields* (non-None only).
+
+        A level requires at least one of its fields to be non-``None`` on both
+        the query and the candidate.  Without this guard, a query whose labels
+        are all ``None`` (the P6 adapter emits ``None`` labels before
+        ``LabelMapper`` runs) would skip every field check and "match" the
+        entire corpus, returning an unfiltered sample under a specific level
+        name (e.g. unrelated welding activities reported as
+        ``fleet_task_component``).
+        """
+        # The level is only meaningful if the query itself constrains at least
+        # one of the level's fields; otherwise this level cannot discriminate.
+        if all(getattr(query, f, None) is None for f in fields):
+            return []
+
         result = []
         for act in historical:
             if not act.is_historical():
                 continue
+            matched_field = False
             match = True
             for field in fields:
                 qval = getattr(query, field, None)
@@ -161,7 +176,10 @@ class HierarchicalFallbackPolicy:
                 if qval != hval:
                     match = False
                     break
-            if match:
+                matched_field = True
+            # Require at least one field actually compared equal on both sides,
+            # so a candidate with all-None labels is not treated as a match.
+            if match and matched_field:
                 result.append(act)
         return result
 
@@ -203,7 +221,14 @@ class HierarchicalFallbackPolicy:
 
     @staticmethod
     def _planned_duration_prior(query: ActivityCase) -> ActivityEstimate:
-        baseline = query.planned_duration_hours or 1.0
+        # Only substitute 1.0 for a genuinely missing planned duration — a
+        # 0-hour planned duration (P6 milestones) is a real value, not missing,
+        # and `or 1.0` would wrongly rewrite it to a 1-hour estimate.
+        baseline = (
+            query.planned_duration_hours
+            if query.planned_duration_hours is not None
+            else 1.0
+        )
         distribution = DurationDistribution(
             distribution_type="fallback_constant",
             parameters={"location": baseline, "fallback_level": "planned_duration_prior"},

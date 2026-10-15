@@ -39,7 +39,6 @@ from dackar.outage.outage_uncertainty.retrieval.dependency_similarity import Dep
 from dackar.outage.outage_uncertainty.retrieval.lexical_similarity import LexicalSimilarityScorer
 from dackar.outage.outage_uncertainty.retrieval.neighbor_selector import NeighborSelector
 from dackar.outage.outage_uncertainty.retrieval.retrieval_index import HistoricalActivityIndex, LexicalContextPrescorer
-from dackar.outage.outage_uncertainty.retrieval.semantic_similarity import SemanticSimilarityScorer
 from dackar.outage.outage_uncertainty.retrieval.similarity_engine import SimilarityAggregator, SimilarityEngine
 from dackar.outage.outage_uncertainty.services.duration_service import DurationUncertaintyService
 from dackar.outage.outage_uncertainty.uncertainty.confidence import ConfidenceEstimator

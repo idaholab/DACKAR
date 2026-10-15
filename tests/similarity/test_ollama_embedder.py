@@ -41,7 +41,33 @@ class TestOllamaEmbedderOffline:
     assert result == _FALLBACK_EMBEDDING
 
   def test_cache_size_tracks_encoded_texts(self):
+    # A successful embedding is cached; cache_size reflects it.
     emb = OllamaEmbedder(base_url='http://localhost:1', timeout=1)
+    emb._call_api = lambda text: [0.1, 0.2, 0.3]
     assert emb.cache_size() == 0
     emb.encode('something')
+    assert emb.cache_size() == 1
+
+  def test_fallback_is_not_cached(self):
+    # A failed call returns the fallback but must not be cached, so a later
+    # successful call is not pinned to cosine 0.
+    emb = OllamaEmbedder(base_url='http://localhost:1', timeout=1)
+    assert emb.encode('replace pump') is _FALLBACK_EMBEDDING
+    assert emb.cache_size() == 0
+
+  def test_failure_then_success_recovers(self):
+    # Ollama is down for the first call, up for the second: the second call
+    # must reach the (now healthy) server rather than return the cached failure.
+    calls = {'n': 0}
+
+    def flaky(text):
+      calls['n'] += 1
+      if calls['n'] == 1:
+        return _FALLBACK_EMBEDDING
+      return [0.5, 0.5, 0.5]
+
+    emb = OllamaEmbedder(base_url='http://localhost:1', timeout=1)
+    emb._call_api = flaky
+    assert emb.encode('replace pump') is _FALLBACK_EMBEDDING   # failure, not cached
+    assert emb.encode('replace pump') == [0.5, 0.5, 0.5]       # retried, succeeded
     assert emb.cache_size() == 1

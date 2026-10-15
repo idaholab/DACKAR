@@ -47,6 +47,23 @@ class TestVocabSpellChecker:
     assert lax.transform('calibrtn') == 'calibration'
     assert strict.transform('calibrtn') == 'calibrtn'
 
+  def test_affix_variant_is_not_corrected(self):
+    # A vocabulary word that is the token with a prefix/suffix dropped is a
+    # strict substring, not a typo — refusing it avoids inverting the verb.
+    checker = VocabSpellChecker(
+      {'install', 'isolate', 'wiring'}, cutoff=0.70,
+    )
+    assert checker.transform('uninstall') == 'uninstall'
+    assert checker.transform('reinstall') == 'reinstall'
+    assert checker.transform('unisolate') == 'unisolate'
+    assert checker.transform('rewiring') == 'rewiring'
+
+  def test_genuine_typo_still_corrected_when_not_a_substring(self):
+    # The affix guard only rejects substring matches; an ordinary typo
+    # (substitution/transposition) is not a substring and is unaffected.
+    checker = VocabSpellChecker({'install'}, cutoff=0.70)
+    assert checker.transform('instal') == 'install'   # dropped final l → still corrected
+
 
 class TestDomainSpellCheckerAdapter:
   """The outage adapter is a thin VocabSpellChecker over the nuclear vocab."""

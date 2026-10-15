@@ -9,19 +9,28 @@ High-similarity neighbours receive proportionally more weight, so the P50/P80
 estimate is dominated by the closest historical analogs rather than treating
 all matches as equally informative.
 
-Algorithm (weighted Type-7 percentile)
+Algorithm (weighted Hazen / midpoint percentile)
     1. Sort ``(duration, weight)`` pairs by duration.
-    2. Build a weighted CDF: cumulative normalised weight after each point.
+    2. Build a weighted CDF placing each point at its midpoint position
+       ``(cumulative_weight_before + 0.5 * weight) / total``.
     3. Interpolate linearly between adjacent points to find the value at
        quantile *q*.
 
-When weights are uniform or ``None``, this reduces to the standard
-interpolated percentile.
+With uniform weights this reduces to NumPy's Hazen percentile
+(``np.percentile(..., method="hazen")``), i.e. plotting position
+``(i + 0.5) / n`` — **not** the default linear/Type-7 method.  For uniform
+1..10 this gives P90 = 9.5 and P10 = 1.5 (vs 9.1 / 1.9 for Type-7); the
+midpoint convention is deliberate so the tail quantiles are not pulled inward
+by the small historical-analog samples typical here.
 """
 from __future__ import annotations
 
+import logging
+
 from dackar.outage.outage_uncertainty.domain.duration import DurationDistribution
 from dackar.outage.outage_uncertainty.uncertainty.outlier_handler import OutlierSeparation
+
+logger = logging.getLogger(__name__)
 
 
 class DistributionFitter:
@@ -61,19 +70,32 @@ class DistributionFitter:
         if not durations:
             return DurationDistribution(distribution_type="empirical")
 
+        if weights is not None and len(weights) != len(durations):
+            logger.warning(
+                "DistributionFitter.fit: weights length %d != durations length %d; "
+                "falling back to uniform weights",
+                len(weights),
+                len(durations),
+            )
+            weights = None
         w = weights if weights is not None else [1.0 / len(durations)] * len(durations)
 
-        p10, p50, p80, p90 = (
-            _weighted_percentile(durations, w, q) for q in self.percentiles
-        )
-        return DurationDistribution(
+        # Map each configured quantile to its named p10/p50/p80/p90 field when it
+        # matches; always keep the full set under parameters["percentiles"] so a
+        # non-default ``percentiles`` tuple neither crashes on unpacking nor is
+        # silently lost.
+        quantile_values = {q: _weighted_percentile(durations, w, q) for q in self.percentiles}
+        named = {0.10: "p10", 0.50: "p50", 0.80: "p80", 0.90: "p90"}
+        field_kwargs = {
+            named[q]: v for q, v in quantile_values.items() if q in named
+        }
+        dist = DurationDistribution(
             distribution_type="empirical",
             samples=sorted(durations),
-            p10=p10,
-            p50=p50,
-            p80=p80,
-            p90=p90,
+            **field_kwargs,
         )
+        dist.parameters["percentiles"] = {str(q): v for q, v in quantile_values.items()}
+        return dist
 
     def fit_from_separation(self, separation: OutlierSeparation) -> DurationDistribution:
         """Fit a two-component mixture distribution from an :class:`OutlierSeparation`.
@@ -141,8 +163,10 @@ def _weighted_percentile(
 ) -> float:
     """Compute the *q*-th weighted percentile of *values*.
 
-    Uses linear interpolation between adjacent CDF points (equivalent to
-    NumPy's ``percentile`` method 7 generalised to arbitrary weights).
+    Uses linear interpolation between adjacent CDF points placed at midpoint
+    positions ``(cumulative_before + 0.5 * w) / total``.  With uniform weights
+    this is NumPy's Hazen percentile (``method="hazen"``), not the default
+    Type-7 method.
 
     Args:
         values: Data points.
