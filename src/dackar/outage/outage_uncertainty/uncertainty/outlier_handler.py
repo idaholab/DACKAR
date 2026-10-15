@@ -81,15 +81,18 @@ class OutlierSeparation:
 
     @property
     def extended_fraction(self) -> float:
+        """Fraction of the routine+extended sample classified as extended."""
         n = len(self.routine) + len(self.extended)
         return len(self.extended) / n if n > 0 else 0.0
 
     @property
     def n_routine(self) -> int:
+        """Number of durations in the routine group."""
         return len(self.routine)
 
     @property
     def n_total(self) -> int:
+        """Combined count of routine and extended durations."""
         return len(self.routine) + len(self.extended)
 
 
@@ -194,6 +197,11 @@ class OutlierHandler:
     def _trim_symmetric(
         self, durations: list[float], weights: list[float]
     ) -> OutlierSeparation:
+        # Note: trim_symmetric discards BOTH tails as noise by design (see the
+        # module docstring), so the trimmed points are intentionally absent from
+        # n_total / extended_fraction.  They are not routed to `extended`, which
+        # specifically means the disruption-driven upper tail (iqr / mad) and
+        # feeds the mixture percentile — a low-tail trim is not a disruption.
         pairs = sorted(zip(durations, weights), key=lambda p: p[0])
         cut = max(1, int(len(pairs) * self.trim_pct))
         kept = pairs[cut:-cut] if cut < len(pairs) // 2 else pairs
@@ -206,6 +214,10 @@ class OutlierHandler:
     def _iqr(self, durations: list[float], weights: list[float]) -> OutlierSeparation:
         q1, q3 = np.percentile(durations, [25.0, 75.0])
         iqr = q3 - q1
+        # Zero spread (tied / discrete durations): the fence collapses onto Q3
+        # and would flag genuine ties as disruption.  Treat as no separation.
+        if iqr == 0.0:
+            return self._keep_all(durations, weights)
         fence = q3 + self.iqr_multiplier * iqr
 
         return self._split_at(durations, weights, float(fence), method="iqr")
@@ -213,6 +225,10 @@ class OutlierHandler:
     def _mad(self, durations: list[float], weights: list[float]) -> OutlierSeparation:
         median = np.median(durations)
         mad = np.median(np.abs(np.asarray(durations, dtype=float) - median))
+        # Zero MAD (tied / discrete durations): the fence collapses onto the
+        # median and would flag ties above it as disruption.  No separation.
+        if mad == 0.0:
+            return self._keep_all(durations, weights)
         fence = median + self.mad_scale * mad
 
         return self._split_at(durations, weights, float(fence), method="mad")

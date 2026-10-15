@@ -73,7 +73,12 @@ class VocabSpellChecker:
     def transform(self, text: str) -> str:
         """Return *text* with out-of-vocabulary tokens replaced by their nearest
         vocabulary match.  Tokens already in the vocabulary or shorter than
-        ``min_token_len`` are passed through unchanged."""
+        ``min_token_len`` are passed through unchanged.
+
+        The text is lower-cased before tokenising, so every returned token is
+        lower-case — including tokens that were *not* corrected.  Callers that
+        surface the result to users (e.g. a ``cleaned_description`` field)
+        should expect this normalisation."""
         if not text:
             return text
         return " ".join(self._correct(token) for token in text.lower().split())
@@ -88,7 +93,22 @@ class VocabSpellChecker:
             return token
         # Attempt correction
         matches = get_close_matches(token, self._vocab_list, n=1, cutoff=self._cutoff)
-        if matches:
+        if matches and not self._is_affix_variant(token, matches[0]):
             logger.debug("VocabSpellChecker: corrected '%s' to '%s'", token, matches[0])
             return matches[0]
         return token
+
+    @staticmethod
+    def _is_affix_variant(token: str, candidate: str) -> bool:
+        """Return True when *candidate* is *token* with a prefix/suffix dropped.
+
+        A closed-vocabulary match that is a strict substring of the token (two
+        or more characters shorter) is almost never a typo correction — it is
+        the token with an affix removed.  For prefixed domain verbs that often
+        inverts the meaning (``uninstall`` -> ``install``, ``unisolate`` ->
+        ``isolate``, ``reenergize`` -> ``energize``, ``retorque`` -> ``torque``).
+        Refusing these keeps the corrector from turning an operation into its
+        opposite; a genuine typo (transposition, single substitution) is not a
+        substring of the original and is unaffected.
+        """
+        return candidate in token and len(token) - len(candidate) >= 2

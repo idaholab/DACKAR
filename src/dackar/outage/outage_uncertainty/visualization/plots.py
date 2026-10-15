@@ -276,7 +276,8 @@ def plot_duration_distributions(
 
         planned = act.get("planned_duration_hours", 0)
         ax.axvline(planned, color=_DARK,   lw=1.8, ls="--", label=f"Planned {planned:.0f}h")
-        ax.axvline(dist.p50, color=_GREEN, lw=1.8, ls="-",  label=f"P50 {dist.p50:.1f}h")
+        if dist.p50 is not None:
+            ax.axvline(dist.p50, color=_GREEN, lw=1.8, ls="-",  label=f"P50 {dist.p50:.1f}h")
 
         ax.set_title(f"{act['activity_id']}\n({est.confidence_tier})", fontsize=9)
         ax.set_xlabel("Duration (h)", fontsize=8)
@@ -312,6 +313,11 @@ def plot_analog_scatter(
     Color:  confidence tier
     """
     fig, ax = _fig_ax(ax, (7, 5))
+
+    if not activities:
+        ax.text(0.5, 0.5, "No activities to plot", ha="center", va="center",
+                transform=ax.transAxes)
+        return fig, ax
 
     for act, est in zip(activities, results):
         if est is None or est.estimated_distribution is None:
@@ -619,12 +625,15 @@ def plot_routine_vs_disruption(
                  label="Routine-only CDF")
 
         if has_disruption:
-            # Build mixture CDF by drawing from both pools
-            _random.seed(42)
+            # Build mixture CDF by drawing from both pools.  Use a local RNG so
+            # we don't reseed the process-wide `random` module, which
+            # DurationDistribution.sample() also draws from — reseeding here
+            # would make any simulation run after a plot deterministic.
+            rng = _random.Random(42)
             n_mix = max(2000, len(all_vals) * 50)
             mix_samples = sorted(
-                _random.choice(extended) if _random.random() < dist.mixture_weight
-                else _random.choice(routine)
+                rng.choice(extended) if rng.random() < dist.mixture_weight
+                else rng.choice(routine)
                 for _ in range(n_mix)
             )
             cdf_m = [(i + 1) / n_mix for i in range(n_mix)]

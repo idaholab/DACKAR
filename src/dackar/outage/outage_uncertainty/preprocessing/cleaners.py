@@ -53,8 +53,10 @@ _OUTAGE_PREPROCESSOR_OPTIONS = {
     "unicode": {"form": "NFKC"},
     "accents": {"fast": False},
     # Keep hyphens (component tags), forward slashes (valve codes), and
-    # parentheses; remove everything else in the "only" list.
-    "punctuation": {"only": ["*", "+", ":", "=", "\\", "^", "_", "|", "~", ".", "...", ".."]},
+    # parentheses; remove everything else in the "only" list.  Periods are NOT
+    # removed: stripping "." splits decimal measurements ("pump 1.5 in" ->
+    # "pump 1 5 in"), which corrupts a similarity-bearing token.
+    "punctuation": {"only": ["*", "+", ":", "=", "\\", "^", "_", "|", "~"]},
 }
 
 
@@ -66,6 +68,7 @@ class IdentityTransform:
     """Pass-through: returns text unchanged.  Used to disable a pipeline stage."""
 
     def transform(self, text: str) -> str:
+        """Return *text* unchanged."""
         return text
 
 
@@ -93,6 +96,8 @@ class ComponentIdRemover:
     ]
 
     def transform(self, text: str) -> str:
+        """Return *text* with equipment/instrument tags and WO codes removed
+        and whitespace collapsed."""
         for pattern in self._PATTERNS:
             text = pattern.sub("", text)
         return re.sub(r"\s+", " ", text).strip()
@@ -132,6 +137,8 @@ class TextacyPreprocessor:
             )
 
     def transform(self, text: str) -> str:
+        """Return *text* normalised by the textacy pipeline, or whitespace-
+        collapsed when the pipeline dependency is unavailable."""
         if not text:
             return text
         if self._pipeline is not None:

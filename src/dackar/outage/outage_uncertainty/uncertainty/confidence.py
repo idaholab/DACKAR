@@ -49,11 +49,15 @@ Outage diversity gate
 Patterns learned from a single outage reflect within-outage variance, not
 the genuine between-outage variability that defines execution uncertainty.
 When ``outages_represented`` is passed to :meth:`classify` (value > 0), the
-tier is capped based on how many distinct outages the analogue pool spans:
+evidence tier is computed first (from score / support / best-match) and then
+capped by how many distinct outages the analogue pool spans.  The final tier
+is ``min(evidence_tier, diversity_cap)``, so the cap applies uniformly at every
+tier (it is not skipped for ``"medium"``):
 
     outages_represented == 0  →  gate not applied (backward-compatible default)
-    outages_represented  < medium_outage_threshold  →  capped at ``"low"``
-    outages_represented  < high_outage_threshold    →  capped at ``"medium"``
+    outages_represented  < medium_outage_threshold  →  cap = ``"low"``
+    outages_represented  < high_outage_threshold    →  cap = ``"medium"``
+    outages_represented ≥ high_outage_threshold     →  cap = ``"high"`` (no effect)
 """
 from __future__ import annotations
 
@@ -251,52 +255,53 @@ class ConfidenceEstimator:
         high_sc, high_n, high_best = self._high
         med_sc, med_n, med_best = self._med
 
-        # Outage diversity gate: applied only when outages_represented > 0
-        # (value of 0 means "not provided" — gate disabled for backward compat).
+        # Step 1: evidence tier from score / support / best-match alone.
+        if score >= high_sc and n_routine >= high_n and best_match >= high_best:
+            evidence_tier = "high"
+        elif score >= med_sc and n_routine >= med_n and best_match >= med_best:
+            evidence_tier = "medium"
+        else:
+            evidence_tier = "low"
+
+        # Step 2: outage diversity cap, applied only when outages_represented > 0
+        # (0 means "not provided" — gate disabled for backward compatibility).
+        # Patterns learned from too few distinct outages reflect within-outage
+        # variance, not genuine between-outage variability, so the cap limits
+        # how high the tier may be regardless of evidence strength.
         outage_gate_active = outages_represented > 0
         outage_suffix = (
             f", outages={outages_represented}" if outage_gate_active else ""
         )
+        if outage_gate_active:
+            if outages_represented < self._med_outages:
+                diversity_cap = "low"
+            elif outages_represented < self._high_outages:
+                diversity_cap = "medium"
+            else:
+                diversity_cap = "high"
+        else:
+            diversity_cap = "high"
 
-        if score >= high_sc and n_routine >= high_n and best_match >= high_best:
-            if outage_gate_active and outages_represented < self._high_outages:
-                # Sufficient analogue count but data spans too few outages;
-                # cap at medium to avoid over-claiming cross-cycle validity.
-                if outages_represented >= self._med_outages:
-                    return (
-                        "medium",
-                        f"Moderate evidence (outage diversity cap): score={score:.2f}, "
-                        f"n={n_routine}, best_match={best_match:.2f}"
-                        f"{outage_suffix}. "
-                        f"Needs ≥{self._high_outages} outages for 'high' tier.",
-                    )
-                return (
-                    "low",
-                    f"Weak evidence (outage diversity cap): score={score:.2f}, "
-                    f"n={n_routine}, best_match={best_match:.2f}"
-                    f"{outage_suffix}. "
-                    f"Needs ≥{self._med_outages} outages for 'medium' tier.",
-                )
+        # Step 3: final tier = min(evidence_tier, diversity_cap).
+        order = {"low": 0, "medium": 1, "high": 2}
+        final_tier = evidence_tier if order[evidence_tier] <= order[diversity_cap] else diversity_cap
+
+        base = f"score={score:.2f}, n={n_routine}, best_match={best_match:.2f}{outage_suffix}"
+        if final_tier != evidence_tier:
+            need = self._high_outages if final_tier == "medium" else self._med_outages
+            next_tier = "high" if final_tier == "medium" else "medium"
+            label = {"medium": "Moderate", "low": "Weak"}[final_tier]
             return (
-                "high",
-                f"Strong evidence: score={score:.2f}, n={n_routine}, "
-                f"best_match={best_match:.2f}{outage_suffix}.",
+                final_tier,
+                f"{label} evidence (outage diversity cap): {base}. "
+                f"Evidence supports '{evidence_tier}' but needs ≥{need} outages "
+                f"for '{next_tier}' tier.",
             )
-
-        if score >= med_sc and n_routine >= med_n and best_match >= med_best:
-            # No outage gate at medium tier — it is already a "use with caution"
-            # tier; further penalizing for outage diversity would be too strict.
-            return (
-                "medium",
-                f"Moderate evidence: score={score:.2f}, n={n_routine}, "
-                f"best_match={best_match:.2f}{outage_suffix}.",
-            )
-
-        return (
-            "low",
-            f"Weak evidence: score={score:.2f}, n={n_routine}, "
-            f"best_match={best_match:.2f}{outage_suffix}. Expert review recommended.",
-        )
+        if final_tier == "high":
+            return "high", f"Strong evidence: {base}."
+        if final_tier == "medium":
+            return "medium", f"Moderate evidence: {base}."
+        return "low", f"Weak evidence: {base}. Expert review recommended."
 
     @staticmethod
     def _compute_cv(routine: list[float]) -> float:

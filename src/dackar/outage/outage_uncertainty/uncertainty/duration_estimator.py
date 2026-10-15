@@ -54,6 +54,10 @@ class DurationEstimator:
         fitter: :class:`~outage_uncertainty.uncertainty.distribution_fitter.DistributionFitter`
         confidence_estimator: :class:`~outage_uncertainty.uncertainty.confidence.ConfidenceEstimator`
         fallback_policy: :class:`~outage_uncertainty.uncertainty.fallback_policy.HierarchicalFallbackPolicy`
+        low_coverage_threshold: Best-match similarity below which the estimate
+            is flagged as low-coverage.  Mirrors ``NeighborSelector.warn_below``;
+            keep the two in sync so the warning fires at the same threshold as
+            the selector's low-coverage flag.  Default 0.4.
     """
 
     def __init__(
