@@ -41,6 +41,7 @@ from __future__ import annotations
 import copy
 import csv
 import logging
+import math
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -192,10 +193,19 @@ class CompletionFeedbackWriter:
                 index_updated=False, persisted=False, warnings=warnings,
             )
 
-        if actual_duration_hours <= 0:
+        # B6: reject non-numeric, non-finite (NaN/inf), and non-positive values.
+        # `nan <= 0` is False (so NaN slipped past the old check and was written
+        # to the index and CSV), and `None` crashed the `:.4f` format, breaking
+        # the "never raises" contract.
+        if (
+            not isinstance(actual_duration_hours, (int, float))
+            or isinstance(actual_duration_hours, bool)
+            or not math.isfinite(actual_duration_hours)
+            or actual_duration_hours <= 0
+        ):
             msg = (
-                f"actual_duration_hours={actual_duration_hours:.4f} is not positive; "
-                "write-back skipped to prevent corrupting the analog index"
+                f"actual_duration_hours={actual_duration_hours!r} is not a positive "
+                "finite number; write-back skipped to prevent corrupting the analog index"
             )
             warnings.append(msg)
             LOGGER.warning("CompletionFeedbackWriter: %s", msg)
@@ -292,10 +302,27 @@ class CompletionFeedbackWriter:
             # Shallow-copy the existing ActivityCase and overwrite completion fields
             updated = copy.copy(existing)
             updated.actual_duration_hours = actual_duration_hours
+            # I16: only overwrite when the incoming timestamp parses — an
+            # unparseable string must not wipe a valid existing actual_start/
+            # actual_finish with None.
             if actual_start:
-                updated.actual_start = _parse_iso(actual_start)
+                parsed_start = _parse_iso(actual_start)
+                if parsed_start is not None:
+                    updated.actual_start = parsed_start
+                else:
+                    LOGGER.warning(
+                        "CompletionFeedbackWriter: unparseable actual_start %r for %s; "
+                        "keeping existing value", actual_start, activity_id,
+                    )
             if actual_finish:
-                updated.actual_finish = _parse_iso(actual_finish)
+                parsed_finish = _parse_iso(actual_finish)
+                if parsed_finish is not None:
+                    updated.actual_finish = parsed_finish
+                else:
+                    LOGGER.warning(
+                        "CompletionFeedbackWriter: unparseable actual_finish %r for %s; "
+                        "keeping existing value", actual_finish, activity_id,
+                    )
             if outcome_notes:
                 meta = dict(updated.metadata)
                 meta["outcome_notes"] = outcome_notes
@@ -370,6 +397,49 @@ _CSV_COLUMNS: tuple = (
 )
 
 
+class _FileLock:
+    """Minimal cross-process advisory lock via an exclusive lock file.
+
+    Standard-library only (no fcntl dependency, so it also works on Windows).
+    Acquisition retries until ``timeout`` seconds elapse, then proceeds anyway
+    with a warning rather than blocking the "never raises" write-back path.
+    Best-effort: a stale lock from a crashed writer is taken over after the
+    timeout.
+    """
+
+    def __init__(self, lock_path: str, timeout: float = 10.0) -> None:
+        self._lock_path = lock_path
+        self._timeout = timeout
+        self._fd: Optional[int] = None
+
+    def __enter__(self) -> "_FileLock":
+        import time
+        deadline = time.monotonic() + self._timeout
+        while True:
+            try:
+                self._fd = os.open(self._lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                return self
+            except FileExistsError:
+                if time.monotonic() >= deadline:
+                    LOGGER.warning(
+                        "CsvAnalogPersister: lock %s held past %.0fs; proceeding without it",
+                        self._lock_path, self._timeout,
+                    )
+                    self._fd = None
+                    return self
+                time.sleep(0.05)
+
+    def __exit__(self, *exc: Any) -> None:
+        if self._fd is not None:
+            try:
+                os.close(self._fd)
+            finally:
+                try:
+                    os.unlink(self._lock_path)
+                except OSError:
+                    pass
+
+
 class CsvAnalogPersister:
     """Append completed ActivityCase records to a CSV file.
 
@@ -386,26 +456,61 @@ class CsvAnalogPersister:
         self._path = str(filepath)
 
     def append(self, activity: Any) -> None:
-        """Append one row to the CSV file, creating it with a header if needed."""
-        row = {col: getattr(activity, col, None) for col in _CSV_COLUMNS}
+        """Write one activity row, upserting by activity_id.
 
-        # Serialise datetime fields to ISO strings
+        Idempotent: re-ingesting the same ``activity_id`` replaces that row
+        rather than appending a duplicate (a double ingest previously wrote two
+        rows, and the last won on reload).  The whole file is rewritten via a
+        temp file + ``os.replace`` so a crash mid-write cannot leave a partial
+        or header-less file.  A sidecar lock serialises concurrent writers.
+        """
+        row = {col: getattr(activity, col, None) for col in _CSV_COLUMNS}
         for dt_field in ("actual_start", "actual_finish"):
             val = row.get(dt_field)
             if val is not None and hasattr(val, "isoformat"):
                 row[dt_field] = val.isoformat()
 
-        needs_header = (
-            not os.path.exists(self._path)
-            or os.path.getsize(self._path) == 0
-        )
-        with open(self._path, "a", newline="", encoding="utf-8") as fh:
-            writer = csv.DictWriter(fh, fieldnames=list(_CSV_COLUMNS))
-            if needs_header:
+        activity_id = row.get("activity_id")
+
+        with _FileLock(self._path + ".lock"):
+            # Load existing rows (tolerate a missing / empty / header-only file).
+            existing: list = []
+            if os.path.exists(self._path) and os.path.getsize(self._path) > 0:
+                try:
+                    with open(self._path, newline="", encoding="utf-8") as fh:
+                        existing = list(csv.DictReader(fh))
+                except (OSError, csv.Error):
+                    LOGGER.warning(
+                        "CsvAnalogPersister: could not read %s; rewriting from scratch",
+                        self._path, exc_info=True,
+                    )
+                    existing = []
+
+            # Upsert by activity_id (dedup); append when the id is new or absent.
+            replaced = False
+            if activity_id:
+                for i, r in enumerate(existing):
+                    if r.get("activity_id") == activity_id:
+                        existing[i] = row
+                        replaced = True
+                        break
+            if not replaced:
+                existing.append(row)
+
+            # Atomic rewrite: temp file in the same dir, then os.replace.
+            directory = os.path.dirname(self._path) or "."
+            tmp_path = f"{self._path}.tmp.{os.getpid()}"
+            with open(tmp_path, "w", newline="", encoding="utf-8") as fh:
+                writer = csv.DictWriter(fh, fieldnames=list(_CSV_COLUMNS))
                 writer.writeheader()
-            writer.writerow(row)
+                for r in existing:
+                    writer.writerow({col: r.get(col) for col in _CSV_COLUMNS})
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp_path, self._path)
 
         LOGGER.debug(
-            "CsvAnalogPersister: appended activity %s to %s",
-            getattr(activity, "activity_id", "?"), self._path,
+            "CsvAnalogPersister: %s activity %s in %s",
+            "replaced" if replaced else "appended",
+            activity_id or "?", self._path,
         )
