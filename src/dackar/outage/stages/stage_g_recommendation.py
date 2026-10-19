@@ -64,6 +64,11 @@ _FLAG_LCO_CLOCK_CRITICAL = "lco_action_level_critical"
 # LCO clock statuses that require immediate attention
 _LCO_URGENT_STATUSES = {"expired", "critical", "urgent"}
 
+# LCO clock statuses that FAIL CLOSED: the decision may not be PROCEED or
+# MONITOR while the clock is in one of these states (unknown included — an
+# undetermined clock is treated as unsafe, not as "no constraint").
+_LCO_FAIL_CLOSED_STATUSES = {"expired", "critical", "urgent", "unknown"}
+
 # Option types that map to PROCEED
 _PROCEED_OPTION_TYPES = {
     "insert_now",
@@ -209,15 +214,29 @@ class RecommendationSynthesizer:
     def _select_primary_option(self, insertion_options: JsonDict) -> Optional[JsonDict]:
         """Retrieve the recommended option object from InsertionOptions.
 
-        Looks up insertion_options['recommended_option_id'] in the options list.
-        Returns None if recommended_option_id is None or not found.
+        Looks up insertion_options['recommended_option_id'] in the options list
+        and RE-VERIFIES it is both feasible and regulatory-cleared before
+        returning it (B5).  A pre-computed insertion_options bundle could point
+        recommended_option_id at a regulatory-blocked or infeasible option;
+        trusting it blindly produced e.g. a DEFER on a regulatory-blocked defer.
+        Missing feasible/regulatory_cleared default to False (fail closed), not
+        True.  Returns None (→ INCONCLUSIVE) when no valid option is found.
         """
         recommended_id = insertion_options.get("recommended_option_id")
         if not recommended_id:
             return None
         for option in insertion_options.get("options", []):
             if option.get("option_id") == recommended_id:
-                return option
+                if option.get("feasible", False) and option.get("regulatory_cleared", False):
+                    return option
+                LOGGER.warning(
+                    "Stage G: recommended_option_id '%s' is not feasible/regulatory-cleared "
+                    "(feasible=%s, regulatory_cleared=%s); treating as no valid recommendation.",
+                    recommended_id,
+                    option.get("feasible"),
+                    option.get("regulatory_cleared"),
+                )
+                return None
         return None
 
     def _determine_decision_status(
@@ -254,8 +273,26 @@ class RecommendationSynthesizer:
         if option_type == "escalate_to_management":
             return _ESCALATE
 
+        # ── Fail-closed regulatory / LCO gate (B4) ────────────────────────────
+        # In this domain a missing or contradictory regulatory signal must never
+        # produce a permissive outcome.  While an LCO action-level clock is
+        # expired/critical/urgent/unknown, or any regulatory constraint is
+        # present, the decision may not be PROCEED or MONITOR — it escalates for
+        # licensing review.  DEFER is still allowed (and re-checked below) so a
+        # deferral to a compliant window remains available.
+        lco_status: str = (intake_result.get("lco_clock_status") or "").lower()
+        has_regulatory: bool = bool(intake_result.get("has_regulatory_constraint"))
+        fail_closed = (
+            lco_status in _LCO_FAIL_CLOSED_STATUSES or has_regulatory
+        )
+
         if option_type == "defer_to_post_outage":
             return _DEFER
+
+        if fail_closed:
+            # Any non-defer, non-escalate option under an active regulatory/LCO
+            # constraint escalates instead of proceeding or monitoring.
+            return _ESCALATE
 
         # MONITOR: no historical support + non-critical → watch, no immediate action
         # Previous condition required cp_impact==0 AND analog_count==0 AND low_confidence
@@ -818,6 +855,23 @@ class RecommendationSynthesizer:
         if intake_result.get("has_regulatory_constraint"):
             reasons.append("regulatory constraint present — verify compliance before proceeding")
 
+        # B4: an active LCO action-level clock (including an unknown clock) always
+        # requires review — these fail closed.
+        lco_status = (intake_result.get("lco_clock_status") or "").lower()
+        if lco_status in _LCO_FAIL_CLOSED_STATUSES:
+            reasons.append(
+                f"LCO action-level clock is '{lco_status}' — licensing review required"
+            )
+
+        # B4: critical-path impact, displaced regulatory tasks, and temporal
+        # contradictions each warrant review even when the decision is PROCEED.
+        if _FLAG_CP_IMPACT in attention_flags:
+            reasons.append("critical-path impact flagged — verify schedule risk before acting")
+        if _FLAG_DISPLACED_REGULATORY in attention_flags:
+            reasons.append("insertion displaces a regulatory-constrained task — review deferral limits")
+        if _FLAG_TEMPORAL_CONTRADICTION in attention_flags:
+            reasons.append("temporal contradiction in the causal chain — verify event ordering")
+
         if decision_status == _INCONCLUSIVE:
             reasons.append("no feasible option identified — manual scheduling decision required")
 
@@ -878,25 +932,28 @@ class RecommendationSynthesizer:
                                        least one supports=True entry.
         fallback_used:                 from historical_analogs.retrieval_summary.
         """
-        # Regulatory flags resolved: each flag must have a supporting evidence item
+        # Regulatory flags resolved: EACH flag must be individually acknowledged
+        # by a supporting evidence item that references that specific flag's
+        # driver_id or driver_type (B5).  The previous logic treated all flags as
+        # resolved as soon as any schedule/temporal evidence existed
+        # (holistic_evidence or bool(supporting_sources)), so a regulatory
+        # constraint was auto-"resolved" without being addressed.  A flag that no
+        # evidence item references stays unresolved until a reviewer acknowledges
+        # it (analyst_review covers that path).
         all_resolved: bool
         if not regulatory_flags:
             all_resolved = True
         else:
-            supporting_sources = {
-                item.get("source_id")
+            supporting_refs = {
+                str(item.get("source_id"))
                 for item in evidence_chain
                 if item.get("supports")
             }
-            # A flag is "resolved" when its driver_id or driver_type appears in
-            # a supporting evidence item, OR when a schedule/temporal analysis
-            # evidence item (which covers the activity holistically) is present.
-            holistic_evidence = any(
-                item.get("source_type") in {"schedule_analysis", "temporal_chain_link"}
-                and item.get("supports")
-                for item in evidence_chain
-            )
-            all_resolved = holistic_evidence or bool(supporting_sources)
+            def _flag_resolved(flag: JsonDict) -> bool:
+                keys = {str(flag.get("driver_id")), str(flag.get("driver_type"))}
+                keys.discard("None")
+                return bool(keys & supporting_refs)
+            all_resolved = all(_flag_resolved(f) for f in regulatory_flags)
 
         minimum_evidence_met: bool = bool(evidence_chain) and any(
             item.get("supports") for item in evidence_chain

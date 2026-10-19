@@ -83,6 +83,10 @@ _SCOPE_REDUCTION_PROHIBITED_TYPES = {
     "license_basis_inspection",
 }
 
+# LCO clock states (from intake_result.lco_clock_status) that mean an action-level
+# clock is actively running — deferral is not feasible while any is in effect.
+_LCO_ACTIVE_STATUSES = {"expired", "critical", "urgent", "normal"}
+
 # Duration distribution confidence tier → confidence float
 _TIER_TO_CONFIDENCE: Dict[str, float] = {
     "data_supported": 0.85,
@@ -329,6 +333,28 @@ class InsertionOptionGenerator:
 
         options = self._rank_options(candidates)
 
+        # I16: the schema requires at least one option (minItems: 1).  If ranking
+        # filtered everything out (e.g. all options infeasible with
+        # include_infeasible_options=False), fall back to an escalate option so a
+        # valid artifact is always produced and Stage G sees an explicit escalation
+        # rather than an empty list.
+        if not options:
+            LOGGER.warning(
+                "Stage F (run=%s): no options survived ranking — emitting escalate fallback.",
+                run_id,
+            )
+            options = [self._generate_escalate(
+                emergent_activity, schedule_impact_assessment, intake_result=intake_result
+            )]
+            for option in options:
+                option.setdefault("regulatory_cleared", True)
+                option.setdefault("regulatory_block_reason", None)
+                option.setdefault("risk_score", 1.0)
+                option.setdefault(
+                    "cost_estimate",
+                    self._compute_option_cost(option, p50=p50, p80=p80, crew_count=crew_count),
+                )
+
         # Select recommended option: top feasible + regulatory-cleared
         recommended_id = self._select_recommended(options)
 
@@ -392,7 +418,7 @@ class InsertionOptionGenerator:
         feasible = len(hard_conflicts) == 0
         infeasibility_reason: Optional[str] = None
         if not feasible:
-            skills = ", ".join(c.get("skill_required", "?") for c in hard_conflicts)
+            skills = ", ".join(c.get("skill_type", "?") for c in hard_conflicts)
             infeasibility_reason = (
                 f"Crew unavailable for required skill(s): {skills}. "
                 "Resolve crew conflict before inserting."
@@ -447,11 +473,22 @@ class InsertionOptionGenerator:
         certain; the residual risk lies in the plant state during the deferral
         period, which is captured in causal_urgency during scoring.
         """
+        # I13: safety/LCO state is produced by Stage A and lives on intake_result;
+        # emergent_activity.json has additionalProperties:false and does not define
+        # these fields, so reading them off emergent_activity always saw None and
+        # defer was always feasible.  Read from intake_result (fall back to
+        # emergent_activity only for backward compatibility).
         is_safety_related: bool = bool(
-            emergent_activity.get("safety_related")
-            or emergent_activity.get("safety_classification") == "safety_related"
+            intake_result.get("safety_related")
+            or intake_result.get("safety_classification") == "safety_related"
+            or emergent_activity.get("safety_related")
         )
-        active_lco: bool = bool(emergent_activity.get("active_lco"))
+        lco_status = (intake_result.get("lco_clock_status") or "").lower()
+        active_lco: bool = (
+            lco_status in _LCO_ACTIVE_STATUSES
+            or bool(intake_result.get("has_regulatory_constraint") and lco_status not in {"", "not_applicable"})
+            or bool(emergent_activity.get("active_lco"))
+        )
 
         feasible = not (is_safety_related or active_lco)
         infeasibility_reason: Optional[str] = None
@@ -632,7 +669,7 @@ class InsertionOptionGenerator:
         feasible = len(hard_crew_conflicts) == 0
         infeasibility_reason: Optional[str] = None
         if not feasible:
-            skills = ", ".join(c.get("skill_required", "?") for c in hard_crew_conflicts)
+            skills = ", ".join(c.get("skill_type", "?") for c in hard_crew_conflicts)
             infeasibility_reason = (
                 f"Crew conflict on required skill(s): {skills} prevents parallel execution."
             )
@@ -830,9 +867,14 @@ class InsertionOptionGenerator:
                 )
 
         elif option_type == _SCOPE_REDUCTION:
+            # Block scope reduction for an explicit prohibited type OR for any
+            # driver that prohibits deferral (B5): a defer_prohibited NRC/CAP/
+            # hold-point commitment requires the full committed scope, so reducing
+            # it is as non-compliant as deferring it.
             blocking = [
                 d for d in regulatory_drivers
                 if d.get("driver_type") in _SCOPE_REDUCTION_PROHIBITED_TYPES
+                or d.get("defer_prohibited", False)
             ]
             if blocking:
                 driver_types = ", ".join(
@@ -927,12 +969,13 @@ class InsertionOptionGenerator:
             and o.get("regulatory_cleared", True)
             and isinstance(o.get("cost_estimate"), dict)
         ]
+        eligible = [o for o in eligible if o.get("option_id")]
         if not eligible:
             return None
         return min(
             eligible,
             key=lambda o: o["cost_estimate"].get("total_cost_usd", float("inf")),
-        )["option_id"]
+        ).get("option_id")
 
     def _score_option(
         self,
@@ -1038,7 +1081,10 @@ class InsertionOptionGenerator:
         """
         for option in options:
             if option.get("feasible", True) and option.get("regulatory_cleared", True):
-                return option["option_id"]
+                # Skip malformed options with no option_id rather than KeyError.
+                oid = option.get("option_id")
+                if oid:
+                    return oid
         return None
 
     def _recommendation_confidence(
