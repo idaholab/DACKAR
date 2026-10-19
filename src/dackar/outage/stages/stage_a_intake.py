@@ -65,14 +65,26 @@ except ImportError:
 # Module-level keyword sets for rule-based classifiers
 # ---------------------------------------------------------------------------
 
-# Emergence type: regulatory_driven
-_REGULATORY_KEYWORDS_RE = re.compile(
-    r"\b(TS\s*[\d.]+|technical\s+specification|LCO\s*[\d.]+|limiting\s+condition"
-    r"|NRC|ALARA|CAP\b|corrective\s+action\s+program|surveillance|10\s*CFR"
+# Emergence type: regulatory_driven.
+# Acronyms are matched CASE-SENSITIVELY so the common word "cap" (e.g. "end
+# cap") is not mistaken for the CAP acronym; phrases are case-insensitive.
+# Applied to raw text (see _classify_emergence_type), consistent with the
+# case-sensitive acronym patterns in _REGULATORY_PATTERNS.
+_REGULATORY_ACRONYMS_RE = re.compile(
+    r"\b(TS\s*[\d.]+|LCO\s*[\d.]+|NRC|ALARA|CAP|10\s*CFR)\b"
+)
+_REGULATORY_PHRASES_RE = re.compile(
+    r"\b(technical\s+specification|limiting\s+condition"
+    r"|corrective\s+action\s+program|surveillance"
     r"|operability\s+determination|hold\s+point|quality\s+hold"
     r"|mode\s+change|entry\s+condition)\b",
     re.IGNORECASE,
 )
+
+
+def _match_regulatory_keyword(text: str):
+    """Return the first regulatory keyword match (acronym or phrase) or None."""
+    return _REGULATORY_ACRONYMS_RE.search(text) or _REGULATORY_PHRASES_RE.search(text)
 
 # Emergence type: scope_expansion — typically tied to an existing WO
 _SCOPE_KEYWORDS_RE = re.compile(
@@ -350,7 +362,7 @@ class ActivityIntakeProcessor:
 
         normalized = self._clean_description(raw)
         expanded, abbr_rate = self._expand_abbreviations(normalized)
-        entities = self._run_ner(expanded, emergent_activity)
+        entities = self._run_ner(expanded, emergent_activity, raw_text=raw)
         (
             resolved_components,
             resolved_systems,
@@ -361,10 +373,10 @@ class ActivityIntakeProcessor:
             expanded, entities
         )
         emergence_type, emergence_confidence, emergence_rationale = (
-            self._classify_emergence_type(emergent_activity, entities, expanded)
+            self._classify_emergence_type(emergent_activity, entities, expanded, raw_text=raw)
         )
         has_regulatory, regulatory_drivers = self._detect_regulatory_constraints(
-            emergent_activity, entities, expanded
+            emergent_activity, entities, expanded, raw_text=raw
         )
         execution_flags = self._extract_execution_mode_flags(expanded)
         dq_score = self._compute_data_quality(emergent_activity, entities, abbr_rate)
@@ -590,17 +602,21 @@ class ActivityIntakeProcessor:
         return expanded, round(abbr_rate, 4)
 
     def _run_ner(
-        self, text: str, emergent_activity: JsonDict
+        self, text: str, emergent_activity: JsonDict, raw_text: Optional[str] = None
     ) -> List[JsonDict]:
-        """Extract named entities from the expanded description.
+        """Extract named entities from the activity description.
 
         Returns a list of entity dicts conforming to the extracted_entities
         array in activity_intake_result.json.
 
         Extraction layers (applied in order, results merged):
-            1. Regex patterns for tag IDs, WO references, CR references.
+            1. Regex patterns for tag IDs, WO references, CR references — run on
+               the RAW description (``raw_text``), because ComponentIdRemover in
+               the cleaning stage strips exactly those identifiers from the
+               expanded text, so running regex on the expanded text would find
+               nothing.
             2. HybridNERPipeline (if injected) for component, action, failure-mode
-               entities via gazetteer + anchored NP generators.
+               entities via gazetteer + anchored NP generators (on expanded text).
             3. SpacyAnnotator (if injected) for temporal references and measurements.
 
         Each entity dict has keys: entity_id, text, entity_type, start, end,
@@ -609,7 +625,9 @@ class ActivityIntakeProcessor:
         entities: List[JsonDict] = []
 
         # ── Layer 1: regex extraction (always runs) ───────────────────────────
-        for match in _TAG_ID_RE.finditer(text):
+        # Run on the raw description so stripped tag/WO/CR identifiers are seen.
+        regex_text = raw_text if raw_text is not None else text
+        for match in _TAG_ID_RE.finditer(regex_text):
             entities.append(_make_entity(
                 text=match.group(),
                 entity_type="tag_id",
@@ -619,7 +637,7 @@ class ActivityIntakeProcessor:
                 confidence=0.95,
             ))
 
-        for match in _WO_REF_RE.finditer(text):
+        for match in _WO_REF_RE.finditer(regex_text):
             entities.append(_make_entity(
                 text=match.group(),
                 entity_type="work_order_reference",
@@ -629,7 +647,7 @@ class ActivityIntakeProcessor:
                 confidence=0.95,
             ))
 
-        for match in _CR_REF_RE.finditer(text):
+        for match in _CR_REF_RE.finditer(regex_text):
             entities.append(_make_entity(
                 text=match.group(),
                 entity_type="condition_report_reference",
@@ -640,40 +658,50 @@ class ActivityIntakeProcessor:
             ))
 
         # ── Layer 2: HybridNERPipeline (injected) ────────────────────────────
+        # The real RCA pipeline exposes run(Document) -> PipelineResult, whose
+        # .entities are ResolvedSpan dataclasses (start/end/text/labels/groups).
         if self.ner_pipeline is not None:
             try:
-                pipeline_entities = self.ner_pipeline.generate(
-                    text,
-                    mode=self.config.ner_generator_mode,
-                    score_threshold=self.config.np_score_threshold,
-                )
-                for ent in pipeline_entities:
+                from dackar.RCA.ner.hybrid_ner.models import Document
+                doc = Document(doc_id=emergent_activity.get("activity_id", "intake"), text=text)
+                result = self.ner_pipeline.run(doc)
+                for span in getattr(result, "entities", []):
+                    label = span.labels[0] if getattr(span, "labels", None) else "unknown"
+                    group = span.groups[0] if getattr(span, "groups", None) else None
                     entities.append(_make_entity(
-                        text=ent.get("text", ""),
-                        entity_type=ent.get("entity_type", "unknown"),
-                        start=ent.get("start", 0),
-                        end=ent.get("end", 0),
+                        text=span.text,
+                        entity_type=label,
+                        start=span.start,
+                        end=span.end,
                         source="hybrid_ner",
-                        confidence=ent.get("score", ent.get("confidence", 0.7)),
+                        confidence=float((span.provenance or {}).get("score", 0.7)),
+                        label_group=group,
                     ))
             except Exception:  # noqa: BLE001
                 LOGGER.warning(
-                    "HybridNERPipeline.generate() failed; skipping pipeline entities",
+                    "HybridNERPipeline.run() failed; skipping pipeline entities",
                     exc_info=True,
                 )
 
         # ── Layer 3: SpacyAnnotator (injected) ───────────────────────────────
+        # The real SpacyAnnotator.annotate(text) returns a SpacyAnnotationResult
+        # dataclass, not a list of dicts.  Only its `measurements` entries carry
+        # an entity_type/text (temporal/location refs are offset-less strings),
+        # so those are the items surfaced into extracted_entities; offsets are
+        # recovered by locating the surface text.
         if self.spacy_annotator is not None:
             try:
-                spacy_entities = self.spacy_annotator.annotate(text)
-                for ent in spacy_entities:
+                spacy_result = self.spacy_annotator.annotate(text)
+                for meas in getattr(spacy_result, "measurements", []):
+                    surface = meas.get("text", "")
+                    pos = text.find(surface) if surface else -1
                     entities.append(_make_entity(
-                        text=ent.get("text", ""),
-                        entity_type=ent.get("entity_type", ent.get("label", "unknown")),
-                        start=ent.get("start", 0),
-                        end=ent.get("end", 0),
+                        text=surface,
+                        entity_type=meas.get("entity_type", "measurement"),
+                        start=pos if pos >= 0 else 0,
+                        end=(pos + len(surface)) if pos >= 0 else 0,
                         source="spacy",
-                        confidence=ent.get("confidence", 0.75),
+                        confidence=0.75,
                     ))
             except Exception:  # noqa: BLE001
                 LOGGER.warning(
@@ -733,20 +761,25 @@ class ActivityIntakeProcessor:
             ]
             for mention in component_mentions:
                 try:
+                    # EntityNormalizer.normalize(surface_form, entity_type="")
+                    # returns a NormResult dataclass; the token-overlap threshold
+                    # is a constructor arg, not a per-call argument.
                     normalized = self.entity_normalizer.normalize(
                         mention["text"],
-                        token_overlap_threshold=self.config.entity_normalizer_token_overlap_threshold,
+                        entity_type=mention.get("entity_type", ""),
                     )
-                    if normalized:
-                        canonical_id = normalized.get("canonical_id") or normalized.get("id")
-                        canonical_type = normalized.get("entity_type", "component")
-                        if canonical_id:
-                            if canonical_type == "system" and canonical_id not in sys_ids:
-                                sys_ids.append(canonical_id)
-                            elif canonical_id not in comp_ids:
-                                comp_ids.append(canonical_id)
+                    canonical_id = getattr(normalized, "canonical_id", None)
+                    component_id = getattr(normalized, "component_id", None)
+                    method = getattr(normalized, "method", "none")
+                    if canonical_id and method != "none":
+                        # component_id present → it is a component; else treat the
+                        # canonical_id as a system identifier.
+                        if component_id and component_id not in comp_ids:
+                            comp_ids.append(component_id)
+                        elif not component_id and canonical_id not in sys_ids:
+                            sys_ids.append(canonical_id)
                 except Exception:  # noqa: BLE001
-                    LOGGER.debug(
+                    LOGGER.warning(
                         "EntityNormalizer failed for mention '%s'",
                         mention["text"],
                         exc_info=True,
@@ -809,6 +842,7 @@ class ActivityIntakeProcessor:
         emergent_activity: JsonDict,
         entities: List[JsonDict],
         text: str,
+        raw_text: Optional[str] = None,
     ) -> Tuple[str, float, Optional[str]]:
         """Classify the emergence type of this activity.
 
@@ -832,7 +866,10 @@ class ActivityIntakeProcessor:
             return explicit, 1.0, "explicitly provided in intake record"
 
         # ── Rule 1: regulatory_driven ─────────────────────────────────────────
-        reg_match = _REGULATORY_KEYWORDS_RE.search(text)
+        # Match on raw text so the case-sensitive acronym 'CAP' (not the common
+        # word 'cap' in e.g. "end cap") is required, consistent with the driver
+        # patterns in _detect_regulatory_constraints.
+        reg_match = _match_regulatory_keyword(raw_text if raw_text is not None else text)
         if reg_match:
             return (
                 "regulatory_driven",
@@ -1000,6 +1037,7 @@ class ActivityIntakeProcessor:
         emergent_activity: JsonDict,
         entities: List[JsonDict],
         text: str,
+        raw_text: Optional[str] = None,
     ) -> Tuple[bool, List[JsonDict]]:
         """Identify regulatory constraints that restrict deferral.
 
@@ -1060,9 +1098,13 @@ class ActivityIntakeProcessor:
             )
 
         # ── Text pattern matching (built-in + supplementary) ──────────────────
+        # Match on raw text so case-sensitive acronym patterns (\bCAP\b, \bNRC\b,
+        # \bALARA\b) see the uppercase acronym; the cleaner lowercases text, which
+        # would otherwise prevent these from ever matching.
+        match_text = raw_text if raw_text is not None else text
         all_patterns = _REGULATORY_PATTERNS + self._supplementary_regulatory_patterns
         for pattern, driver_type, defer_prohibited in all_patterns:
-            match = pattern.search(text)
+            match = pattern.search(match_text)
             if match:
                 _add_driver(
                     driver_type,
@@ -1144,9 +1186,10 @@ def _make_entity(
     end: int,
     source: str,
     confidence: float,
+    label_group: Optional[str] = None,
 ) -> JsonDict:
     """Construct a standardised entity dict for the extracted_entities array."""
-    return {
+    entity = {
         "entity_id": f"ENT::{entity_type}::{uuid.uuid4().hex[:6]}",
         "text": text,
         "entity_type": entity_type,
@@ -1155,5 +1198,8 @@ def _make_entity(
         "source": source,
         "confidence": round(confidence, 4),
     }
+    if label_group is not None:
+        entity["label_group"] = label_group
+    return entity
 
 

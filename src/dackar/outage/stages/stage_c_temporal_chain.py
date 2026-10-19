@@ -6,7 +6,8 @@ Responsibilities:
        into a temporal interval [start, end].
     2. For each prior event in the ComponentEventTimeline, apply Allen interval
        algebra to classify the temporal relationship to the emergent activity:
-       PRECEDES, OVERLAPS, CONTAINS, DURING, FOLLOWS, SIMULTANEOUS, UNKNOWN.
+       PRECEDES, OVERLAPS, OVERLAPPED_BY, CONTAINS, DURING, FOLLOWS,
+       SIMULTANEOUS, UNKNOWN.
     3. Score each link for causal relevance based on the Allen relation, onset
        lag, and data quality of the prior event.
     4. Label each link with a causal_strength: strong / moderate / weak /
@@ -16,12 +17,13 @@ Responsibilities:
 Output schema: outage/schemas/temporal_event_chain.json
 
 Allen relation → causal relevance reference:
-    OVERLAPS    → 0.90  prior event was active at emergent activity onset
-    CONTAINS    → 0.85  long-running degradation encompasses the activity window
-    PRECEDES    → 0.80  classic lead-time: ended before onset
-    SIMULTANEOUS→ 0.50  concurrent; possible common cause
-    DURING      → 0.30  started after onset; likely a symptom, not a cause
-    FOLLOWS     → 0.10  temporal contradiction; flag for analyst review
+    OVERLAPS     → 0.90  prior event started before and was active at onset (cause-like)
+    CONTAINS     → 0.85  long-running degradation encompasses the activity window
+    PRECEDES     → 0.80  classic lead-time: ended before onset
+    SIMULTANEOUS → 0.50  concurrent; possible common cause
+    DURING       → 0.30  entirely within the activity window; likely a symptom
+    OVERLAPPED_BY→ 0.30  started after onset and outlasted it; likely a symptom
+    FOLLOWS      → 0.10  temporal contradiction; flag for analyst review
 
 Reuse targets:
     RCA.orchestrators.tskr_temporal_scorer.TSKRTemporalScorerV1
@@ -48,6 +50,7 @@ JsonDict = Dict[str, Any]
 # Allen relation labels
 _PRECEDES = "precedes"
 _OVERLAPS = "overlaps"
+_OVERLAPPED_BY = "overlapped_by"
 _CONTAINS = "contains"
 _DURING = "during"
 _FOLLOWS = "follows"
@@ -68,6 +71,10 @@ _RELATION_SCORES: Dict[str, float] = {
     _PRECEDES: 0.80,
     _SIMULTANEOUS: 0.50,
     _DURING: 0.30,
+    # overlapped_by: the prior event STARTED AFTER the activity onset and
+    # outlasted it.  Like DURING, that is a post-onset event — a likely symptom,
+    # not a cause — so it carries the same low score rather than OVERLAPS' 0.90.
+    _OVERLAPPED_BY: 0.30,
     _FOLLOWS: 0.10,
     _UNKNOWN: 0.00,
 }
@@ -80,15 +87,6 @@ _MODERATE_THRESHOLD = 0.40
 _ANOMALY_WEIGHT = 0.55   # data_quality_score of the prior event
 _LATENCY_WEIGHT = 0.30   # onset lag plausibility
 _RELATION_WEIGHT = 0.15  # base Allen relation score
-
-# Reuse: Interval dataclass and onset_lag_hours from RCA (read-only import)
-try:
-    from dackar.RCA.orchestrators.temporal_relations import (  # noqa: F401
-        Interval as _RCAInterval,
-    )
-    _RCA_TEMPORAL_AVAILABLE = True
-except ImportError:
-    _RCA_TEMPORAL_AVAILABLE = False
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +158,46 @@ class TemporalChainScorer:
 
         activity_interval, is_point = self._parse_activity_interval(emergent_activity)
         events: List[JsonDict] = component_event_timeline.get("events", [])
+
+        # If the activity's own start cannot be parsed, no Allen relation can be
+        # determined for any event (every one would be UNKNOWN).  That is a lack
+        # of data about the activity, not a weak-but-present chain, so report
+        # insufficient_data explicitly rather than letting it collapse to "weak".
+        if _parse_dt(activity_interval[0]) is None:
+            LOGGER.warning(
+                "Stage C (run=%s): emergent activity %s has no parseable start "
+                "timestamp; emitting insufficient_data chain.",
+                run_id, activity_id,
+            )
+            links: List[JsonDict] = []
+            summary = {
+                "chain_length": 0,
+                "strongest_link_id": None,
+                "strongest_allen_relation": None,
+                "max_relation_score": 0.0,
+                "has_temporal_contradiction": False,
+                "causal_posture": "insufficient_data",
+            }
+            return {
+                "activity_id": activity_id,
+                "run_id": run_id,
+                "generated_at": run_context.get("started_at", ""),
+                "component_id": component_id,
+                "emergent_activity_interval": {
+                    "start": activity_interval[0],
+                    "end": activity_interval[1],
+                    "is_point_event": is_point,
+                },
+                "chain_links": links,
+                "summary": summary,
+                "provenance": {
+                    "generated_by": self.__class__.__name__,
+                    "run_id": run_id,
+                    "scorer_version": "v1",
+                    "epsilon_hours": self.config.epsilon_hours,
+                    "unparseable_activity_start": True,
+                },
+            }
 
         links: List[JsonDict] = []
         for event in events:
@@ -297,7 +335,8 @@ class TemporalChainScorer:
         if act_start is not None:
             lag = (act_start - event_start).total_seconds() / 3600.0
 
-        dq: float = event.get("data_quality_score") or 0.5
+        dq_raw = event.get("data_quality_score")
+        dq: float = dq_raw if dq_raw is not None else 0.5
         confidence = self._compute_confidence(allen_rel, dq, lag)
         causal_strength = self._assign_causal_strength(allen_rel, confidence)
 
@@ -330,13 +369,13 @@ class TemporalChainScorer:
         boundary are treated as simultaneous at that boundary.
 
         Logic (interval A = prior event, interval B = activity):
+            A.start ≈ B.start and A.end ≈ B.end (within ε)  → SIMULTANEOUS
             A.end   < B.start - ε  → PRECEDES
             A.start > B.end   + ε  → FOLLOWS
             A.start < B.start - ε  and A.end > B.end + ε  → CONTAINS
-            A.start < B.start - ε  and A.end within B     → OVERLAPS  (left overlap)
+            A.start < B.start - ε  and A.end within B     → OVERLAPS       (left overlap: cause-like)
             A entirely within B                            → DURING
-            A.start within B       and A.end > B.end + ε  → OVERLAPS  (right overlap)
-            otherwise                                      → SIMULTANEOUS
+            A.start within B       and A.end > B.end + ε  → OVERLAPPED_BY  (right overlap: symptom-like)
         """
         if prior_start is None or activity_start is None:
             return _UNKNOWN
@@ -351,6 +390,10 @@ class TemporalChainScorer:
         b_s = activity_start.timestamp()
         b_e = b_end.timestamp()
 
+        # Equal intervals (both boundaries within ε) are SIMULTANEOUS.  This is
+        # tested first so identical intervals don't fall through to DURING.
+        if abs(a_s - b_s) <= eps and abs(a_e - b_e) <= eps:
+            return _SIMULTANEOUS
         if a_e < b_s - eps:
             return _PRECEDES
         if a_s > b_e + eps:
@@ -362,8 +405,10 @@ class TemporalChainScorer:
         if a_e <= b_e + eps:         # a_s >= b_s - eps: A entirely within B
             return _DURING
         # A started within B (a_s >= b_s - eps) but extends beyond B (a_e > b_e + eps):
-        # right-side overlap — prior event was active at activity onset and outlasted it.
-        return _OVERLAPS
+        # right-side overlap — the prior event began AFTER activity onset and
+        # outlasted it.  That is Allen "overlapped-by": a post-onset symptom, not
+        # a lead cause, so it is scored low (not the 0.90 of a left OVERLAPS).
+        return _OVERLAPPED_BY
 
     def _compute_confidence(
         self,
@@ -384,6 +429,8 @@ class TemporalChainScorer:
         # (the prior event was active at or spanned the activity window).  Applying
         # lag-decay would penalise long-running degradation events that are exactly
         # the kind of cause we most want to surface.  Force lag_plausibility=1.0.
+        # OVERLAPPED_BY is deliberately excluded — it is a post-onset symptom, so it
+        # must not get the cause-like plausibility boost.
         if allen_relation in (_OVERLAPS, _CONTAINS):
             lag_plausibility = 1.0
         # Lag plausibility: positive lags ≤ 24 h are most credible causal leads;
@@ -398,8 +445,9 @@ class TemporalChainScorer:
             # Smooth decay from 1.0 to 0.1 over 30 days (720 h)
             lag_plausibility = max(0.1, 1.0 - (onset_lag_hours - 24.0) / 720.0)
 
+        dq = data_quality_score if data_quality_score is not None else 0.5
         return (
-            _ANOMALY_WEIGHT * (data_quality_score or 0.5)
+            _ANOMALY_WEIGHT * dq
             + _LATENCY_WEIGHT * lag_plausibility
             + _RELATION_WEIGHT * relation_component
         )

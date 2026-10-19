@@ -243,6 +243,9 @@ class KGTimelineBuilder:
                 activity_id,
             )
         events: List[JsonDict] = []
+        # Reset the per-run query-failure counter so a KG outage can be
+        # distinguished from a genuinely empty history (see _run_query).
+        self._query_failures = 0
 
         if self.kg_driver is None:
             LOGGER.warning(
@@ -281,6 +284,7 @@ class KGTimelineBuilder:
             "system_name": component_meta.get("system_name"),
             "asset_id": component_meta.get("asset_id"),
             "kg_driver_available": self.kg_driver is not None,
+            "kg_query_failed": getattr(self, "_query_failures", 0) > 0,
             "events": events,
             "recurrence_indicators": recurrence,
             "data_coverage": coverage,
@@ -289,6 +293,7 @@ class KGTimelineBuilder:
                 "run_id": run_id,
                 "kg_query_timestamp": run_context.get("started_at"),
                 "timeline_window_days": self.config.timeline_window_days,
+                "kg_query_failures": getattr(self, "_query_failures", 0),
             },
         }
 
@@ -400,7 +405,7 @@ class KGTimelineBuilder:
         Cypher pattern:
             MATCH (wo:work_order)-[:PERFORMED_ON]->(c:mbse_entity {id: $component_id})
             WHERE wo.initiated_date >= $window_start
-              AND NOT wo.work_type IN ['PM', 'CM']
+              AND NOT coalesce(wo.work_type, '') IN ['PM', 'CM']
             RETURN wo
 
         Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.
@@ -412,7 +417,9 @@ class KGTimelineBuilder:
             f"(c:`{self.config.component_label}` {{id: $component_id}})\n"
             "WHERE ($window_start IS NULL OR wo.initiated_date >= $window_start)\n"
             "  AND ($before_ts IS NULL OR wo.initiated_date < $before_ts)\n"
-            "  AND NOT wo.work_type IN [$pm_code, $cm_code]\n"
+            # coalesce so a null work_type is treated as '' and kept (a generic
+            # WO), rather than making the whole predicate null and dropping it.
+            "  AND NOT coalesce(wo.work_type, '') IN [$pm_code, $cm_code]\n"
             "RETURN wo"
         )
         rows = self._run_query(cypher, {
@@ -614,38 +621,46 @@ class KGTimelineBuilder:
     def _sort_and_cap(self, events: List[JsonDict]) -> List[JsonDict]:
         """Sort events ascending by timestamp and cap at config.max_events.
 
-        Events with a null timestamp are placed at the end of the sorted list
-        (they cannot be used in Allen relation scoring but are retained for
-        recurrence counting).
+        Dated and undated events are capped separately so that undated events
+        (which sort to the end and cannot be used in Allen relation scoring) do
+        NOT crowd out dated events when the cap is applied.  The cap keeps the
+        most recent dated events first, then backfills with undated events only
+        if room remains.  Within the returned list, dated events come first in
+        ascending timestamp order, followed by any retained undated events.
         """
-        def _sort_key(e: JsonDict):
-            ts = _parse_dt(e.get("timestamp"))
-            if ts is None:
-                return datetime.max.replace(tzinfo=timezone.utc)
-            return ts
+        dated = [e for e in events if _parse_dt(e.get("timestamp")) is not None]
+        undated = [e for e in events if _parse_dt(e.get("timestamp")) is None]
 
-        sorted_events = sorted(events, key=_sort_key)
-        if len(sorted_events) > self.config.max_events:
+        dated.sort(key=lambda e: _parse_dt(e.get("timestamp")))
+
+        cap = self.config.max_events
+        if len(dated) + len(undated) > cap:
             LOGGER.debug(
-                "Stage B: capping timeline at %d events (%d total retrieved)",
-                self.config.max_events,
-                len(sorted_events),
+                "Stage B: capping timeline at %d events (%d dated + %d undated retrieved)",
+                cap, len(dated), len(undated),
             )
-            # Keep the most recent max_events (most relevant to Stage C)
-            sorted_events = sorted_events[-self.config.max_events:]
-        return sorted_events
+            # Prefer dated events: keep the most recent `cap` of them, then
+            # backfill with undated events only if slots remain.
+            kept_dated = dated[-cap:]
+            remaining = cap - len(kept_dated)
+            kept_undated = undated[:remaining] if remaining > 0 else []
+            return kept_dated + kept_undated
+        return dated + undated
 
     def _compute_recurrence_indicators(
         self, events: List[JsonDict], detection_ts: Optional[str]
     ) -> JsonDict:
         """Compute repeat failure count, mean inter-event days, trend, and PM status.
 
-        trend logic:
-            Split the timeline window into two halves by event count.
-            If second-half count > first-half count × 1.5 → 'increasing'
-            If first-half count > second-half count × 1.5 → 'decreasing'
+        trend logic (event frequency, not event count):
+            Compare the mean inter-event gap in the first half of the dated
+            events against the second half.  A smaller second-half gap means
+            events are getting MORE frequent.
+            If second-half mean gap < first-half mean gap / 1.5 → 'increasing'
+            If second-half mean gap > first-half mean gap × 1.5 → 'decreasing'
             Otherwise → 'stable'
-            If fewer than 3 events → 'insufficient_data'
+            If fewer than 4 dated events (so each half has ≥1 gap) →
+            'insufficient_data'.
 
         PM compliance:
             Locate the most recent preventive_maintenance event in the timeline.
@@ -685,15 +700,25 @@ class KGTimelineBuilder:
             min_inter_event_days = round(min(inter_event_days), 1)
 
         # ── Trend ─────────────────────────────────────────────────────────────
-        if len(timed_events) < 3:
+        # Compare event frequency (inter-event gaps) between the first and
+        # second half of the gap sequence.  Need ≥2 gaps (≥3 dated events) to
+        # split; require ≥4 dated events so each half has at least one gap.
+        if len(timed_events) < 4 or len(inter_event_days) < 2:
             trend = "insufficient_data"
         else:
-            mid = len(timed_events) // 2
-            first_half_count = mid
-            second_half_count = len(timed_events) - mid
-            if second_half_count > first_half_count * 1.5:
+            g = inter_event_days
+            mid = len(g) // 2
+            first_half = g[:mid]
+            second_half = g[mid:]
+            first_mean = sum(first_half) / len(first_half)
+            second_mean = sum(second_half) / len(second_half)
+            if second_mean <= 0 and first_mean <= 0:
+                trend = "stable"
+            elif second_mean < first_mean / 1.5:
+                # gaps shrinking → events getting more frequent
                 trend = "increasing"
-            elif first_half_count > second_half_count * 1.5:
+            elif second_mean > first_mean * 1.5:
+                # gaps widening → events getting less frequent
                 trend = "decreasing"
             else:
                 trend = "stable"
@@ -722,10 +747,21 @@ class KGTimelineBuilder:
                     else:
                         pm_compliance_status = "compliant"
 
+        # last_cm_date: most recent corrective-maintenance event timestamp
+        # (the schema documents this field; it was previously never computed).
+        cm_events = [
+            e for e in timed_events if e.get("event_type") == "corrective_maintenance"
+        ]
+        last_cm_date: Optional[str] = (
+            max(cm_events, key=lambda e: _parse_dt(e["timestamp"]))["timestamp"]
+            if cm_events else None
+        )
+
         return {
             "repeat_failure_count": repeat_failure_count,
             "mean_inter_event_days": mean_inter_event_days,
             "trend": trend,
+            "last_cm_date": last_cm_date,
             "last_pm_date": last_pm_date,
             "pm_compliance_status": pm_compliance_status,
         }
@@ -783,6 +819,9 @@ class KGTimelineBuilder:
                 cypher[:120].replace("\n", " "),
                 exc_info=True,
             )
+            # Count the failure so the build method can distinguish a KG outage
+            # (kg_query_failed=True) from a genuinely empty history.
+            self._query_failures = getattr(self, "_query_failures", 0) + 1
             return []
 
     def _normalise_event(
