@@ -127,14 +127,25 @@ def _make_activity_case(
     Returns:
         ActivityCase (or _DictActivityCase fallback) ready for similarity scoring.
     """
-    fields = {
+    extra = dict(extra_fields or {})
+    # component_id / system_id are not ActivityCase fields; stash them in
+    # metadata so scorers that look them up still find them while the object is
+    # constructed normally (not via __new__).
+    metadata = dict(extra.pop("metadata", {}) or {})
+    metadata.setdefault("features", {})
+    if component_id is not None:
+        metadata["component_id"] = component_id
+    if system_id is not None:
+        metadata["system_id"] = system_id
+
+    # Fields that map directly onto ActivityCase dataclass attributes.
+    field_values = {
         "raw_description": description,
         "cleaned_description": description,
         "component_family": component_family,
         "task_family": task_family,
         "discipline": discipline,
-        "component_id": component_id,
-        "system_id": system_id,
+        "system_name": system_id,
         "plant_id": plant_id,
         "outage_phase": outage_phase,
         "is_emergent": is_emergent,
@@ -143,20 +154,34 @@ def _make_activity_case(
         "requires_scaffold": requires_scaffold,
         "has_clearance": has_clearance,
         "is_vendor_supported": is_vendor_supported,
-        **(extra_fields or {}),
     }
 
     try:
         from dackar.outage.outage_uncertainty.domain.activity import ActivityCase
-        activity = ActivityCase.__new__(ActivityCase)
-        for k, v in fields.items():
-            try:
-                object.__setattr__(activity, k, v)
-            except (AttributeError, TypeError):
-                pass
+        # Construct normally with required identifiers populated, so every field
+        # the similarity engine reads (activity_id, outage_id, metadata, …) is
+        # present rather than raising AttributeError on access.
+        activity = ActivityCase(
+            activity_id=str(extra.pop("activity_id", "QUERY")),
+            outage_id=str(extra.pop("outage_id", "")),
+            plant_id=str(plant_id or ""),
+            metadata=metadata,
+        )
+        field_values.pop("plant_id", None)  # already set via constructor
+        for k, v in field_values.items():
+            setattr(activity, k, v)
+        for k, v in extra.items():          # any remaining explicit extras
+            setattr(activity, k, v)
         return activity
     except ImportError:
-        return _DictActivityCase(fields)
+        fallback_fields = {
+            **field_values,
+            "component_id": component_id,
+            "system_id": system_id,
+            "metadata": metadata,
+            **extra,
+        }
+        return _DictActivityCase(fallback_fields)
 
 
 class _DictActivityCase:
@@ -220,6 +245,15 @@ class HistoricalAnalogConfig:
     Wired into the injected OutlierHandler.iqr_multiplier at construction time.
     Standard Tukey value is 1.5; increase to 3.0 for a more permissive fence
     (fewer outliers removed) on small or heavily right-skewed pools."""
+
+    prior_p80_inflation: float = 1.30
+    """P80/P50 multiplier for the single-analog and planned-duration priors.
+    With ≤1 analog there is no spread to fit, so the tail is approximated by
+    inflating the point estimate; 1.30 ≈ a 30% P80 overrun allowance."""
+
+    prior_p90_inflation: float = 1.50
+    """P90/P50 multiplier for the single-analog and planned-duration priors
+    (≈ a 50% P90 overrun allowance). See prior_p80_inflation."""
 
     lexical_weight: float = 0.20
     """Weight for the lexical (BM25 / token-overlap) similarity component.
@@ -428,7 +462,7 @@ class HistoricalAnalogRetriever:
 
     def _build_query(
         self, emergent_activity: JsonDict, intake_result: JsonDict
-    ) -> JsonDict:
+    ) -> Tuple[JsonDict, Any]:
         """Assemble the retrieval query from intake result fields.
 
         Constructs an ActivityCase for the similarity scorers and returns it
@@ -585,20 +619,42 @@ class HistoricalAnalogRetriever:
 
         # ── Scoring ───────────────────────────────────────────────────────────
         matches: List[Any] = []
-        candidate_map: Dict[int, Any] = {}  # id(match) → ActivityCase
+        # Key by candidate_activity_id, not id(match): NeighborSelector.select()
+        # returns dataclasses.replace() COPIES, so the post-selection match
+        # objects have different id()s than the ones scored here — an id() map
+        # would miss every time (and Stage D would return zero analogs).
+        candidate_map: Dict[str, Any] = {}  # candidate_activity_id → ActivityCase
+        compare_failures = 0
 
         if self.similarity_engine is not None and query_activity is not None:
             for candidate in candidates:
                 try:
                     match = self.similarity_engine.compare(query_activity, candidate)
                     matches.append(match)
-                    candidate_map[id(match)] = candidate
+                    key = getattr(match, "candidate_activity_id", None)
+                    if key is None:
+                        key = getattr(candidate, "activity_id", None) or id(candidate)
+                    candidate_map[key] = candidate
                 except Exception:  # noqa: BLE001
-                    LOGGER.debug("SimilarityEngine.compare() failed for a candidate")
+                    compare_failures += 1
+                    LOGGER.warning(
+                        "SimilarityEngine.compare() failed for a candidate",
+                        exc_info=True,
+                    )
+            if compare_failures:
+                LOGGER.warning(
+                    "Stage D: %d of %d SimilarityEngine.compare() calls failed",
+                    compare_failures, len(candidates),
+                )
+            # Record for the retrieval summary (surfaced in provenance so a
+            # silent scoring failure is visible rather than looking like
+            # 'no analogs').
+            self._last_compare_failures = compare_failures
         else:
             # No engine injected — assign uniform score 0.5 as placeholder.
             # candidates_below_threshold = 0 in this path: scores are synthetic,
             # not real threshold rejections.
+            self._last_compare_failures = 0
             LOGGER.warning("Stage D: similarity_engine not injected — using placeholder scores")
             return [
                 _activity_to_analog(c, 0.50, {}, relevance_weight=1.0)
@@ -638,7 +694,8 @@ class HistoricalAnalogRetriever:
             score = _get_score(match)
             if score < self.config.similarity_threshold:
                 continue
-            candidate = candidate_map.get(id(match))
+            key = getattr(match, "candidate_activity_id", None)
+            candidate = candidate_map.get(key)
             if candidate is None:
                 continue
             breakdown = _get_breakdown(match)
@@ -842,7 +899,9 @@ class HistoricalAnalogRetriever:
                     LOGGER.warning("Stage D: outlier_handler.separate() failed; keeping all analogs")
                     kept_nd = nd_pairs
             else:
-                kept_nd, outliers_removed = _tukey_filter(nd_pairs, nd_durations)
+                kept_nd, outliers_removed = _tukey_filter(
+                    nd_pairs, nd_durations, iqr_factor=self.config.outlier_iqr_factor
+                )
         else:
             kept_nd = nd_pairs
 
@@ -918,8 +977,8 @@ class HistoricalAnalogRetriever:
             return {
                 "distribution_type": "single_analog_prior",
                 "p50_hours": round(single_dur, 2),
-                "p80_hours": round(single_dur * 1.30, 2),
-                "p90_hours": round(single_dur * 1.50, 2),
+                "p80_hours": round(single_dur * self.config.prior_p80_inflation, 2),
+                "p90_hours": round(single_dur * self.config.prior_p90_inflation, 2),
                 "mean_hours": round(single_dur, 2),
                 "std_hours": None,
                 "confidence_tier": _TIER_LOW_CONFIDENCE,
@@ -1054,6 +1113,7 @@ class HistoricalAnalogRetriever:
             "best_similarity_score": best_score,
             "fallback_used": fallback_used,
             "candidates_below_threshold": candidates_below_threshold,
+            "compare_failures": getattr(self, "_last_compare_failures", 0),
         }
 
     # ── Distribution fitting helpers ──────────────────────────────────────────
@@ -1115,8 +1175,8 @@ class HistoricalAnalogRetriever:
             return {
                 "distribution_type": "point_prior",
                 "p50_hours": float(planned),
-                "p80_hours": round(float(planned) * 1.30, 2),
-                "p90_hours": round(float(planned) * 1.50, 2),
+                "p80_hours": round(float(planned) * self.config.prior_p80_inflation, 2),
+                "p90_hours": round(float(planned) * self.config.prior_p90_inflation, 2),
                 "mean_hours": float(planned),
                 "std_hours": None,
                 "confidence_tier": _TIER_LOW_CONFIDENCE,
@@ -1152,10 +1212,18 @@ def _get_score(match: Any) -> float:
 
 
 def _get_breakdown(match: Any) -> Dict[str, float]:
-    """Extract per-dimension scores from a SimilarityMatch."""
+    """Extract per-dimension scores from a SimilarityMatch.
+
+    SimilarityMatch stores dimensions as ``lexical_score`` / ``semantic_score``
+    / ``context_score`` / ``dependency_score``; reading the bare names (as the
+    previous code did) always returned ``{}``.  The output keeps the short
+    dimension names used by the historical_analogs similarity_breakdown.
+    """
     breakdown: Dict[str, float] = {}
     for dim in ("lexical", "semantic", "context", "dependency"):
-        val = getattr(match, dim, None)
+        val = getattr(match, f"{dim}_score", None)
+        if val is None:
+            val = getattr(match, dim, None)  # tolerate short-named sources
         if val is not None:
             try:
                 breakdown[dim] = round(float(val), 4)
@@ -1226,8 +1294,13 @@ def _stamp_topology(query_activity_case: Any, schedule_context: Any) -> None:
 def _tukey_filter(
     indexed: List[Tuple[int, JsonDict]],
     durations: List[float],
+    iqr_factor: float = 1.5,
 ) -> Tuple[List[Tuple[int, JsonDict]], int]:
     """Fallback Tukey IQR fence when OutlierHandler is not injected.
+
+    ``iqr_factor`` is the IQR multiplier for the upper fence (default 1.5);
+    callers pass ``config.outlier_iqr_factor`` so the fallback honours the same
+    setting as the primary OutlierHandler path.
 
     Uses the same linear-interpolation (Type-7) quartile method as
     ``OutlierHandler._iqr`` (``np.percentile``) so that the fence value is
@@ -1255,7 +1328,7 @@ def _tukey_filter(
     q1 = _interp(0.25)
     q3 = _interp(0.75)
     iqr = q3 - q1
-    upper = q3 + 1.5 * iqr
+    upper = q3 + iqr_factor * iqr
     kept = [(i, a) for (i, a), d in zip(indexed, durations) if d <= upper]
     return kept, len(indexed) - len(kept)
 
@@ -1296,16 +1369,36 @@ def _analog_matches_flags(analog: JsonDict, active_flags: frozenset) -> bool:
 
 
 def _distribution_to_dict(dist: Any, sample_size: int) -> JsonDict:
-    """Convert a DurationDistribution object to a Stage D schema dict."""
+    """Convert a DurationDistribution object to a Stage D schema dict.
+
+    When the distribution carries a disruption-driven mixture (extended samples
+    with mixture_weight > 0), the reported p80/p90 are the MIXTURE percentiles
+    (``parameters["mixture_p80"]`` / ``mixture_p90``) rather than the routine-only
+    tail.  Otherwise the artifact would report routine-only p80/p90 while mean/std
+    (and the Stage E Monte Carlo sampler) are computed from the full mixture — an
+    internal contradiction (review I5).  The routine-only tail is preserved under
+    ``parameters`` for reference.
+    """
     def _g(attr):
         v = getattr(dist, attr, None)
         return round(float(v), 2) if v is not None else None
 
-    return {
+    params = getattr(dist, "parameters", None) or {}
+    has_mixture = (
+        bool(getattr(dist, "extended_samples", None))
+        and float(getattr(dist, "mixture_weight", 0.0) or 0.0) > 0.0
+    )
+    mix_p80 = params.get("mixture_p80")
+    mix_p90 = params.get("mixture_p90")
+
+    p80 = round(float(mix_p80), 2) if (has_mixture and mix_p80 is not None) else _g("p80")
+    p90 = round(float(mix_p90), 2) if (has_mixture and mix_p90 is not None) else _g("p90")
+
+    result = {
         "distribution_type": getattr(dist, "distribution_type", "empirical"),
         "p50_hours": _g("p50"),
-        "p80_hours": _g("p80"),
-        "p90_hours": _g("p90"),
+        "p80_hours": p80,
+        "p90_hours": p90,
         "mean_hours": round(dist.mean(), 2),
         "std_hours": (
             round(dist.variance() ** 0.5, 2)
@@ -1315,6 +1408,11 @@ def _distribution_to_dict(dist: Any, sample_size: int) -> JsonDict:
         "confidence_tier": getattr(dist, "confidence_tier", None),
         "sample_size": sample_size,
     }
+    if has_mixture:
+        result["routine_p80_hours"] = _g("p80")
+        result["routine_p90_hours"] = _g("p90")
+        result["mixture_weight"] = round(float(dist.mixture_weight), 4)
+    return result
 
 
 def _estimate_to_dict(estimate: Any, sample_size: int) -> JsonDict:
