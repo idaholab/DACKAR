@@ -186,12 +186,15 @@ class HistoricalAnalogRetriever(Protocol):
         emergent_activity: JsonDict,
         intake_result: JsonDict,
         run_context: JsonDict,
+        schedule_context: Optional[Any] = None,
     ) -> JsonDict:
         """
         Args:
             emergent_activity: Validated EmergentActivity artifact.
             intake_result: Validated ActivityIntakeResult from Stage A.
             run_context: Run metadata.
+            schedule_context: Optional pre-computed schedule context (Gap 4
+                two-pass design); the orchestrator always passes this.
 
         Returns:
             Validated HistoricalAnalogs artifact including the fitted
@@ -226,6 +229,7 @@ class ScheduleImpactAssessor(Protocol):
         intake_result: JsonDict,
         historical_analogs: JsonDict,
         run_context: JsonDict,
+        schedule_context: Optional[Any] = None,
     ) -> JsonDict:
         """
         Args:
@@ -234,6 +238,8 @@ class ScheduleImpactAssessor(Protocol):
             historical_analogs: Validated HistoricalAnalogs from Stage D.
                                 Duration distribution is consumed here.
             run_context: Run metadata.
+            schedule_context: Optional pre-computed schedule context (Gap 4
+                two-pass design); the orchestrator always passes this.
 
         Returns:
             Validated ScheduleImpactAssessment artifact.
@@ -244,7 +250,7 @@ class ScheduleImpactAssessor(Protocol):
 # ── Stage F — Insertion Option Generator ─────────────────────────────────────
 
 @runtime_checkable
-class InsertionOptionGenerator(Protocol):
+class InsertionOptionGeneratorProtocol(Protocol):
     """Stage F.
 
     Generates a ranked set of options for handling the emergent activity:
@@ -289,7 +295,7 @@ class InsertionOptionGenerator(Protocol):
 # ── Stage G — Recommendation Synthesizer ─────────────────────────────────────
 
 @runtime_checkable
-class RecommendationSynthesizer(Protocol):
+class RecommendationSynthesizerProtocol(Protocol):
     """Stage G.
 
     Synthesizes all upstream artifacts into a single OutageActivityRecommendation.
@@ -423,109 +429,29 @@ class OutageOrchestratorConfig:
     """Optional human-readable label appended to the run_id for traceability."""
 
     unknown_abbreviation_rate_warning: float = 0.25
-    """Stage A exit criterion. If unknown_abbreviation_rate exceeds this value
-    the intake result is flagged and analyst_review is forced to True."""
+    """Orchestrator-level analyst-review gate. If a stage reports an
+    unknown_abbreviation_rate above this value, the orchestrator forces
+    analyst_review. (Stage G keeps its own copy on RecommendationConfig for its
+    internal flagging; this one drives the orchestrator's review hook.)"""
 
-    near_critical_float_threshold_hours: float = 8.0
-    """Stage E threshold. Activities with remaining float below this value after
-    insertion are labelled near_critical."""
-
-    monte_carlo_runs: int = 1000
-    """Number of Monte Carlo samples for Stage E schedule impact simulation."""
+    # NOTE: per-stage thresholds such as near_critical_float_threshold_hours
+    # (insertion_point_determiner) and monte_carlo_runs (ScheduleImpactConfig)
+    # are NOT configured here — setting them on the orchestrator had no effect
+    # because each stage reads its own config, yet the run manifest reported
+    # them as the pipeline config.  Configure them on the relevant stage.
 
     extra: JsonDict = field(default_factory=dict)
     """Reserved for future configuration without breaking the dataclass interface."""
 
 
-@dataclass
-class KGTimelineBuilderConfig:
-    """Configuration for the Stage B KG timeline query."""
-
-    timeline_window_days: int = 1825
-    """How far back (in days) to query the KG for component events. Default 5 years."""
-
-    max_events: int = 100
-    """Maximum number of events to include in the timeline."""
-
-    include_work_orders: bool = True
-    include_condition_reports: bool = True
-    include_preventive_maintenance: bool = True
-    include_corrective_maintenance: bool = True
-    include_prior_emergent_activities: bool = True
-    include_inspections: bool = True
-
-
-@dataclass
-class TemporalChainScorerConfig:
-    """Configuration for the Stage C Allen relation scorer."""
-
-    epsilon_hours: float = 0.5
-    """Tolerance for Allen relation boundary comparisons. Events within
-    epsilon_hours of a boundary are treated as simultaneous at that boundary."""
-
-    include_follows_relations: bool = True
-    """If True, FOLLOWS links are included in the chain with causal_strength
-    'temporal_contradiction'. If False, they are silently dropped."""
-
-    min_relation_score_threshold: float = 0.0
-    """Links with relation_score below this value are excluded. Default 0.0
-    (all links included) — tighten for high-volume component histories."""
-
-
-@dataclass
-class HistoricalAnalogRetrieverConfig:
-    """Configuration for the Stage D analog retrieval and duration fitting."""
-
-    top_k: int = 20
-    """Maximum number of analogs to retrieve before similarity filtering."""
-
-    similarity_threshold: float = 0.60
-    """Minimum overall similarity_score for an analog to be retained."""
-
-    min_analogs_for_data_supported: int = 5
-    """Minimum analog count with actual durations required to assign the
-    data_supported confidence tier."""
-
-    min_analogs_for_sme_informed: int = 1
-    """Minimum analog count for the sme_informed tier. Below this, the
-    distribution falls back to the population-level fallback."""
-
-    outlier_iqr_factor: float = 1.5
-    """IQR multiplier for outlier removal before duration fitting."""
-
-
-@dataclass
-class ScheduleImpactAssessorConfig:
-    """Configuration for the Stage E schedule impact computation."""
-
-    use_p80_for_float_analysis: bool = False
-    """If True, use the p80 duration estimate for float analysis (conservative).
-    Default False uses p50 (expected-value basis)."""
-
-    max_displaced_tasks_reported: int = 20
-    """Cap on the number of displaced tasks surfaced in the artifact."""
-
-    check_resource_conflicts: bool = True
-    """Whether to check for crew and vendor resource conflicts at the
-    insertion point."""
-
-
-@dataclass
-class InsertionOptionGeneratorConfig:
-    """Configuration for the Stage F option generator."""
-
-    max_options: int = 6
-    """Maximum number of options to generate and surface."""
-
-    include_infeasible_options: bool = True
-    """If True, infeasible options are included with feasible=False and an
-    infeasibility_reason. Outage managers benefit from seeing why an option
-    was ruled out."""
-
-    include_regulatory_blocked_options: bool = True
-    """If True, regulatory-blocked options (regulatory_cleared=False) are
-    included with the block reason. This makes the regulatory constraint
-    visible rather than silently hiding the option."""
+# NOTE: Per-stage configuration lives with each stage (RecommendationConfig,
+# ScheduleImpactConfig, HistoricalAnalogConfig, …) and is what the stages
+# actually read.  Earlier revisions duplicated those here
+# (KGTimelineBuilderConfig, TemporalChainScorerConfig,
+# HistoricalAnalogRetrieverConfig, ScheduleImpactAssessorConfig,
+# InsertionOptionGeneratorConfig); those copies were never consumed and their
+# defaults had already drifted from the real per-stage configs, so they were
+# removed to avoid implying the orchestrator configures the stages.
 
 
 # ── Concrete no-op / file-backed implementations ─────────────────────────────

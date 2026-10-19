@@ -27,11 +27,30 @@
       "description": "Identifier of the schedule version against which impact was computed. Must match OutageDataset.schedule_versions."
     },
 
+    "schedule_loader_unavailable": {
+      "type": "boolean",
+      "description": "True in the degraded-mode stub produced when the schedule could not be loaded; downstream stages run without CP metrics."
+    },
+
+    "crew_continuity": {
+      "type": "object",
+      "description": "Crew-continuity assessment at the insertion point."
+    },
+
+    "permit_lead_time": {
+      "type": "object",
+      "description": "Permit / clearance lead-time assessment for the insertion."
+    },
+
     "insertion_point": {
       "type": "object",
       "additionalProperties": false,
       "description": "Where in the schedule network the emergent activity would be inserted for this assessment.",
       "properties": {
+        "emergent_task_id": {
+          "type": ["string", "null"],
+          "description": "Synthetic id assigned to the emergent task in the modified network (e.g. EA::<activity_id>)."
+        },
         "after_task_id": {
           "type": ["string", "null"],
           "description": "Task after which the emergent activity would start."
@@ -42,7 +61,7 @@
         },
         "outage_phase": {
           "type": ["string", "null"],
-          "enum": ["cooldown", "defueling", "refueling", "maintenance", "startup", "power_ascension", "other", null]
+          "enum": ["cooldown", "defueling", "refueling", "maintenance", "startup", "power_ascension", "other", "unknown", null]
         },
         "proposed_start": {
           "type": ["string", "null"],
@@ -61,14 +80,17 @@
       "required": ["p50_hours", "p80_hours", "p90_hours", "confidence_tier"],
       "description": "Probabilistic duration estimate derived from historical analogs (Stage E feeds back to refine this) or the fallback population.",
       "properties": {
-        "p50_hours": { "type": "number", "minimum": 0 },
-        "p80_hours": { "type": "number", "minimum": 0 },
-        "p90_hours": { "type": "number", "minimum": 0 },
+        "p50_hours": { "type": ["number", "null"], "minimum": 0 },
+        "p80_hours": { "type": ["number", "null"], "minimum": 0 },
+        "p90_hours": { "type": ["number", "null"], "minimum": 0 },
         "mean_hours": { "type": ["number", "null"], "minimum": 0 },
         "std_hours": { "type": ["number", "null"], "minimum": 0 },
         "distribution_type": {
           "type": ["string", "null"],
-          "enum": ["lognormal", "normal", "empirical", "triangular", "fallback_population", null]
+          "enum": [
+            "lognormal", "normal", "empirical", "triangular", "fallback_population",
+            "single_analog_prior", "point_prior", "unknown", "fallback_constant", "fallback", null
+          ]
         },
         "confidence_tier": {
           "type": "string",
@@ -92,13 +114,21 @@
           "type": "number",
           "description": "Total float consumed by inserting this activity at the assessed insertion point using the p50 duration estimate."
         },
+        "available_float_before": {
+          "type": ["number", "null"],
+          "description": "Total float available on the affected path before insertion (real-stage spelling)."
+        },
         "available_float_before_hours": {
           "type": ["number", "null"],
-          "description": "Total float available on the affected path before insertion."
+          "description": "Total float available on the affected path before insertion (degraded-stub spelling)."
+        },
+        "remaining_float_after": {
+          "type": ["number", "null"],
+          "description": "Remaining float after insertion (real-stage spelling). Negative values indicate a new critical path."
         },
         "remaining_float_after_hours": {
           "type": ["number", "null"],
-          "description": "Remaining float after insertion. Negative values indicate a new critical path."
+          "description": "Remaining float after insertion (degraded-stub spelling)."
         },
         "is_critical_path_impact": {
           "type": "boolean",
@@ -106,8 +136,8 @@
         },
         "criticality_label": {
           "type": "string",
-          "enum": ["critical", "near_critical", "non_critical"],
-          "description": "critical: activity is on or will force the critical path. near_critical: less than 8 hours of float remaining after insertion. non_critical: sufficient float available."
+          "enum": ["critical", "near_critical", "non_critical", "unknown"],
+          "description": "critical: activity is on or will force the critical path. near_critical: less than 8 hours of float remaining after insertion. non_critical: sufficient float available. unknown: schedule unavailable (degraded stub)."
         }
       }
     },
@@ -145,6 +175,28 @@
         "p90_cp_hours": {
           "type": ["number", "null"],
           "description": "P90 critical path duration from Monte Carlo simulation."
+        },
+        "locked_baseline_cp_hours": {
+          "type": ["number", "null"],
+          "description": "Locked baseline critical-path duration, when a baseline schedule version is loaded."
+        },
+        "schedule_variance_hours": {
+          "type": ["number", "null"],
+          "description": "Variance of the current schedule against the locked baseline."
+        },
+        "total_overrun_hours": {
+          "type": ["number", "null"],
+          "description": "Total overrun against the locked baseline."
+        },
+        "locked_baseline_finish": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Locked baseline projected finish timestamp."
+        },
+        "projected_finish_after_insertion": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Projected finish timestamp after inserting the emergent activity."
         }
       }
     },
@@ -155,13 +207,23 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["task_id", "delay_hours", "has_regulatory_constraint"],
+        "required": ["task_id", "has_regulatory_constraint"],
         "properties": {
           "task_id": { "type": "string" },
           "task_name": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"] },
           "original_start": { "type": ["string", "null"], "format": "date-time" },
           "new_start": { "type": ["string", "null"], "format": "date-time" },
           "delay_hours": { "type": "number", "minimum": 0 },
+          "es_shift_hours": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Early-start shift (hours) applied to this task by the insertion."
+          },
+          "new_float_hours": {
+            "type": "number",
+            "description": "Task total float after the insertion."
+          },
           "has_regulatory_constraint": {
             "type": "boolean",
             "description": "True if the displaced task has a TS, NRC, or CAP constraint that limits how long it can be deferred."
@@ -177,17 +239,26 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["resource_id", "conflict_type"],
         "properties": {
           "resource_id": { "type": "string" },
           "resource_type": {
             "type": "string",
-            "enum": ["crew", "vendor", "craft", "specialized_equipment"]
+            "enum": ["crew", "vendor", "craft", "specialized_equipment", "equipment", "location"]
           },
           "conflict_type": {
             "type": "string",
             "enum": ["unavailable", "overloaded", "certification_required", "fatigue_limit", "other"]
           },
+          "skill_type": { "type": ["string", "null"] },
+          "required": { "type": "number" },
+          "available": { "type": "number" },
+          "shortfall": { "type": "number" },
+          "window_start": { "type": ["string", "null"], "format": "date-time" },
+          "window_end": { "type": ["string", "null"], "format": "date-time" },
+          "equipment_id": { "type": "string" },
+          "location_id": { "type": "string" },
+          "note": { "type": "string" },
+          "confined_space": { "type": "boolean" },
           "description": { "type": ["string", "null"] }
         }
       }

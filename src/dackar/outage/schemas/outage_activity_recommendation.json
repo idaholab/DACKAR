@@ -56,15 +56,30 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Machine-generated flags requiring analyst attention (e.g., 'regulatory_constraint_present', 'low_analog_count', 'temporal_contradiction_detected', 'critical_path_impact', 'high_unknown_abbreviation_rate')."
+        },
+        "decision_status": {
+          "type": "string",
+          "enum": ["PROCEED", "DEFER", "ESCALATE", "MONITOR", "INCONCLUSIVE"],
+          "description": "Decision status echoed into the executive summary."
+        },
+        "analog_support_count": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Number of supporting historical analogs."
+        },
+        "duration_p50_hours": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "P50 duration estimate carried into the summary."
         }
       }
     },
 
     "primary_recommendation": {
-      "type": "object",
+      "type": ["object", "null"],
       "additionalProperties": false,
       "required": ["option_id", "option_type", "rationale", "cp_impact_hours", "criticality_label"],
-      "description": "The top-ranked feasible, regulatory-cleared option from InsertionOptions.",
+      "description": "The top-ranked feasible, regulatory-cleared option from InsertionOptions. Null when the decision is INCONCLUSIVE (no feasible option).",
       "properties": {
         "option_id": {
           "type": "string",
@@ -89,7 +104,7 @@
         "cp_impact_hours": { "type": "number" },
         "criticality_label": {
           "type": "string",
-          "enum": ["critical", "near_critical", "non_critical"]
+          "enum": ["critical", "near_critical", "non_critical", "unknown"]
         }
       }
     },
@@ -116,7 +131,10 @@
           },
           "identifier": { "type": ["string", "null"] },
           "description": { "type": ["string", "null"] },
-          "defer_prohibited": { "type": "boolean" }
+          "defer_prohibited": { "type": "boolean" },
+          "driver_id": { "type": "string" },
+          "matched_text": { "type": ["string", "null"] },
+          "source": { "type": "string" }
         }
       }
     },
@@ -194,7 +212,7 @@
         "cp_impact_hours": { "type": "number" },
         "criticality_label": {
           "type": "string",
-          "enum": ["critical", "near_critical", "non_critical"]
+          "enum": ["critical", "near_critical", "non_critical", "unknown"]
         },
         "float_consumed_hours": { "type": "number", "minimum": 0 },
         "displaced_task_count": { "type": ["integer", "null"], "minimum": 0 },
@@ -239,7 +257,7 @@
     "validation_status": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema_valid", "minimum_evidence_met", "validation_errors", "fallback_used"],
+      "required": ["schema_valid", "minimum_evidence_met", "fallback_used"],
       "properties": {
         "schema_valid": { "type": "boolean" },
         "all_regulatory_flags_resolved": {

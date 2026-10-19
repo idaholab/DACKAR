@@ -36,12 +36,12 @@ from .protocols import (
     ArtifactStore,
     FileArtifactStore,
     HistoricalAnalogRetriever,
-    InsertionOptionGenerator,
+    InsertionOptionGeneratorProtocol,
     JsonDict,
     KGTimelineBuilder,
     NoOpSchemaValidator,
     OutageOrchestratorConfig,
-    RecommendationSynthesizer,
+    RecommendationSynthesizerProtocol,
     ScheduleImpactAssessor,
     SchemaValidator,
     TemporalChainScorer,
@@ -55,6 +55,42 @@ LOGGER = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _validation_outcome(validation: Any) -> tuple[bool, list]:
+    """Return (ok, issues) from a validator result of either shape.
+
+    The real :class:`OutageArtifactValidator` returns a ``ValidationReport``
+    dataclass (``.ok`` / ``.issues``); :class:`NoOpSchemaValidator` returns a
+    plain ``{"ok": ..., "issues": [...]}`` dict.  Reading ``ok`` only off the
+    dict shape (the previous behaviour) silently treated every real report as
+    passing, disabling validation entirely.
+    """
+    ok = getattr(validation, "ok", None)
+    if ok is None and isinstance(validation, dict):
+        ok = validation.get("ok", True)
+    if ok is None:
+        ok = True
+    issues = getattr(validation, "issues", None)
+    if issues is None and isinstance(validation, dict):
+        issues = validation.get("issues", [])
+    return bool(ok), list(issues or [])
+
+
+def _validation_to_dict(validation: Any) -> JsonDict:
+    """Normalise a validator result to a JSON-serialisable dict for persistence."""
+    if isinstance(validation, dict):
+        return validation
+    ok, issues = _validation_outcome(validation)
+    serialised = []
+    for i in issues:
+        if isinstance(i, dict):
+            serialised.append(i)
+        elif hasattr(i, "__dict__"):
+            serialised.append({k: v for k, v in vars(i).items()})
+        else:
+            serialised.append({"message": str(i)})
+    return {"ok": ok, "issues": serialised}
+
 
 def _stub_component_event_timeline(
     run_id: str,
@@ -120,15 +156,17 @@ def _stub_schedule_impact_artifact(
     ``_FLAG_CP_IMPACT`` (correct — no schedule information is available).
 
     The stub is identified by ``schedule_version_id == "STUB::no_schedule"`` and
-    the reason string in ``notes``.  The run manifest ``review_hooks`` surfaces
-    ``kg_unavailable`` so analysts know the recommendation was made without
-    schedule data.
+    the reason string in ``notes``.  ``schedule_loader_unavailable`` is ``True``
+    so the orchestrator's review hook surfaces it, and ``criticality_label`` is
+    ``"unknown"`` rather than ``"non_critical"`` so Stage G does not read an
+    absent schedule as a safely non-critical one.
     """
     return {
         "activity_id": activity_id,
         "run_id": run_id,
         "generated_at": utcnow_iso(),
         "schedule_version_id": "STUB::no_schedule",
+        "schedule_loader_unavailable": True,
         "duration_estimate": {
             "p50_hours": 0.0,
             "p80_hours": 0.0,
@@ -136,7 +174,7 @@ def _stub_schedule_impact_artifact(
             "confidence_tier": "low_confidence",
         },
         "float_analysis": {
-            "criticality_label": "non_critical",
+            "criticality_label": "unknown",
             "float_consumed_hours": 0.0,
             "available_float_before_hours": None,
             "remaining_float_after_hours": None,
@@ -207,8 +245,8 @@ class OutageActivityOrchestrator:
     temporal_chain_scorer: TemporalChainScorer
     analog_retriever: HistoricalAnalogRetriever
     schedule_impact_assessor: ScheduleImpactAssessor
-    option_generator: InsertionOptionGenerator
-    recommendation_synthesizer: RecommendationSynthesizer
+    option_generator: InsertionOptionGeneratorProtocol
+    recommendation_synthesizer: RecommendationSynthesizerProtocol
 
     # ── Optional: completion feedback loop ────────────────────────────────────
     feedback_writer: Optional[Any] = None
@@ -531,9 +569,13 @@ class OutageActivityOrchestrator:
             "config": {
                 "persist_intermediate_artifacts": self.config.persist_intermediate_artifacts,
                 "stop_on_validation_error": self.config.stop_on_validation_error,
+                # unknown_abbreviation_rate_warning is consumed by the
+                # orchestrator's own analyst-review gating (below), so it is
+                # reported here.  Per-stage thresholds (near-critical float,
+                # Monte Carlo runs, …) live on each stage's own config and are
+                # not reproduced here to avoid implying the orchestrator sets
+                # them.
                 "unknown_abbreviation_rate_warning": self.config.unknown_abbreviation_rate_warning,
-                "near_critical_float_threshold_hours": self.config.near_critical_float_threshold_hours,
-                "monte_carlo_runs": self.config.monte_carlo_runs,
                 **self.config.extra,
             },
             "input_refs": {
@@ -736,11 +778,14 @@ class OutageActivityOrchestrator:
         assessor reuses the pre-computed insertion point rather than
         re-loading and re-traversing the schedule network.
 
-        When ``schedule_loader`` or ``schedule_graph_builder`` are not injected
-        into the assessor, Stage E raises ``RuntimeError``.  This method catches
-        that error, logs a WARNING, appends to ``optional_failures``, and returns
-        a null stub artifact so Stages F and G can still produce a partial
-        recommendation based on analog data alone.  The ``schedule_loader_unavailable``
+        Any schedule failure degrades to a null stub rather than crashing the
+        run: a missing ``schedule_loader`` / ``schedule_graph_builder`` raises
+        ``RuntimeError``, but an empty or uncomputed schedule can also surface
+        as ``IndexError`` (no phase candidates) and loader/builder backends can
+        raise their own exceptions.  This method catches any of them, logs a
+        WARNING with the error type, appends to ``optional_failures``, and
+        returns the null stub so Stages F and G can still produce a partial
+        recommendation from analog data alone.  The ``schedule_loader_unavailable``
         flag in the stub is surfaced in ``review_hooks`` so the analyst knows the
         recommendation was made without schedule data.
         """
@@ -759,17 +804,19 @@ class OutageActivityOrchestrator:
                 run_context=run_context,
                 schedule_context=schedule_context,
             )
-        except RuntimeError as exc:
+        except Exception as exc:
             reason = str(exc)
             LOGGER.warning(
-                "Stage E (run=%s): schedule_loader unavailable — "
+                "Stage E (run=%s): schedule assessment failed (%s) — "
                 "producing null stub artifact. Downstream stages will run "
                 "without CP metrics. Reason: %s",
-                run_id, reason,
+                run_id, type(exc).__name__, reason,
+                exc_info=True,
             )
             optional_failures.append({
                 "stage": "stage_e_schedule",
                 "artifact": "schedule_impact_assessment",
+                "error_type": type(exc).__name__,
                 "error": reason,
                 "optional": True,
             })
@@ -1123,9 +1170,8 @@ class OutageActivityOrchestrator:
                     raise
                 validation = {"ok": False, "issues": [str(exc)]}
         else:
-            is_ok = validation.get("ok", True) if isinstance(validation, dict) else True
+            is_ok, issues = _validation_outcome(validation)
             if not is_ok:
-                issues = validation.get("issues", []) if isinstance(validation, dict) else []
                 LOGGER.error(
                     "Artifact '%s' validation issues (run=%s): %s",
                     artifact_name, run_id, issues,
@@ -1137,7 +1183,6 @@ class OutageActivityOrchestrator:
 
         if self.config.persist_intermediate_artifacts:
             self.artifact_store.save(run_id, artifact_name, payload)
-            if isinstance(validation, dict):
-                self.artifact_store.save(
-                    run_id, f"{artifact_name}__validation", validation
-                )
+            self.artifact_store.save(
+                run_id, f"{artifact_name}__validation", _validation_to_dict(validation)
+            )

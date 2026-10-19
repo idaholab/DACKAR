@@ -32,7 +32,11 @@
         "task_family": { "type": ["string", "null"] },
         "system_id": { "type": ["string", "null"] },
         "component_id": { "type": ["string", "null"] },
-        "discipline": { "type": ["string", "null"] }
+        "discipline": { "type": ["string", "null"] },
+        "plant_id": { "type": ["string", "null"] },
+        "outage_phase": { "type": ["string", "null"] },
+        "planned_duration_hours": { "type": ["number", "null"] },
+        "execution_mode_flags": { "type": "object" }
       }
     },
 
@@ -44,23 +48,37 @@
         "additionalProperties": false,
         "required": [
           "analog_id",
-          "activity_id",
-          "outage_id",
-          "similarity_score",
-          "data_quality_score"
+          "source_activity_id",
+          "similarity_score"
         ],
         "properties": {
           "analog_id": {
             "type": "string",
             "description": "Unique identifier for this analog entry within the result set."
           },
-          "activity_id": {
-            "type": "string",
+          "source_activity_id": {
+            "type": ["string", "null"],
             "description": "Identifier of the historical activity in the data store."
           },
-          "outage_id": { "type": "string" },
+          "activity_id": {
+            "type": "string",
+            "description": "Optional alias of source_activity_id (not currently emitted)."
+          },
+          "outage_id": { "type": ["string", "null"] },
           "plant_id": { "type": ["string", "null"] },
           "description": { "type": ["string", "null"] },
+          "component_family": { "type": ["string", "null"] },
+          "task_family": { "type": ["string", "null"] },
+          "discipline": { "type": ["string", "null"] },
+          "relevance_weight": { "type": ["number", "null"] },
+          "has_rp_hold": { "type": "boolean" },
+          "requires_scaffold": { "type": "boolean" },
+          "has_clearance": { "type": "boolean" },
+          "is_vendor_supported": { "type": "boolean" },
+          "structural_affinity_score": {
+            "type": ["number", "null"],
+            "description": "Schedule-context re-ranking affinity, present only when schedule_context re-ranking runs."
+          },
 
           "similarity_score": {
             "type": "number",
@@ -93,6 +111,16 @@
                 "type": ["number", "null"],
                 "minimum": 0, "maximum": 1,
                 "description": "Similarity of execution context (phase, discipline, execution mode flags)."
+              },
+              "context": {
+                "type": ["number", "null"],
+                "minimum": 0, "maximum": 1,
+                "description": "Context-dimension similarity as emitted by the retriever breakdown."
+              },
+              "dependency": {
+                "type": ["number", "null"],
+                "minimum": 0, "maximum": 1,
+                "description": "Schedule-dependency-dimension similarity as emitted by the retriever breakdown."
               }
             }
           },
@@ -151,12 +179,15 @@
       "properties": {
         "distribution_type": {
           "type": "string",
-          "enum": ["lognormal", "normal", "empirical", "triangular", "fallback_population"],
-          "description": "fallback_population: no analog data available; population-level statistics used."
+          "enum": [
+            "lognormal", "normal", "empirical", "triangular", "fallback_population",
+            "single_analog_prior", "point_prior", "unknown", "fallback_constant", "fallback"
+          ],
+          "description": "fallback_population: no analog data available; population-level statistics used. point_prior/single_analog_prior/fallback_constant/fallback/unknown: degraded degrees of analog support (p-values may be null when unknown)."
         },
-        "p50_hours": { "type": "number", "minimum": 0 },
-        "p80_hours": { "type": "number", "minimum": 0 },
-        "p90_hours": { "type": "number", "minimum": 0 },
+        "p50_hours": { "type": ["number", "null"], "minimum": 0 },
+        "p80_hours": { "type": ["number", "null"], "minimum": 0 },
+        "p90_hours": { "type": ["number", "null"], "minimum": 0 },
         "mean_hours": { "type": ["number", "null"], "minimum": 0 },
         "std_hours": { "type": ["number", "null"], "minimum": 0 },
         "confidence_tier": {
@@ -197,6 +228,15 @@
           "type": ["number", "null"],
           "minimum": 0,
           "maximum": 1
+        },
+        "best_similarity_score": {
+          "type": ["number", "null"],
+          "description": "Highest similarity_score among retrieved candidates (null when none)."
+        },
+        "candidates_below_threshold": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of candidates dropped for falling below the similarity threshold."
         }
       }
     },

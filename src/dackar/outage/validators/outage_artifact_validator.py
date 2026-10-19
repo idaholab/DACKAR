@@ -21,6 +21,16 @@ orchestrator calls:
 
 Reuses ValidationReport / ValidationIssue from RCA validation module to
 avoid duplication of the report dataclasses.
+
+Source of truth
+---------------
+The pipeline stage code is authoritative for artifact shape; the JSON Schemas
+in ``outage/schemas/`` are maintained to accept what the stages actually emit.
+When stage output and a schema disagree, the schema is corrected to match the
+code (not the reverse).  This is a deliberate, documented stance (review
+thread A2); a follow-up may generate the schemas from the stage dataclasses so
+the two cannot drift again.  Until then, the A→G round-trip test in the tests
+MR validates real stage output against these schemas to keep them locked.
 """
 from __future__ import annotations
 

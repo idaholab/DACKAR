@@ -29,7 +29,6 @@
         "required": [
           "option_id",
           "option_type",
-          "title",
           "feasible",
           "regulatory_cleared",
           "cp_impact_hours",
@@ -92,7 +91,22 @@
 
           "criticality_label": {
             "type": "string",
-            "enum": ["critical", "near_critical", "non_critical"]
+            "enum": ["critical", "near_critical", "non_critical", "unknown"]
+          },
+
+          "resource_conflicts": {
+            "type": "array",
+            "description": "Resource conflicts carried over from the schedule impact assessment for this option."
+          },
+
+          "cost_estimate": {
+            "type": ["object", "null"],
+            "description": "Cost breakdown for this option (labor, schedule-extension, crash premium, deferred labor, decision-latency, total); null before costing runs."
+          },
+
+          "decision_delay_hours": {
+            "type": "number",
+            "description": "Decision-latency delay (hours) attributed to an escalate option."
           },
 
           "resource_requirements": {
@@ -147,6 +161,11 @@
       "description": "option_id of the top-ranked feasible, regulatory-cleared option. Null if no option meets both criteria."
     },
 
+    "min_cost_option_id": {
+      "type": ["string", "null"],
+      "description": "option_id of the lowest total-cost option, when cost estimates are computed."
+    },
+
     "recommendation_confidence": {
       "type": ["string", "null"],
       "enum": ["data_supported", "sme_informed", "low_confidence", null],
@@ -156,10 +175,34 @@
     "ranking_summary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["options_generated", "options_feasible", "options_regulatory_cleared"],
+      "required": ["options_generated"],
       "properties": {
         "options_generated": { "type": "integer", "minimum": 0 },
         "options_feasible": { "type": "integer", "minimum": 0 },
+        "feasible_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of feasible options (emitted spelling)."
+        },
+        "regulatory_cleared_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of regulatory-cleared options (emitted spelling)."
+        },
+        "regulatory_blocked_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of regulatory-blocked options (emitted spelling)."
+        },
+        "infeasible_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of infeasible options."
+        },
+        "best_risk_score": {
+          "type": ["number", "null"],
+          "description": "Lowest (best) risk_score among options; null when no options."
+        },
         "options_regulatory_cleared": { "type": "integer", "minimum": 0 },
         "options_regulatory_blocked": {
           "type": "integer",
