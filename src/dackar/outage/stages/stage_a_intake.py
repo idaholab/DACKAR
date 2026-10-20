@@ -82,9 +82,26 @@ _REGULATORY_PHRASES_RE = re.compile(
 )
 
 
-def _match_regulatory_keyword(text: str):
-    """Return the first regulatory keyword match (acronym or phrase) or None."""
-    return _REGULATORY_ACRONYMS_RE.search(text) or _REGULATORY_PHRASES_RE.search(text)
+def _match_regulatory_keyword(raw_text: str, expanded_text: Optional[str] = None):
+    """Return the first regulatory keyword match, or None.
+
+    Acronyms (TS/LCO/NRC/ALARA/CAP/10 CFR) are matched CASE-SENSITIVELY on the
+    RAW text, so the common word "cap" is not mistaken for the CAP acronym and
+    uppercased acronyms are not lost to lower-casing.  Phrases are matched
+    case-insensitively on the EXPANDED text, so abbreviation expansion is
+    preserved (e.g. "ts" → "technical specification", "surv" → "surveillance").
+    When no expanded text is supplied, phrases fall back to the raw text.
+    """
+    phrase_text = expanded_text if expanded_text is not None else raw_text
+    return _REGULATORY_ACRONYMS_RE.search(raw_text) or _REGULATORY_PHRASES_RE.search(phrase_text)
+
+# NER group ids (from RCA/ner/data/group-schema.json) denoting a physical
+# component or asset/system — the mentions worth normalising against the
+# failure-mode KG via EntityNormalizer.
+_PHYSICAL_LABEL_GROUPS = frozenset({
+    "G1_PHYSICAL_COMPONENT",
+    "G2_PHYSICAL_ASSET_SYSTEM",
+})
 
 # Emergence type: scope_expansion — typically tied to an existing WO
 _SCOPE_KEYWORDS_RE = re.compile(
@@ -147,23 +164,28 @@ _COMMON_CAPS = frozenset([
 # Each tuple: (compiled_pattern, driver_type, defer_prohibited)
 # ---------------------------------------------------------------------------
 
-_REGULATORY_PATTERNS: List[Tuple[re.Pattern, str, bool]] = [
-    (re.compile(r"\bTS\s*[\d.]+\b", re.IGNORECASE),
-     "ts_surveillance", True),
+# Regulatory driver patterns, split the same way as the emergence-classifier
+# keyword matcher so both methods apply ONE consistent rule:
+#   * ACRONYM patterns are case-sensitive and matched on the RAW text (so the
+#     uppercase acronym is required and survives the cleaner's lower-casing;
+#     'cap' the word never matches the CAP acronym).
+#   * PHRASE patterns are case-insensitive and matched on the EXPANDED text, so
+#     abbreviation expansion ('ts' → 'technical specification', 'surv' →
+#     'surveillance') still reaches them.
+# Each tuple: (compiled_pattern, driver_type, defer_prohibited).
+_REGULATORY_ACRONYM_PATTERNS: List[Tuple[re.Pattern, str, bool]] = [
+    (re.compile(r"\bTS\s*[\d.]+\b"), "ts_surveillance", True),
+    (re.compile(r"\bLCO\s*[\d.]+\b"), "ts_surveillance", True),
+    (re.compile(r"\bNRC\b"), "nrc_commitment", True),
+    (re.compile(r"\b10\s*CFR\b"), "nrc_commitment", True),
+    (re.compile(r"\bALARA\b"), "alara_constraint", False),
+    (re.compile(r"\bCAP\b"), "cap_commitment", False),
+]
+_REGULATORY_PHRASE_PATTERNS: List[Tuple[re.Pattern, str, bool]] = [
     (re.compile(r"\btechnical\s+specification\b", re.IGNORECASE),
-     "ts_surveillance", True),
-    (re.compile(r"\bLCO\s*[\d.]+\b", re.IGNORECASE),
      "ts_surveillance", True),
     (re.compile(r"\blimiting\s+condition\s+for\s+operation\b", re.IGNORECASE),
      "ts_surveillance", True),
-    (re.compile(r"\bNRC\b"),
-     "nrc_commitment", True),
-    (re.compile(r"\b10\s*CFR\b", re.IGNORECASE),
-     "nrc_commitment", True),
-    (re.compile(r"\bALARA\b"),
-     "alara_constraint", False),
-    (re.compile(r"\bCAP\b"),
-     "cap_commitment", False),
     (re.compile(r"\bsurveillance\b", re.IGNORECASE),
      "ts_surveillance", True),
     (re.compile(r"\boperability\s+determination\b", re.IGNORECASE),
@@ -173,6 +195,11 @@ _REGULATORY_PATTERNS: List[Tuple[re.Pattern, str, bool]] = [
     (re.compile(r"\bmode\s+(change|entry|exit)\b", re.IGNORECASE),
      "other", True),
 ]
+# Back-compat alias: the full set (used where the acronym/phrase split is not
+# needed, and by any external importer).
+_REGULATORY_PATTERNS: List[Tuple[re.Pattern, str, bool]] = (
+    _REGULATORY_ACRONYM_PATTERNS + _REGULATORY_PHRASE_PATTERNS
+)
 
 # ---------------------------------------------------------------------------
 # Execution mode flag patterns
@@ -368,6 +395,7 @@ class ActivityIntakeProcessor:
             resolved_systems,
             resolved_wos,
             resolved_crs,
+            resolved_failure_modes,
         ) = self._resolve_references(entities, emergent_activity)
         discipline, task_family, component_family = self._classify_labels(
             expanded, entities
@@ -404,6 +432,7 @@ class ActivityIntakeProcessor:
             "resolved_system_ids": resolved_systems,
             "resolved_work_order_ids": resolved_wos,
             "resolved_cr_ids": resolved_crs,
+            "resolved_failure_mode_ids": resolved_failure_modes,
             "discipline": discipline,
             "task_family": task_family,
             "component_family": component_family,
@@ -635,6 +664,7 @@ class ActivityIntakeProcessor:
                 end=match.end(),
                 source="regex",
                 confidence=0.95,
+                offset_basis="raw_description",
             ))
 
         for match in _WO_REF_RE.finditer(regex_text):
@@ -645,6 +675,7 @@ class ActivityIntakeProcessor:
                 end=match.end(),
                 source="regex",
                 confidence=0.95,
+                offset_basis="raw_description",
             ))
 
         for match in _CR_REF_RE.finditer(regex_text):
@@ -655,6 +686,7 @@ class ActivityIntakeProcessor:
                 end=match.end(),
                 source="regex",
                 confidence=0.95,
+                offset_basis="raw_description",
             ))
 
         # ── Layer 2: HybridNERPipeline (injected) ────────────────────────────
@@ -674,8 +706,9 @@ class ActivityIntakeProcessor:
                         start=span.start,
                         end=span.end,
                         source="hybrid_ner",
-                        confidence=float((span.provenance or {}).get("score", 0.7)),
+                        confidence=_span_confidence(span),
                         label_group=group,
+                        offset_basis="normalized_description",
                     ))
             except Exception:  # noqa: BLE001
                 LOGGER.warning(
@@ -702,6 +735,7 @@ class ActivityIntakeProcessor:
                         end=(pos + len(surface)) if pos >= 0 else 0,
                         source="spacy",
                         confidence=0.75,
+                        offset_basis="normalized_description",
                     ))
             except Exception:  # noqa: BLE001
                 LOGGER.warning(
@@ -716,22 +750,25 @@ class ActivityIntakeProcessor:
         self,
         entities: List[JsonDict],
         emergent_activity: JsonDict,
-    ) -> Tuple[List[str], List[str], List[str], List[str]]:
+    ) -> Tuple[List[str], List[str], List[str], List[str], List[str]]:
         """Resolve entity mentions to canonical IDs.
 
-        Returns (component_ids, system_ids, work_order_ids, cr_ids).
+        Returns (component_ids, system_ids, work_order_ids, cr_ids,
+        failure_mode_ids).
 
         Resolution strategy:
             - Pass-through known IDs from emergent_activity (highest confidence).
             - Collect WO/CR regex matches from extracted entities.
-            - EntityNormalizer (if injected) for additional component mentions
-              found by the NER pipeline (token-overlap → LLM fallback).
+            - EntityNormalizer (if injected) for physical component/asset NER
+              mentions (token-overlap → LLM fallback).  It indexes failure
+              modes, so it yields the owning component_id plus a failure-mode id.
         """
         # ── Pass-through known IDs from the intake record ─────────────────────
         comp_ids: List[str] = []
         sys_ids: List[str] = []
         wo_ids: List[str] = []
         cr_ids: List[str] = []
+        fm_ids: List[str] = []
 
         if emergent_activity.get("known_component_id"):
             comp_ids.append(emergent_activity["known_component_id"])
@@ -753,31 +790,39 @@ class ActivityIntakeProcessor:
                 if cr_val not in cr_ids:
                     cr_ids.append(cr_val)
 
-        # ── EntityNormalizer for component / system mentions ──────────────────
+        # ── EntityNormalizer for component / failure-mode mentions ────────────
+        # NER entity_type is a schema label id (e.g. "ast_mech", "syst"), never
+        # the literal "component"/"system"/"equipment"; filter on the entity's
+        # group id instead.  Physical component/asset-system groups are the ones
+        # worth normalising against the failure-mode KG.
         if self.entity_normalizer is not None:
             component_mentions = [
                 ent for ent in entities
-                if ent["entity_type"] in {"component", "system", "equipment"}
+                if ent.get("label_group") in _PHYSICAL_LABEL_GROUPS
             ]
             for mention in component_mentions:
                 try:
                     # EntityNormalizer.normalize(surface_form, entity_type="")
-                    # returns a NormResult dataclass; the token-overlap threshold
-                    # is a constructor arg, not a per-call argument.
+                    # returns a NormResult; the token-overlap threshold is a
+                    # constructor arg, not a per-call argument.  The normalizer
+                    # indexes FAILURE MODES, so canonical_id is an fm_id and
+                    # component_id is the owning component ("" when the failure
+                    # mode has none) — canonical_id is never a system id.
                     normalized = self.entity_normalizer.normalize(
                         mention["text"],
                         entity_type=mention.get("entity_type", ""),
                     )
-                    canonical_id = getattr(normalized, "canonical_id", None)
                     component_id = getattr(normalized, "component_id", None)
+                    fm_id = getattr(normalized, "canonical_id", None)
                     method = getattr(normalized, "method", "none")
-                    if canonical_id and method != "none":
-                        # component_id present → it is a component; else treat the
-                        # canonical_id as a system identifier.
+                    if method != "none":
                         if component_id and component_id not in comp_ids:
                             comp_ids.append(component_id)
-                        elif not component_id and canonical_id not in sys_ids:
-                            sys_ids.append(canonical_id)
+                        # Keep the failure-mode id in its own list, not in
+                        # resolved_system_ids (which Stage D uses for retrieval);
+                        # an fm_id is not a system.
+                        if fm_id and fm_id not in fm_ids:
+                            fm_ids.append(fm_id)
                 except Exception:  # noqa: BLE001
                     LOGGER.warning(
                         "EntityNormalizer failed for mention '%s'",
@@ -785,7 +830,7 @@ class ActivityIntakeProcessor:
                         exc_info=True,
                     )
 
-        return comp_ids, sys_ids, wo_ids, cr_ids
+        return comp_ids, sys_ids, wo_ids, cr_ids, fm_ids
 
     def _classify_labels(
         self,
@@ -856,6 +901,14 @@ class ActivityIntakeProcessor:
             3. schedule_optimization — schedule-change language, no failure terms.
             4. truly_unplanned    — default; degradation / failure language, or
                                     no other rule matched.
+
+        Args:
+            text: the expanded (abbreviation-resolved) description; regulatory
+                PHRASE patterns and the scope/schedule/degradation keyword
+                matches run against this.
+            raw_text: the original raw description; regulatory ACRONYM patterns
+                match case-sensitively against this. Falls back to ``text`` when
+                not provided.
         """
         # Use the lowercase text for keyword matching
         text_lower = text.lower()
@@ -866,10 +919,13 @@ class ActivityIntakeProcessor:
             return explicit, 1.0, "explicitly provided in intake record"
 
         # ── Rule 1: regulatory_driven ─────────────────────────────────────────
-        # Match on raw text so the case-sensitive acronym 'CAP' (not the common
-        # word 'cap' in e.g. "end cap") is required, consistent with the driver
-        # patterns in _detect_regulatory_constraints.
-        reg_match = _match_regulatory_keyword(raw_text if raw_text is not None else text)
+        # Acronyms match case-sensitively on raw text ('CAP' the acronym, not the
+        # word 'cap'); phrases match on the expanded text so abbreviation
+        # expansion ('ts' → 'technical specification') still reaches them.  Same
+        # split and case rules as _detect_regulatory_constraints.
+        reg_match = _match_regulatory_keyword(
+            raw_text if raw_text is not None else text, expanded_text=text
+        )
         if reg_match:
             return (
                 "regulatory_driven",
@@ -1043,14 +1099,23 @@ class ActivityIntakeProcessor:
 
         Returns (has_regulatory_constraint, regulatory_drivers).
 
+        Args:
+            text: the expanded (abbreviation-resolved) description; phrase
+                patterns match against this.
+            raw_text: the original raw description; acronym patterns match
+                case-sensitively against this. Falls back to ``text`` when not
+                provided (older call sites).
+
         Sources checked in order:
             1. Structured regulatory fields in emergent_activity
                (technical_specification_reference, nrc_commitment_number, lco_number).
-            2. Pattern matching against expanded description using
-               _REGULATORY_PATTERNS (TS, LCO, NRC, ALARA, CAP, surveillance,
-               operability determination, hold point).
-            3. Supplementary patterns from config.regulatory_keywords_path, unioned
-               with the built-in set at detection time.
+            2. Acronym patterns (TS/LCO/NRC/10 CFR/ALARA/CAP) matched
+               case-sensitively on the RAW text, and phrase patterns
+               (technical specification, surveillance, operability determination,
+               hold point, …) matched case-insensitively on the EXPANDED text —
+               the same split and case rules as the emergence classifier.
+            3. Supplementary patterns from config.regulatory_keywords_path
+               (treated as phrases), unioned with the built-in set.
 
         Every driver includes: driver_id, driver_type, matched_text,
         defer_prohibited, source.
@@ -1098,20 +1163,26 @@ class ActivityIntakeProcessor:
             )
 
         # ── Text pattern matching (built-in + supplementary) ──────────────────
-        # Match on raw text so case-sensitive acronym patterns (\bCAP\b, \bNRC\b,
-        # \bALARA\b) see the uppercase acronym; the cleaner lowercases text, which
-        # would otherwise prevent these from ever matching.
-        match_text = raw_text if raw_text is not None else text
-        all_patterns = _REGULATORY_PATTERNS + self._supplementary_regulatory_patterns
-        for pattern, driver_type, defer_prohibited in all_patterns:
-            match = pattern.search(match_text)
+        # Same split and case rules as the emergence classifier
+        # (_match_regulatory_keyword): acronyms match case-sensitively on the RAW
+        # text; phrases match case-insensitively on the EXPANDED text so
+        # abbreviation expansion ('ts' → 'technical specification') is preserved.
+        # Supplementary (plant-config) patterns are treated as phrases.
+        raw = raw_text if raw_text is not None else text
+        expanded = text
+        acronym_patterns = _REGULATORY_ACRONYM_PATTERNS
+        phrase_patterns = _REGULATORY_PHRASE_PATTERNS + self._supplementary_regulatory_patterns
+
+        for pattern, driver_type, defer_prohibited in acronym_patterns:
+            match = pattern.search(raw)
             if match:
-                _add_driver(
-                    driver_type,
-                    match.group(),
-                    defer_prohibited=defer_prohibited,
-                    source="text_pattern",
-                )
+                _add_driver(driver_type, match.group(),
+                            defer_prohibited=defer_prohibited, source="text_pattern")
+        for pattern, driver_type, defer_prohibited in phrase_patterns:
+            match = pattern.search(expanded)
+            if match:
+                _add_driver(driver_type, match.group(),
+                            defer_prohibited=defer_prohibited, source="text_pattern")
 
         has_regulatory = bool(drivers)
         return has_regulatory, drivers
@@ -1178,6 +1249,30 @@ class ActivityIntakeProcessor:
 # Module-level helpers
 # ---------------------------------------------------------------------------
 
+_DEFAULT_NER_CONFIDENCE = 0.7
+
+
+def _span_confidence(span: Any) -> float:
+    """Best available confidence for a HybridNER ResolvedSpan.
+
+    ``ResolvedSpan.provenance`` has no top-level ``score`` key — it is
+    ``{"sources": [SourceHit.__dict__, ...], "selected_by": ...}`` (or
+    ``{"split_from": ...}``).  Take the max ``score`` across the source hits
+    when present; otherwise fall back to the default prior.
+    """
+    prov = getattr(span, "provenance", None) or {}
+    scores = [
+        s["score"] for s in prov.get("sources", [])
+        if isinstance(s, dict) and s.get("score") is not None
+    ]
+    if scores:
+        try:
+            return float(max(scores))
+        except (TypeError, ValueError):
+            pass
+    return _DEFAULT_NER_CONFIDENCE
+
+
 def _make_entity(
     *,
     text: str,
@@ -1187,8 +1282,15 @@ def _make_entity(
     source: str,
     confidence: float,
     label_group: Optional[str] = None,
+    offset_basis: Optional[str] = None,
 ) -> JsonDict:
-    """Construct a standardised entity dict for the extracted_entities array."""
+    """Construct a standardised entity dict for the extracted_entities array.
+
+    ``offset_basis`` records which text the start/end offsets index
+    ("raw_description" for regex entities, "normalized_description" for NER/
+    spaCy entities), since regex runs on the raw text and NER on the expanded
+    text.
+    """
     entity = {
         "entity_id": f"ENT::{entity_type}::{uuid.uuid4().hex[:6]}",
         "text": text,
@@ -1200,6 +1302,8 @@ def _make_entity(
     }
     if label_group is not None:
         entity["label_group"] = label_group
+    if offset_basis is not None:
+        entity["offset_basis"] = offset_basis
     return entity
 
 
