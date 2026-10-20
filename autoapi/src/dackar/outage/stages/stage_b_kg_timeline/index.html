@@ -558,7 +558,7 @@ WHERE cr.initiated_date &gt;= $window_start</p>
 <dt>Cypher pattern:</dt><dd><p>MATCH (wo:work_order)-[:PERFORMED_ON]-&gt;(c:mbse_entity {id: $component_id})
 WHERE wo.initiated_date &gt;= $window_start</p>
 <blockquote>
-<div><p>AND NOT wo.work_type IN [‘PM’, ‘CM’]</p>
+<div><p>AND NOT coalesce(wo.work_type, ‘’) IN [‘PM’, ‘CM’]</p>
 </div></blockquote>
 <p>RETURN wo</p>
 </dd>
@@ -680,9 +680,12 @@ distinct since we have no deduplication key for them).</p>
 <dt class="sig sig-object py" id="src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._sort_and_cap">
 <span class="sig-name descname"><span class="pre">_sort_and_cap</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">events</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_b_kg_timeline.html#KGTimelineBuilder._sort_and_cap"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._sort_and_cap" title="Link to this definition">¶</a></dt>
 <dd><p>Sort events ascending by timestamp and cap at config.max_events.</p>
-<p>Events with a null timestamp are placed at the end of the sorted list
-(they cannot be used in Allen relation scoring but are retained for
-recurrence counting).</p>
+<p>Dated and undated events are capped separately so that undated events
+(which sort to the end and cannot be used in Allen relation scoring) do
+NOT crowd out dated events when the cap is applied.  The cap keeps the
+most recent dated events first, then backfills with undated events only
+if room remains.  Within the returned list, dated events come first in
+ascending timestamp order, followed by any retained undated events.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>events</strong> (<em>List</em><em>[</em><a class="reference internal" href="#src.dackar.outage.stages.stage_b_kg_timeline.JsonDict" title="src.dackar.outage.stages.stage_b_kg_timeline.JsonDict"><em>JsonDict</em></a><em>]</em>)</p>
@@ -698,11 +701,14 @@ recurrence counting).</p>
 <span class="sig-name descname"><span class="pre">_compute_recurrence_indicators</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">events</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">detection_ts</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_b_kg_timeline.html#KGTimelineBuilder._compute_recurrence_indicators"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._compute_recurrence_indicators" title="Link to this definition">¶</a></dt>
 <dd><p>Compute repeat failure count, mean inter-event days, trend, and PM status.</p>
 <dl class="simple">
-<dt>trend logic:</dt><dd><p>Split the timeline window into two halves by event count.
-If second-half count &gt; first-half count × 1.5 → ‘increasing’
-If first-half count &gt; second-half count × 1.5 → ‘decreasing’
+<dt>trend logic (event frequency, not event count):</dt><dd><p>Compare the mean inter-event gap in the first half of the dated
+events against the second half.  A smaller second-half gap means
+events are getting MORE frequent.
+If second-half mean gap &lt; first-half mean gap / 1.5 → ‘increasing’
+If second-half mean gap &gt; first-half mean gap × 1.5 → ‘decreasing’
 Otherwise → ‘stable’
-If fewer than 3 events → ‘insufficient_data’</p>
+If fewer than 4 dated events (so each half has ≥1 gap) →
+‘insufficient_data’.</p>
 </dd>
 <dt>PM compliance:</dt><dd><p>Locate the most recent preventive_maintenance event in the timeline.
 Compare its timestamp against detection_ts using

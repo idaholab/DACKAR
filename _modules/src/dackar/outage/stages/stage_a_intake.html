@@ -160,16 +160,54 @@
 <span class="c1"># Module-level keyword sets for rule-based classifiers</span>
 <span class="c1"># ---------------------------------------------------------------------------</span>
 
-<span class="c1"># Emergence type: regulatory_driven</span>
-<div class="viewcode-block" id="_REGULATORY_KEYWORDS_RE">
-<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_a_intake/index.html#src.dackar.outage.stages.stage_a_intake._REGULATORY_KEYWORDS_RE">[docs]</a>
-<span class="n">_REGULATORY_KEYWORDS_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
-    <span class="sa">r</span><span class="s2">"\b(TS\s*[\d.]+|technical\s+specification|LCO\s*[\d.]+|limiting\s+condition"</span>
-    <span class="sa">r</span><span class="s2">"|NRC|ALARA|CAP\b|corrective\s+action\s+program|surveillance|10\s*CFR"</span>
+<span class="c1"># Emergence type: regulatory_driven.</span>
+<span class="c1"># Acronyms are matched CASE-SENSITIVELY so the common word "cap" (e.g. "end</span>
+<span class="c1"># cap") is not mistaken for the CAP acronym; phrases are case-insensitive.</span>
+<span class="c1"># Applied to raw text (see _classify_emergence_type), consistent with the</span>
+<span class="c1"># case-sensitive acronym patterns in _REGULATORY_PATTERNS.</span>
+<div class="viewcode-block" id="_REGULATORY_ACRONYMS_RE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_a_intake/index.html#src.dackar.outage.stages.stage_a_intake._REGULATORY_ACRONYMS_RE">[docs]</a>
+<span class="n">_REGULATORY_ACRONYMS_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+    <span class="sa">r</span><span class="s2">"\b(TS\s*[\d.]+|LCO\s*[\d.]+|NRC|ALARA|CAP|10\s*CFR)\b"</span>
+<span class="p">)</span></div>
+
+<div class="viewcode-block" id="_REGULATORY_PHRASES_RE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_a_intake/index.html#src.dackar.outage.stages.stage_a_intake._REGULATORY_PHRASES_RE">[docs]</a>
+<span class="n">_REGULATORY_PHRASES_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+    <span class="sa">r</span><span class="s2">"\b(technical\s+specification|limiting\s+condition"</span>
+    <span class="sa">r</span><span class="s2">"|corrective\s+action\s+program|surveillance"</span>
     <span class="sa">r</span><span class="s2">"|operability\s+determination|hold\s+point|quality\s+hold"</span>
     <span class="sa">r</span><span class="s2">"|mode\s+change|entry\s+condition)\b"</span><span class="p">,</span>
     <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">,</span>
 <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_match_regulatory_keyword">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_a_intake/index.html#src.dackar.outage.stages.stage_a_intake._match_regulatory_keyword">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_match_regulatory_keyword</span><span class="p">(</span><span class="n">raw_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">expanded_text</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Return the first regulatory keyword match, or None.</span>
+
+<span class="sd">    Acronyms (TS/LCO/NRC/ALARA/CAP/10 CFR) are matched CASE-SENSITIVELY on the</span>
+<span class="sd">    RAW text, so the common word "cap" is not mistaken for the CAP acronym and</span>
+<span class="sd">    uppercased acronyms are not lost to lower-casing.  Phrases are matched</span>
+<span class="sd">    case-insensitively on the EXPANDED text, so abbreviation expansion is</span>
+<span class="sd">    preserved (e.g. "ts" → "technical specification", "surv" → "surveillance").</span>
+<span class="sd">    When no expanded text is supplied, phrases fall back to the raw text.</span>
+<span class="sd">    """</span>
+    <span class="n">phrase_text</span> <span class="o">=</span> <span class="n">expanded_text</span> <span class="k">if</span> <span class="n">expanded_text</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">raw_text</span>
+    <span class="k">return</span> <span class="n">_REGULATORY_ACRONYMS_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">raw_text</span><span class="p">)</span> <span class="ow">or</span> <span class="n">_REGULATORY_PHRASES_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">phrase_text</span><span class="p">)</span></div>
+
+
+<span class="c1"># NER group ids (from RCA/ner/data/group-schema.json) denoting a physical</span>
+<span class="c1"># component or asset/system — the mentions worth normalising against the</span>
+<span class="c1"># failure-mode KG via EntityNormalizer.</span>
+<div class="viewcode-block" id="_PHYSICAL_LABEL_GROUPS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_a_intake/index.html#src.dackar.outage.stages.stage_a_intake._PHYSICAL_LABEL_GROUPS">[docs]</a>
+<span class="n">_PHYSICAL_LABEL_GROUPS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span>
+    <span class="s2">"G1_PHYSICAL_COMPONENT"</span><span class="p">,</span>
+    <span class="s2">"G2_PHYSICAL_ASSET_SYSTEM"</span><span class="p">,</span>
+<span class="p">})</span></div>
 
 
 <span class="c1"># Emergence type: scope_expansion — typically tied to an existing WO</span>
@@ -257,25 +295,33 @@
 <span class="c1"># Each tuple: (compiled_pattern, driver_type, defer_prohibited)</span>
 <span class="c1"># ---------------------------------------------------------------------------</span>
 
-<div class="viewcode-block" id="_REGULATORY_PATTERNS">
-<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_a_intake/index.html#src.dackar.outage.stages.stage_a_intake._REGULATORY_PATTERNS">[docs]</a>
-<span class="n">_REGULATORY_PATTERNS</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">re</span><span class="o">.</span><span class="n">Pattern</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bTS\s*[\d.]+\b"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">),</span>
-     <span class="s2">"ts_surveillance"</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
+<span class="c1"># Regulatory driver patterns, split the same way as the emergence-classifier</span>
+<span class="c1"># keyword matcher so both methods apply ONE consistent rule:</span>
+<span class="c1">#   * ACRONYM patterns are case-sensitive and matched on the RAW text (so the</span>
+<span class="c1">#     uppercase acronym is required and survives the cleaner's lower-casing;</span>
+<span class="c1">#     'cap' the word never matches the CAP acronym).</span>
+<span class="c1">#   * PHRASE patterns are case-insensitive and matched on the EXPANDED text, so</span>
+<span class="c1">#     abbreviation expansion ('ts' → 'technical specification', 'surv' →</span>
+<span class="c1">#     'surveillance') still reaches them.</span>
+<span class="c1"># Each tuple: (compiled_pattern, driver_type, defer_prohibited).</span>
+<div class="viewcode-block" id="_REGULATORY_ACRONYM_PATTERNS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_a_intake/index.html#src.dackar.outage.stages.stage_a_intake._REGULATORY_ACRONYM_PATTERNS">[docs]</a>
+<span class="n">_REGULATORY_ACRONYM_PATTERNS</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">re</span><span class="o">.</span><span class="n">Pattern</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bTS\s*[\d.]+\b"</span><span class="p">),</span> <span class="s2">"ts_surveillance"</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bLCO\s*[\d.]+\b"</span><span class="p">),</span> <span class="s2">"ts_surveillance"</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bNRC\b"</span><span class="p">),</span> <span class="s2">"nrc_commitment"</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b10\s*CFR\b"</span><span class="p">),</span> <span class="s2">"nrc_commitment"</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bALARA\b"</span><span class="p">),</span> <span class="s2">"alara_constraint"</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bCAP\b"</span><span class="p">),</span> <span class="s2">"cap_commitment"</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+<span class="p">]</span></div>
+
+<div class="viewcode-block" id="_REGULATORY_PHRASE_PATTERNS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_a_intake/index.html#src.dackar.outage.stages.stage_a_intake._REGULATORY_PHRASE_PATTERNS">[docs]</a>
+<span class="n">_REGULATORY_PHRASE_PATTERNS</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">re</span><span class="o">.</span><span class="n">Pattern</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>
     <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\btechnical\s+specification\b"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">),</span>
-     <span class="s2">"ts_surveillance"</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
-    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bLCO\s*[\d.]+\b"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">),</span>
      <span class="s2">"ts_surveillance"</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
     <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\blimiting\s+condition\s+for\s+operation\b"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">),</span>
      <span class="s2">"ts_surveillance"</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
-    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bNRC\b"</span><span class="p">),</span>
-     <span class="s2">"nrc_commitment"</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
-    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b10\s*CFR\b"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">),</span>
-     <span class="s2">"nrc_commitment"</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
-    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bALARA\b"</span><span class="p">),</span>
-     <span class="s2">"alara_constraint"</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
-    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bCAP\b"</span><span class="p">),</span>
-     <span class="s2">"cap_commitment"</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
     <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bsurveillance\b"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">),</span>
      <span class="s2">"ts_surveillance"</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
     <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\boperability\s+determination\b"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">),</span>
@@ -285,6 +331,14 @@
     <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bmode\s+(change|entry|exit)\b"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">),</span>
      <span class="s2">"other"</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
 <span class="p">]</span></div>
+
+<span class="c1"># Back-compat alias: the full set (used where the acronym/phrase split is not</span>
+<span class="c1"># needed, and by any external importer).</span>
+<div class="viewcode-block" id="_REGULATORY_PATTERNS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_a_intake/index.html#src.dackar.outage.stages.stage_a_intake._REGULATORY_PATTERNS">[docs]</a>
+<span class="n">_REGULATORY_PATTERNS</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">re</span><span class="o">.</span><span class="n">Pattern</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]]</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="n">_REGULATORY_ACRONYM_PATTERNS</span> <span class="o">+</span> <span class="n">_REGULATORY_PHRASE_PATTERNS</span>
+<span class="p">)</span></div>
 
 
 <span class="c1"># ---------------------------------------------------------------------------</span>
@@ -545,21 +599,22 @@
 
         <span class="n">normalized</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_clean_description</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
         <span class="n">expanded</span><span class="p">,</span> <span class="n">abbr_rate</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_expand_abbreviations</span><span class="p">(</span><span class="n">normalized</span><span class="p">)</span>
-        <span class="n">entities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_ner</span><span class="p">(</span><span class="n">expanded</span><span class="p">,</span> <span class="n">emergent_activity</span><span class="p">)</span>
+        <span class="n">entities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_ner</span><span class="p">(</span><span class="n">expanded</span><span class="p">,</span> <span class="n">emergent_activity</span><span class="p">,</span> <span class="n">raw_text</span><span class="o">=</span><span class="n">raw</span><span class="p">)</span>
         <span class="p">(</span>
             <span class="n">resolved_components</span><span class="p">,</span>
             <span class="n">resolved_systems</span><span class="p">,</span>
             <span class="n">resolved_wos</span><span class="p">,</span>
             <span class="n">resolved_crs</span><span class="p">,</span>
+            <span class="n">resolved_failure_modes</span><span class="p">,</span>
         <span class="p">)</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_references</span><span class="p">(</span><span class="n">entities</span><span class="p">,</span> <span class="n">emergent_activity</span><span class="p">)</span>
         <span class="n">discipline</span><span class="p">,</span> <span class="n">task_family</span><span class="p">,</span> <span class="n">component_family</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_classify_labels</span><span class="p">(</span>
             <span class="n">expanded</span><span class="p">,</span> <span class="n">entities</span>
         <span class="p">)</span>
         <span class="n">emergence_type</span><span class="p">,</span> <span class="n">emergence_confidence</span><span class="p">,</span> <span class="n">emergence_rationale</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_classify_emergence_type</span><span class="p">(</span><span class="n">emergent_activity</span><span class="p">,</span> <span class="n">entities</span><span class="p">,</span> <span class="n">expanded</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_classify_emergence_type</span><span class="p">(</span><span class="n">emergent_activity</span><span class="p">,</span> <span class="n">entities</span><span class="p">,</span> <span class="n">expanded</span><span class="p">,</span> <span class="n">raw_text</span><span class="o">=</span><span class="n">raw</span><span class="p">)</span>
         <span class="p">)</span>
         <span class="n">has_regulatory</span><span class="p">,</span> <span class="n">regulatory_drivers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_detect_regulatory_constraints</span><span class="p">(</span>
-            <span class="n">emergent_activity</span><span class="p">,</span> <span class="n">entities</span><span class="p">,</span> <span class="n">expanded</span>
+            <span class="n">emergent_activity</span><span class="p">,</span> <span class="n">entities</span><span class="p">,</span> <span class="n">expanded</span><span class="p">,</span> <span class="n">raw_text</span><span class="o">=</span><span class="n">raw</span>
         <span class="p">)</span>
         <span class="n">execution_flags</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_extract_execution_mode_flags</span><span class="p">(</span><span class="n">expanded</span><span class="p">)</span>
         <span class="n">dq_score</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_data_quality</span><span class="p">(</span><span class="n">emergent_activity</span><span class="p">,</span> <span class="n">entities</span><span class="p">,</span> <span class="n">abbr_rate</span><span class="p">)</span>
@@ -587,6 +642,7 @@
             <span class="s2">"resolved_system_ids"</span><span class="p">:</span> <span class="n">resolved_systems</span><span class="p">,</span>
             <span class="s2">"resolved_work_order_ids"</span><span class="p">:</span> <span class="n">resolved_wos</span><span class="p">,</span>
             <span class="s2">"resolved_cr_ids"</span><span class="p">:</span> <span class="n">resolved_crs</span><span class="p">,</span>
+            <span class="s2">"resolved_failure_mode_ids"</span><span class="p">:</span> <span class="n">resolved_failure_modes</span><span class="p">,</span>
             <span class="s2">"discipline"</span><span class="p">:</span> <span class="n">discipline</span><span class="p">,</span>
             <span class="s2">"task_family"</span><span class="p">:</span> <span class="n">task_family</span><span class="p">,</span>
             <span class="s2">"component_family"</span><span class="p">:</span> <span class="n">component_family</span><span class="p">,</span>
@@ -800,17 +856,21 @@
 <div class="viewcode-block" id="ActivityIntakeProcessor._run_ner">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_a_intake/index.html#src.dackar.outage.stages.stage_a_intake.ActivityIntakeProcessor._run_ner">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">_run_ner</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span> <span class="n">raw_text</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">"""Extract named entities from the expanded description.</span>
+<span class="w">        </span><span class="sd">"""Extract named entities from the activity description.</span>
 
 <span class="sd">        Returns a list of entity dicts conforming to the extracted_entities</span>
 <span class="sd">        array in activity_intake_result.json.</span>
 
 <span class="sd">        Extraction layers (applied in order, results merged):</span>
-<span class="sd">            1. Regex patterns for tag IDs, WO references, CR references.</span>
+<span class="sd">            1. Regex patterns for tag IDs, WO references, CR references — run on</span>
+<span class="sd">               the RAW description (``raw_text``), because ComponentIdRemover in</span>
+<span class="sd">               the cleaning stage strips exactly those identifiers from the</span>
+<span class="sd">               expanded text, so running regex on the expanded text would find</span>
+<span class="sd">               nothing.</span>
 <span class="sd">            2. HybridNERPipeline (if injected) for component, action, failure-mode</span>
-<span class="sd">               entities via gazetteer + anchored NP generators.</span>
+<span class="sd">               entities via gazetteer + anchored NP generators (on expanded text).</span>
 <span class="sd">            3. SpacyAnnotator (if injected) for temporal references and measurements.</span>
 
 <span class="sd">        Each entity dict has keys: entity_id, text, entity_type, start, end,</span>
@@ -819,7 +879,9 @@
         <span class="n">entities</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
 
         <span class="c1"># ── Layer 1: regex extraction (always runs) ───────────────────────────</span>
-        <span class="k">for</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">_TAG_ID_RE</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+        <span class="c1"># Run on the raw description so stripped tag/WO/CR identifiers are seen.</span>
+        <span class="n">regex_text</span> <span class="o">=</span> <span class="n">raw_text</span> <span class="k">if</span> <span class="n">raw_text</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">text</span>
+        <span class="k">for</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">_TAG_ID_RE</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">regex_text</span><span class="p">):</span>
             <span class="n">entities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_make_entity</span><span class="p">(</span>
                 <span class="n">text</span><span class="o">=</span><span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(),</span>
                 <span class="n">entity_type</span><span class="o">=</span><span class="s2">"tag_id"</span><span class="p">,</span>
@@ -827,9 +889,10 @@
                 <span class="n">end</span><span class="o">=</span><span class="n">match</span><span class="o">.</span><span class="n">end</span><span class="p">(),</span>
                 <span class="n">source</span><span class="o">=</span><span class="s2">"regex"</span><span class="p">,</span>
                 <span class="n">confidence</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span>
+                <span class="n">offset_basis</span><span class="o">=</span><span class="s2">"raw_description"</span><span class="p">,</span>
             <span class="p">))</span>
 
-        <span class="k">for</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">_WO_REF_RE</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">_WO_REF_RE</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">regex_text</span><span class="p">):</span>
             <span class="n">entities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_make_entity</span><span class="p">(</span>
                 <span class="n">text</span><span class="o">=</span><span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(),</span>
                 <span class="n">entity_type</span><span class="o">=</span><span class="s2">"work_order_reference"</span><span class="p">,</span>
@@ -837,9 +900,10 @@
                 <span class="n">end</span><span class="o">=</span><span class="n">match</span><span class="o">.</span><span class="n">end</span><span class="p">(),</span>
                 <span class="n">source</span><span class="o">=</span><span class="s2">"regex"</span><span class="p">,</span>
                 <span class="n">confidence</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span>
+                <span class="n">offset_basis</span><span class="o">=</span><span class="s2">"raw_description"</span><span class="p">,</span>
             <span class="p">))</span>
 
-        <span class="k">for</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">_CR_REF_RE</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">_CR_REF_RE</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">regex_text</span><span class="p">):</span>
             <span class="n">entities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_make_entity</span><span class="p">(</span>
                 <span class="n">text</span><span class="o">=</span><span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(),</span>
                 <span class="n">entity_type</span><span class="o">=</span><span class="s2">"condition_report_reference"</span><span class="p">,</span>
@@ -847,43 +911,56 @@
                 <span class="n">end</span><span class="o">=</span><span class="n">match</span><span class="o">.</span><span class="n">end</span><span class="p">(),</span>
                 <span class="n">source</span><span class="o">=</span><span class="s2">"regex"</span><span class="p">,</span>
                 <span class="n">confidence</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span>
+                <span class="n">offset_basis</span><span class="o">=</span><span class="s2">"raw_description"</span><span class="p">,</span>
             <span class="p">))</span>
 
         <span class="c1"># ── Layer 2: HybridNERPipeline (injected) ────────────────────────────</span>
+        <span class="c1"># The real RCA pipeline exposes run(Document) -&gt; PipelineResult, whose</span>
+        <span class="c1"># .entities are ResolvedSpan dataclasses (start/end/text/labels/groups).</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ner_pipeline</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">pipeline_entities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ner_pipeline</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span>
-                    <span class="n">text</span><span class="p">,</span>
-                    <span class="n">mode</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">ner_generator_mode</span><span class="p">,</span>
-                    <span class="n">score_threshold</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">np_score_threshold</span><span class="p">,</span>
-                <span class="p">)</span>
-                <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">pipeline_entities</span><span class="p">:</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">dackar.RCA.ner.hybrid_ner.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">Document</span>
+                <span class="n">doc</span> <span class="o">=</span> <span class="n">Document</span><span class="p">(</span><span class="n">doc_id</span><span class="o">=</span><span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"activity_id"</span><span class="p">,</span> <span class="s2">"intake"</span><span class="p">),</span> <span class="n">text</span><span class="o">=</span><span class="n">text</span><span class="p">)</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ner_pipeline</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">span</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">"entities"</span><span class="p">,</span> <span class="p">[]):</span>
+                    <span class="n">label</span> <span class="o">=</span> <span class="n">span</span><span class="o">.</span><span class="n">labels</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">span</span><span class="p">,</span> <span class="s2">"labels"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">else</span> <span class="s2">"unknown"</span>
+                    <span class="n">group</span> <span class="o">=</span> <span class="n">span</span><span class="o">.</span><span class="n">groups</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">span</span><span class="p">,</span> <span class="s2">"groups"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
                     <span class="n">entities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_make_entity</span><span class="p">(</span>
-                        <span class="n">text</span><span class="o">=</span><span class="n">ent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"text"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
-                        <span class="n">entity_type</span><span class="o">=</span><span class="n">ent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"entity_type"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">),</span>
-                        <span class="n">start</span><span class="o">=</span><span class="n">ent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"start"</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
-                        <span class="n">end</span><span class="o">=</span><span class="n">ent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"end"</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+                        <span class="n">text</span><span class="o">=</span><span class="n">span</span><span class="o">.</span><span class="n">text</span><span class="p">,</span>
+                        <span class="n">entity_type</span><span class="o">=</span><span class="n">label</span><span class="p">,</span>
+                        <span class="n">start</span><span class="o">=</span><span class="n">span</span><span class="o">.</span><span class="n">start</span><span class="p">,</span>
+                        <span class="n">end</span><span class="o">=</span><span class="n">span</span><span class="o">.</span><span class="n">end</span><span class="p">,</span>
                         <span class="n">source</span><span class="o">=</span><span class="s2">"hybrid_ner"</span><span class="p">,</span>
-                        <span class="n">confidence</span><span class="o">=</span><span class="n">ent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"score"</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">,</span> <span class="mf">0.7</span><span class="p">)),</span>
+                        <span class="n">confidence</span><span class="o">=</span><span class="n">_span_confidence</span><span class="p">(</span><span class="n">span</span><span class="p">),</span>
+                        <span class="n">label_group</span><span class="o">=</span><span class="n">group</span><span class="p">,</span>
+                        <span class="n">offset_basis</span><span class="o">=</span><span class="s2">"normalized_description"</span><span class="p">,</span>
                     <span class="p">))</span>
             <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
                 <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                    <span class="s2">"HybridNERPipeline.generate() failed; skipping pipeline entities"</span><span class="p">,</span>
+                    <span class="s2">"HybridNERPipeline.run() failed; skipping pipeline entities"</span><span class="p">,</span>
                     <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
                 <span class="p">)</span>
 
         <span class="c1"># ── Layer 3: SpacyAnnotator (injected) ───────────────────────────────</span>
+        <span class="c1"># The real SpacyAnnotator.annotate(text) returns a SpacyAnnotationResult</span>
+        <span class="c1"># dataclass, not a list of dicts.  Only its `measurements` entries carry</span>
+        <span class="c1"># an entity_type/text (temporal/location refs are offset-less strings),</span>
+        <span class="c1"># so those are the items surfaced into extracted_entities; offsets are</span>
+        <span class="c1"># recovered by locating the surface text.</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">spacy_annotator</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">spacy_entities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spacy_annotator</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-                <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">spacy_entities</span><span class="p">:</span>
+                <span class="n">spacy_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spacy_annotator</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">meas</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">spacy_result</span><span class="p">,</span> <span class="s2">"measurements"</span><span class="p">,</span> <span class="p">[]):</span>
+                    <span class="n">surface</span> <span class="o">=</span> <span class="n">meas</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"text"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+                    <span class="n">pos</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">surface</span><span class="p">)</span> <span class="k">if</span> <span class="n">surface</span> <span class="k">else</span> <span class="o">-</span><span class="mi">1</span>
                     <span class="n">entities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_make_entity</span><span class="p">(</span>
-                        <span class="n">text</span><span class="o">=</span><span class="n">ent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"text"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
-                        <span class="n">entity_type</span><span class="o">=</span><span class="n">ent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"entity_type"</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"label"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">)),</span>
-                        <span class="n">start</span><span class="o">=</span><span class="n">ent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"start"</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
-                        <span class="n">end</span><span class="o">=</span><span class="n">ent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"end"</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+                        <span class="n">text</span><span class="o">=</span><span class="n">surface</span><span class="p">,</span>
+                        <span class="n">entity_type</span><span class="o">=</span><span class="n">meas</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"entity_type"</span><span class="p">,</span> <span class="s2">"measurement"</span><span class="p">),</span>
+                        <span class="n">start</span><span class="o">=</span><span class="n">pos</span> <span class="k">if</span> <span class="n">pos</span> <span class="o">&gt;=</span> <span class="mi">0</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span>
+                        <span class="n">end</span><span class="o">=</span><span class="p">(</span><span class="n">pos</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">surface</span><span class="p">))</span> <span class="k">if</span> <span class="n">pos</span> <span class="o">&gt;=</span> <span class="mi">0</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span>
                         <span class="n">source</span><span class="o">=</span><span class="s2">"spacy"</span><span class="p">,</span>
-                        <span class="n">confidence</span><span class="o">=</span><span class="n">ent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">),</span>
+                        <span class="n">confidence</span><span class="o">=</span><span class="mf">0.75</span><span class="p">,</span>
+                        <span class="n">offset_basis</span><span class="o">=</span><span class="s2">"normalized_description"</span><span class="p">,</span>
                     <span class="p">))</span>
             <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
                 <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
@@ -901,22 +978,25 @@
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">entities</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
         <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">"""Resolve entity mentions to canonical IDs.</span>
 
-<span class="sd">        Returns (component_ids, system_ids, work_order_ids, cr_ids).</span>
+<span class="sd">        Returns (component_ids, system_ids, work_order_ids, cr_ids,</span>
+<span class="sd">        failure_mode_ids).</span>
 
 <span class="sd">        Resolution strategy:</span>
 <span class="sd">            - Pass-through known IDs from emergent_activity (highest confidence).</span>
 <span class="sd">            - Collect WO/CR regex matches from extracted entities.</span>
-<span class="sd">            - EntityNormalizer (if injected) for additional component mentions</span>
-<span class="sd">              found by the NER pipeline (token-overlap → LLM fallback).</span>
+<span class="sd">            - EntityNormalizer (if injected) for physical component/asset NER</span>
+<span class="sd">              mentions (token-overlap → LLM fallback).  It indexes failure</span>
+<span class="sd">              modes, so it yields the owning component_id plus a failure-mode id.</span>
 <span class="sd">        """</span>
         <span class="c1"># ── Pass-through known IDs from the intake record ─────────────────────</span>
         <span class="n">comp_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">sys_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">wo_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">cr_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">fm_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
 
         <span class="k">if</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"known_component_id"</span><span class="p">):</span>
             <span class="n">comp_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">emergent_activity</span><span class="p">[</span><span class="s2">"known_component_id"</span><span class="p">])</span>
@@ -938,34 +1018,47 @@
                 <span class="k">if</span> <span class="n">cr_val</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">cr_ids</span><span class="p">:</span>
                     <span class="n">cr_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cr_val</span><span class="p">)</span>
 
-        <span class="c1"># ── EntityNormalizer for component / system mentions ──────────────────</span>
+        <span class="c1"># ── EntityNormalizer for component / failure-mode mentions ────────────</span>
+        <span class="c1"># NER entity_type is a schema label id (e.g. "ast_mech", "syst"), never</span>
+        <span class="c1"># the literal "component"/"system"/"equipment"; filter on the entity's</span>
+        <span class="c1"># group id instead.  Physical component/asset-system groups are the ones</span>
+        <span class="c1"># worth normalising against the failure-mode KG.</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_normalizer</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">component_mentions</span> <span class="o">=</span> <span class="p">[</span>
                 <span class="n">ent</span> <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">entities</span>
-                <span class="k">if</span> <span class="n">ent</span><span class="p">[</span><span class="s2">"entity_type"</span><span class="p">]</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"component"</span><span class="p">,</span> <span class="s2">"system"</span><span class="p">,</span> <span class="s2">"equipment"</span><span class="p">}</span>
+                <span class="k">if</span> <span class="n">ent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"label_group"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">_PHYSICAL_LABEL_GROUPS</span>
             <span class="p">]</span>
             <span class="k">for</span> <span class="n">mention</span> <span class="ow">in</span> <span class="n">component_mentions</span><span class="p">:</span>
                 <span class="k">try</span><span class="p">:</span>
+                    <span class="c1"># EntityNormalizer.normalize(surface_form, entity_type="")</span>
+                    <span class="c1"># returns a NormResult; the token-overlap threshold is a</span>
+                    <span class="c1"># constructor arg, not a per-call argument.  The normalizer</span>
+                    <span class="c1"># indexes FAILURE MODES, so canonical_id is an fm_id and</span>
+                    <span class="c1"># component_id is the owning component ("" when the failure</span>
+                    <span class="c1"># mode has none) — canonical_id is never a system id.</span>
                     <span class="n">normalized</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_normalizer</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span>
                         <span class="n">mention</span><span class="p">[</span><span class="s2">"text"</span><span class="p">],</span>
-                        <span class="n">token_overlap_threshold</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">entity_normalizer_token_overlap_threshold</span><span class="p">,</span>
+                        <span class="n">entity_type</span><span class="o">=</span><span class="n">mention</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"entity_type"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
                     <span class="p">)</span>
-                    <span class="k">if</span> <span class="n">normalized</span><span class="p">:</span>
-                        <span class="n">canonical_id</span> <span class="o">=</span> <span class="n">normalized</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"canonical_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">normalized</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"id"</span><span class="p">)</span>
-                        <span class="n">canonical_type</span> <span class="o">=</span> <span class="n">normalized</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"entity_type"</span><span class="p">,</span> <span class="s2">"component"</span><span class="p">)</span>
-                        <span class="k">if</span> <span class="n">canonical_id</span><span class="p">:</span>
-                            <span class="k">if</span> <span class="n">canonical_type</span> <span class="o">==</span> <span class="s2">"system"</span> <span class="ow">and</span> <span class="n">canonical_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">sys_ids</span><span class="p">:</span>
-                                <span class="n">sys_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">canonical_id</span><span class="p">)</span>
-                            <span class="k">elif</span> <span class="n">canonical_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">comp_ids</span><span class="p">:</span>
-                                <span class="n">comp_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">canonical_id</span><span class="p">)</span>
+                    <span class="n">component_id</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">normalized</span><span class="p">,</span> <span class="s2">"component_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                    <span class="n">fm_id</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">normalized</span><span class="p">,</span> <span class="s2">"canonical_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                    <span class="n">method</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">normalized</span><span class="p">,</span> <span class="s2">"method"</span><span class="p">,</span> <span class="s2">"none"</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">method</span> <span class="o">!=</span> <span class="s2">"none"</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="n">component_id</span> <span class="ow">and</span> <span class="n">component_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">comp_ids</span><span class="p">:</span>
+                            <span class="n">comp_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">component_id</span><span class="p">)</span>
+                        <span class="c1"># Keep the failure-mode id in its own list, not in</span>
+                        <span class="c1"># resolved_system_ids (which Stage D uses for retrieval);</span>
+                        <span class="c1"># an fm_id is not a system.</span>
+                        <span class="k">if</span> <span class="n">fm_id</span> <span class="ow">and</span> <span class="n">fm_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">fm_ids</span><span class="p">:</span>
+                            <span class="n">fm_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">fm_id</span><span class="p">)</span>
                 <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
-                    <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                    <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
                         <span class="s2">"EntityNormalizer failed for mention '</span><span class="si">%s</span><span class="s2">'"</span><span class="p">,</span>
                         <span class="n">mention</span><span class="p">[</span><span class="s2">"text"</span><span class="p">],</span>
                         <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
                     <span class="p">)</span>
 
-        <span class="k">return</span> <span class="n">comp_ids</span><span class="p">,</span> <span class="n">sys_ids</span><span class="p">,</span> <span class="n">wo_ids</span><span class="p">,</span> <span class="n">cr_ids</span></div>
+        <span class="k">return</span> <span class="n">comp_ids</span><span class="p">,</span> <span class="n">sys_ids</span><span class="p">,</span> <span class="n">wo_ids</span><span class="p">,</span> <span class="n">cr_ids</span><span class="p">,</span> <span class="n">fm_ids</span></div>
 
 
 <div class="viewcode-block" id="ActivityIntakeProcessor._classify_labels">
@@ -1028,6 +1121,7 @@
         <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
         <span class="n">entities</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
         <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">raw_text</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">"""Classify the emergence type of this activity.</span>
 
@@ -1041,6 +1135,14 @@
 <span class="sd">            3. schedule_optimization — schedule-change language, no failure terms.</span>
 <span class="sd">            4. truly_unplanned    — default; degradation / failure language, or</span>
 <span class="sd">                                    no other rule matched.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            text: the expanded (abbreviation-resolved) description; regulatory</span>
+<span class="sd">                PHRASE patterns and the scope/schedule/degradation keyword</span>
+<span class="sd">                matches run against this.</span>
+<span class="sd">            raw_text: the original raw description; regulatory ACRONYM patterns</span>
+<span class="sd">                match case-sensitively against this. Falls back to ``text`` when</span>
+<span class="sd">                not provided.</span>
 <span class="sd">        """</span>
         <span class="c1"># Use the lowercase text for keyword matching</span>
         <span class="n">text_lower</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
@@ -1051,7 +1153,13 @@
             <span class="k">return</span> <span class="n">explicit</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">"explicitly provided in intake record"</span>
 
         <span class="c1"># ── Rule 1: regulatory_driven ─────────────────────────────────────────</span>
-        <span class="n">reg_match</span> <span class="o">=</span> <span class="n">_REGULATORY_KEYWORDS_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="c1"># Acronyms match case-sensitively on raw text ('CAP' the acronym, not the</span>
+        <span class="c1"># word 'cap'); phrases match on the expanded text so abbreviation</span>
+        <span class="c1"># expansion ('ts' → 'technical specification') still reaches them.  Same</span>
+        <span class="c1"># split and case rules as _detect_regulatory_constraints.</span>
+        <span class="n">reg_match</span> <span class="o">=</span> <span class="n">_match_regulatory_keyword</span><span class="p">(</span>
+            <span class="n">raw_text</span> <span class="k">if</span> <span class="n">raw_text</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">text</span><span class="p">,</span> <span class="n">expanded_text</span><span class="o">=</span><span class="n">text</span>
+        <span class="p">)</span>
         <span class="k">if</span> <span class="n">reg_match</span><span class="p">:</span>
             <span class="k">return</span> <span class="p">(</span>
                 <span class="s2">"regulatory_driven"</span><span class="p">,</span>
@@ -1228,19 +1336,29 @@
         <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
         <span class="n">entities</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
         <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">raw_text</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">"""Identify regulatory constraints that restrict deferral.</span>
 
 <span class="sd">        Returns (has_regulatory_constraint, regulatory_drivers).</span>
 
+<span class="sd">        Args:</span>
+<span class="sd">            text: the expanded (abbreviation-resolved) description; phrase</span>
+<span class="sd">                patterns match against this.</span>
+<span class="sd">            raw_text: the original raw description; acronym patterns match</span>
+<span class="sd">                case-sensitively against this. Falls back to ``text`` when not</span>
+<span class="sd">                provided (older call sites).</span>
+
 <span class="sd">        Sources checked in order:</span>
 <span class="sd">            1. Structured regulatory fields in emergent_activity</span>
 <span class="sd">               (technical_specification_reference, nrc_commitment_number, lco_number).</span>
-<span class="sd">            2. Pattern matching against expanded description using</span>
-<span class="sd">               _REGULATORY_PATTERNS (TS, LCO, NRC, ALARA, CAP, surveillance,</span>
-<span class="sd">               operability determination, hold point).</span>
-<span class="sd">            3. Supplementary patterns from config.regulatory_keywords_path, unioned</span>
-<span class="sd">               with the built-in set at detection time.</span>
+<span class="sd">            2. Acronym patterns (TS/LCO/NRC/10 CFR/ALARA/CAP) matched</span>
+<span class="sd">               case-sensitively on the RAW text, and phrase patterns</span>
+<span class="sd">               (technical specification, surveillance, operability determination,</span>
+<span class="sd">               hold point, …) matched case-insensitively on the EXPANDED text —</span>
+<span class="sd">               the same split and case rules as the emergence classifier.</span>
+<span class="sd">            3. Supplementary patterns from config.regulatory_keywords_path</span>
+<span class="sd">               (treated as phrases), unioned with the built-in set.</span>
 
 <span class="sd">        Every driver includes: driver_id, driver_type, matched_text,</span>
 <span class="sd">        defer_prohibited, source.</span>
@@ -1288,16 +1406,26 @@
             <span class="p">)</span>
 
         <span class="c1"># ── Text pattern matching (built-in + supplementary) ──────────────────</span>
-        <span class="n">all_patterns</span> <span class="o">=</span> <span class="n">_REGULATORY_PATTERNS</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_supplementary_regulatory_patterns</span>
-        <span class="k">for</span> <span class="n">pattern</span><span class="p">,</span> <span class="n">driver_type</span><span class="p">,</span> <span class="n">defer_prohibited</span> <span class="ow">in</span> <span class="n">all_patterns</span><span class="p">:</span>
-            <span class="n">match</span> <span class="o">=</span> <span class="n">pattern</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="c1"># Same split and case rules as the emergence classifier</span>
+        <span class="c1"># (_match_regulatory_keyword): acronyms match case-sensitively on the RAW</span>
+        <span class="c1"># text; phrases match case-insensitively on the EXPANDED text so</span>
+        <span class="c1"># abbreviation expansion ('ts' → 'technical specification') is preserved.</span>
+        <span class="c1"># Supplementary (plant-config) patterns are treated as phrases.</span>
+        <span class="n">raw</span> <span class="o">=</span> <span class="n">raw_text</span> <span class="k">if</span> <span class="n">raw_text</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">text</span>
+        <span class="n">expanded</span> <span class="o">=</span> <span class="n">text</span>
+        <span class="n">acronym_patterns</span> <span class="o">=</span> <span class="n">_REGULATORY_ACRONYM_PATTERNS</span>
+        <span class="n">phrase_patterns</span> <span class="o">=</span> <span class="n">_REGULATORY_PHRASE_PATTERNS</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_supplementary_regulatory_patterns</span>
+
+        <span class="k">for</span> <span class="n">pattern</span><span class="p">,</span> <span class="n">driver_type</span><span class="p">,</span> <span class="n">defer_prohibited</span> <span class="ow">in</span> <span class="n">acronym_patterns</span><span class="p">:</span>
+            <span class="n">match</span> <span class="o">=</span> <span class="n">pattern</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">match</span><span class="p">:</span>
-                <span class="n">_add_driver</span><span class="p">(</span>
-                    <span class="n">driver_type</span><span class="p">,</span>
-                    <span class="k">match</span><span class="o">.</span><span class="n">group</span><span class="p">(),</span>
-                    <span class="n">defer_prohibited</span><span class="o">=</span><span class="n">defer_prohibited</span><span class="p">,</span>
-                    <span class="n">source</span><span class="o">=</span><span class="s2">"text_pattern"</span><span class="p">,</span>
-                <span class="p">)</span>
+                <span class="n">_add_driver</span><span class="p">(</span><span class="n">driver_type</span><span class="p">,</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(),</span>
+                            <span class="n">defer_prohibited</span><span class="o">=</span><span class="n">defer_prohibited</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="s2">"text_pattern"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">pattern</span><span class="p">,</span> <span class="n">driver_type</span><span class="p">,</span> <span class="n">defer_prohibited</span> <span class="ow">in</span> <span class="n">phrase_patterns</span><span class="p">:</span>
+            <span class="n">match</span> <span class="o">=</span> <span class="n">pattern</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">expanded</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">match</span><span class="p">:</span>
+                <span class="n">_add_driver</span><span class="p">(</span><span class="n">driver_type</span><span class="p">,</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(),</span>
+                            <span class="n">defer_prohibited</span><span class="o">=</span><span class="n">defer_prohibited</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="s2">"text_pattern"</span><span class="p">)</span>
 
         <span class="n">has_regulatory</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">drivers</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">has_regulatory</span><span class="p">,</span> <span class="n">drivers</span></div>
@@ -1369,6 +1497,36 @@
 <span class="c1"># Module-level helpers</span>
 <span class="c1"># ---------------------------------------------------------------------------</span>
 
+<div class="viewcode-block" id="_DEFAULT_NER_CONFIDENCE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_a_intake/index.html#src.dackar.outage.stages.stage_a_intake._DEFAULT_NER_CONFIDENCE">[docs]</a>
+<span class="n">_DEFAULT_NER_CONFIDENCE</span> <span class="o">=</span> <span class="mf">0.7</span></div>
+
+
+
+<div class="viewcode-block" id="_span_confidence">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_a_intake/index.html#src.dackar.outage.stages.stage_a_intake._span_confidence">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_span_confidence</span><span class="p">(</span><span class="n">span</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Best available confidence for a HybridNER ResolvedSpan.</span>
+
+<span class="sd">    ``ResolvedSpan.provenance`` has no top-level ``score`` key — it is</span>
+<span class="sd">    ``{"sources": [SourceHit.__dict__, ...], "selected_by": ...}`` (or</span>
+<span class="sd">    ``{"split_from": ...}``).  Take the max ``score`` across the source hits</span>
+<span class="sd">    when present; otherwise fall back to the default prior.</span>
+<span class="sd">    """</span>
+    <span class="n">prov</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">span</span><span class="p">,</span> <span class="s2">"provenance"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">scores</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">s</span><span class="p">[</span><span class="s2">"score"</span><span class="p">]</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">prov</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sources"</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"score"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="p">]</span>
+    <span class="k">if</span> <span class="n">scores</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="n">scores</span><span class="p">))</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="k">pass</span>
+    <span class="k">return</span> <span class="n">_DEFAULT_NER_CONFIDENCE</span></div>
+
+
+
 <div class="viewcode-block" id="_make_entity">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_a_intake/index.html#src.dackar.outage.stages.stage_a_intake._make_entity">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">_make_entity</span><span class="p">(</span>
@@ -1379,9 +1537,17 @@
     <span class="n">end</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">source</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">confidence</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">label_group</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">offset_basis</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Construct a standardised entity dict for the extracted_entities array."""</span>
-    <span class="k">return</span> <span class="p">{</span>
+<span class="w">    </span><span class="sd">"""Construct a standardised entity dict for the extracted_entities array.</span>
+
+<span class="sd">    ``offset_basis`` records which text the start/end offsets index</span>
+<span class="sd">    ("raw_description" for regex entities, "normalized_description" for NER/</span>
+<span class="sd">    spaCy entities), since regex runs on the raw text and NER on the expanded</span>
+<span class="sd">    text.</span>
+<span class="sd">    """</span>
+    <span class="n">entity</span> <span class="o">=</span> <span class="p">{</span>
         <span class="s2">"entity_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"ENT::</span><span class="si">{</span><span class="n">entity_type</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">hex</span><span class="p">[:</span><span class="mi">6</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
         <span class="s2">"text"</span><span class="p">:</span> <span class="n">text</span><span class="p">,</span>
         <span class="s2">"entity_type"</span><span class="p">:</span> <span class="n">entity_type</span><span class="p">,</span>
@@ -1389,7 +1555,12 @@
         <span class="s2">"end"</span><span class="p">:</span> <span class="n">end</span><span class="p">,</span>
         <span class="s2">"source"</span><span class="p">:</span> <span class="n">source</span><span class="p">,</span>
         <span class="s2">"confidence"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">confidence</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
-    <span class="p">}</span></div>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="n">label_group</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">entity</span><span class="p">[</span><span class="s2">"label_group"</span><span class="p">]</span> <span class="o">=</span> <span class="n">label_group</span>
+    <span class="k">if</span> <span class="n">offset_basis</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">entity</span><span class="p">[</span><span class="s2">"offset_basis"</span><span class="p">]</span> <span class="o">=</span> <span class="n">offset_basis</span>
+    <span class="k">return</span> <span class="n">entity</span></div>
 
 
 

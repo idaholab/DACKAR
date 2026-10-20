@@ -354,7 +354,7 @@ Module Contents
       Cypher pattern:
           MATCH (wo:work_order)-[:PERFORMED_ON]->(c:mbse_entity {id: $component_id})
           WHERE wo.initiated_date >= $window_start
-            AND NOT wo.work_type IN ['PM', 'CM']
+            AND NOT coalesce(wo.work_type, '') IN ['PM', 'CM']
           RETURN wo
 
       Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.
@@ -419,9 +419,12 @@ Module Contents
 
       Sort events ascending by timestamp and cap at config.max_events.
 
-      Events with a null timestamp are placed at the end of the sorted list
-      (they cannot be used in Allen relation scoring but are retained for
-      recurrence counting).
+      Dated and undated events are capped separately so that undated events
+      (which sort to the end and cannot be used in Allen relation scoring) do
+      NOT crowd out dated events when the cap is applied.  The cap keeps the
+      most recent dated events first, then backfills with undated events only
+      if room remains.  Within the returned list, dated events come first in
+      ascending timestamp order, followed by any retained undated events.
 
 
 
@@ -429,12 +432,15 @@ Module Contents
 
       Compute repeat failure count, mean inter-event days, trend, and PM status.
 
-      trend logic:
-          Split the timeline window into two halves by event count.
-          If second-half count > first-half count × 1.5 → 'increasing'
-          If first-half count > second-half count × 1.5 → 'decreasing'
+      trend logic (event frequency, not event count):
+          Compare the mean inter-event gap in the first half of the dated
+          events against the second half.  A smaller second-half gap means
+          events are getting MORE frequent.
+          If second-half mean gap < first-half mean gap / 1.5 → 'increasing'
+          If second-half mean gap > first-half mean gap × 1.5 → 'decreasing'
           Otherwise → 'stable'
-          If fewer than 3 events → 'insufficient_data'
+          If fewer than 4 dated events (so each half has ≥1 gap) →
+          'insufficient_data'.
 
       PM compliance:
           Locate the most recent preventive_maintenance event in the timeline.

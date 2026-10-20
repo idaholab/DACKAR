@@ -429,6 +429,9 @@
                 <span class="n">activity_id</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="c1"># Reset the per-run query-failure counter so a KG outage can be</span>
+        <span class="c1"># distinguished from a genuinely empty history (see _run_query).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_query_failures</span> <span class="o">=</span> <span class="mi">0</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">kg_driver</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
@@ -467,6 +470,7 @@
             <span class="s2">"system_name"</span><span class="p">:</span> <span class="n">component_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"system_name"</span><span class="p">),</span>
             <span class="s2">"asset_id"</span><span class="p">:</span> <span class="n">component_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">),</span>
             <span class="s2">"kg_driver_available"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">kg_driver</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"kg_query_failed"</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_query_failures"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span>
             <span class="s2">"events"</span><span class="p">:</span> <span class="n">events</span><span class="p">,</span>
             <span class="s2">"recurrence_indicators"</span><span class="p">:</span> <span class="n">recurrence</span><span class="p">,</span>
             <span class="s2">"data_coverage"</span><span class="p">:</span> <span class="n">coverage</span><span class="p">,</span>
@@ -475,6 +479,7 @@
                 <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
                 <span class="s2">"kg_query_timestamp"</span><span class="p">:</span> <span class="n">run_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"started_at"</span><span class="p">),</span>
                 <span class="s2">"timeline_window_days"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">timeline_window_days</span><span class="p">,</span>
+                <span class="s2">"kg_query_failures"</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_query_failures"</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
             <span class="p">},</span>
         <span class="p">}</span></div>
 
@@ -598,7 +603,7 @@
 <span class="sd">        Cypher pattern:</span>
 <span class="sd">            MATCH (wo:work_order)-[:PERFORMED_ON]-&gt;(c:mbse_entity {id: $component_id})</span>
 <span class="sd">            WHERE wo.initiated_date &gt;= $window_start</span>
-<span class="sd">              AND NOT wo.work_type IN ['PM', 'CM']</span>
+<span class="sd">              AND NOT coalesce(wo.work_type, '') IN ['PM', 'CM']</span>
 <span class="sd">            RETURN wo</span>
 
 <span class="sd">        Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.</span>
@@ -610,7 +615,9 @@
             <span class="sa">f</span><span class="s2">"(c:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">component_label</span><span class="si">}</span><span class="s2">` </span><span class="se">{{</span><span class="s2">id: $component_id</span><span class="se">}}</span><span class="s2">)</span><span class="se">\n</span><span class="s2">"</span>
             <span class="s2">"WHERE ($window_start IS NULL OR wo.initiated_date &gt;= $window_start)</span><span class="se">\n</span><span class="s2">"</span>
             <span class="s2">"  AND ($before_ts IS NULL OR wo.initiated_date &lt; $before_ts)</span><span class="se">\n</span><span class="s2">"</span>
-            <span class="s2">"  AND NOT wo.work_type IN [$pm_code, $cm_code]</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="c1"># coalesce so a null work_type is treated as '' and kept (a generic</span>
+            <span class="c1"># WO), rather than making the whole predicate null and dropping it.</span>
+            <span class="s2">"  AND NOT coalesce(wo.work_type, '') IN [$pm_code, $cm_code]</span><span class="se">\n</span><span class="s2">"</span>
             <span class="s2">"RETURN wo"</span>
         <span class="p">)</span>
         <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">cypher</span><span class="p">,</span> <span class="p">{</span>
@@ -830,26 +837,31 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_sort_and_cap</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">"""Sort events ascending by timestamp and cap at config.max_events.</span>
 
-<span class="sd">        Events with a null timestamp are placed at the end of the sorted list</span>
-<span class="sd">        (they cannot be used in Allen relation scoring but are retained for</span>
-<span class="sd">        recurrence counting).</span>
+<span class="sd">        Dated and undated events are capped separately so that undated events</span>
+<span class="sd">        (which sort to the end and cannot be used in Allen relation scoring) do</span>
+<span class="sd">        NOT crowd out dated events when the cap is applied.  The cap keeps the</span>
+<span class="sd">        most recent dated events first, then backfills with undated events only</span>
+<span class="sd">        if room remains.  Within the returned list, dated events come first in</span>
+<span class="sd">        ascending timestamp order, followed by any retained undated events.</span>
 <span class="sd">        """</span>
-        <span class="k">def</span><span class="w"> </span><span class="nf">_sort_key</span><span class="p">(</span><span class="n">e</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">):</span>
-            <span class="n">ts</span> <span class="o">=</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">))</span>
-            <span class="k">if</span> <span class="n">ts</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">max</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">ts</span>
+        <span class="n">dated</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">events</span> <span class="k">if</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">))</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="n">undated</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">events</span> <span class="k">if</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">))</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">]</span>
 
-        <span class="n">sorted_events</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">events</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">_sort_key</span><span class="p">)</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sorted_events</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_events</span><span class="p">:</span>
+        <span class="n">dated</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">e</span><span class="p">:</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">)))</span>
+
+        <span class="n">cap</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_events</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">dated</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">undated</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">cap</span><span class="p">:</span>
             <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-                <span class="s2">"Stage B: capping timeline at </span><span class="si">%d</span><span class="s2"> events (</span><span class="si">%d</span><span class="s2"> total retrieved)"</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_events</span><span class="p">,</span>
-                <span class="nb">len</span><span class="p">(</span><span class="n">sorted_events</span><span class="p">),</span>
+                <span class="s2">"Stage B: capping timeline at </span><span class="si">%d</span><span class="s2"> events (</span><span class="si">%d</span><span class="s2"> dated + </span><span class="si">%d</span><span class="s2"> undated retrieved)"</span><span class="p">,</span>
+                <span class="n">cap</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">dated</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">undated</span><span class="p">),</span>
             <span class="p">)</span>
-            <span class="c1"># Keep the most recent max_events (most relevant to Stage C)</span>
-            <span class="n">sorted_events</span> <span class="o">=</span> <span class="n">sorted_events</span><span class="p">[</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_events</span><span class="p">:]</span>
-        <span class="k">return</span> <span class="n">sorted_events</span></div>
+            <span class="c1"># Prefer dated events: keep the most recent `cap` of them, then</span>
+            <span class="c1"># backfill with undated events only if slots remain.</span>
+            <span class="n">kept_dated</span> <span class="o">=</span> <span class="n">dated</span><span class="p">[</span><span class="o">-</span><span class="n">cap</span><span class="p">:]</span>
+            <span class="n">remaining</span> <span class="o">=</span> <span class="n">cap</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">kept_dated</span><span class="p">)</span>
+            <span class="n">kept_undated</span> <span class="o">=</span> <span class="n">undated</span><span class="p">[:</span><span class="n">remaining</span><span class="p">]</span> <span class="k">if</span> <span class="n">remaining</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="p">[]</span>
+            <span class="k">return</span> <span class="n">kept_dated</span> <span class="o">+</span> <span class="n">kept_undated</span>
+        <span class="k">return</span> <span class="n">dated</span> <span class="o">+</span> <span class="n">undated</span></div>
 
 
 <div class="viewcode-block" id="KGTimelineBuilder._compute_recurrence_indicators">
@@ -859,12 +871,15 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Compute repeat failure count, mean inter-event days, trend, and PM status.</span>
 
-<span class="sd">        trend logic:</span>
-<span class="sd">            Split the timeline window into two halves by event count.</span>
-<span class="sd">            If second-half count &gt; first-half count × 1.5 → 'increasing'</span>
-<span class="sd">            If first-half count &gt; second-half count × 1.5 → 'decreasing'</span>
+<span class="sd">        trend logic (event frequency, not event count):</span>
+<span class="sd">            Compare the mean inter-event gap in the first half of the dated</span>
+<span class="sd">            events against the second half.  A smaller second-half gap means</span>
+<span class="sd">            events are getting MORE frequent.</span>
+<span class="sd">            If second-half mean gap &lt; first-half mean gap / 1.5 → 'increasing'</span>
+<span class="sd">            If second-half mean gap &gt; first-half mean gap × 1.5 → 'decreasing'</span>
 <span class="sd">            Otherwise → 'stable'</span>
-<span class="sd">            If fewer than 3 events → 'insufficient_data'</span>
+<span class="sd">            If fewer than 4 dated events (so each half has ≥1 gap) →</span>
+<span class="sd">            'insufficient_data'.</span>
 
 <span class="sd">        PM compliance:</span>
 <span class="sd">            Locate the most recent preventive_maintenance event in the timeline.</span>
@@ -904,15 +919,25 @@
             <span class="n">min_inter_event_days</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">inter_event_days</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
 
         <span class="c1"># ── Trend ─────────────────────────────────────────────────────────────</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">timed_events</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+        <span class="c1"># Compare event frequency (inter-event gaps) between the first and</span>
+        <span class="c1"># second half of the gap sequence.  Need ≥2 gaps (≥3 dated events) to</span>
+        <span class="c1"># split; require ≥4 dated events so each half has at least one gap.</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">timed_events</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">4</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">inter_event_days</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
             <span class="n">trend</span> <span class="o">=</span> <span class="s2">"insufficient_data"</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">mid</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">timed_events</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
-            <span class="n">first_half_count</span> <span class="o">=</span> <span class="n">mid</span>
-            <span class="n">second_half_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">timed_events</span><span class="p">)</span> <span class="o">-</span> <span class="n">mid</span>
-            <span class="k">if</span> <span class="n">second_half_count</span> <span class="o">&gt;</span> <span class="n">first_half_count</span> <span class="o">*</span> <span class="mf">1.5</span><span class="p">:</span>
+            <span class="n">g</span> <span class="o">=</span> <span class="n">inter_event_days</span>
+            <span class="n">mid</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">g</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+            <span class="n">first_half</span> <span class="o">=</span> <span class="n">g</span><span class="p">[:</span><span class="n">mid</span><span class="p">]</span>
+            <span class="n">second_half</span> <span class="o">=</span> <span class="n">g</span><span class="p">[</span><span class="n">mid</span><span class="p">:]</span>
+            <span class="n">first_mean</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">first_half</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">first_half</span><span class="p">)</span>
+            <span class="n">second_mean</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">second_half</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">second_half</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">second_mean</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">first_mean</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">trend</span> <span class="o">=</span> <span class="s2">"stable"</span>
+            <span class="k">elif</span> <span class="n">second_mean</span> <span class="o">&lt;</span> <span class="n">first_mean</span> <span class="o">/</span> <span class="mf">1.5</span><span class="p">:</span>
+                <span class="c1"># gaps shrinking → events getting more frequent</span>
                 <span class="n">trend</span> <span class="o">=</span> <span class="s2">"increasing"</span>
-            <span class="k">elif</span> <span class="n">first_half_count</span> <span class="o">&gt;</span> <span class="n">second_half_count</span> <span class="o">*</span> <span class="mf">1.5</span><span class="p">:</span>
+            <span class="k">elif</span> <span class="n">second_mean</span> <span class="o">&gt;</span> <span class="n">first_mean</span> <span class="o">*</span> <span class="mf">1.5</span><span class="p">:</span>
+                <span class="c1"># gaps widening → events getting less frequent</span>
                 <span class="n">trend</span> <span class="o">=</span> <span class="s2">"decreasing"</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">trend</span> <span class="o">=</span> <span class="s2">"stable"</span>
@@ -941,10 +966,21 @@
                     <span class="k">else</span><span class="p">:</span>
                         <span class="n">pm_compliance_status</span> <span class="o">=</span> <span class="s2">"compliant"</span>
 
+        <span class="c1"># last_cm_date: most recent corrective-maintenance event timestamp</span>
+        <span class="c1"># (the schema documents this field; it was previously never computed).</span>
+        <span class="n">cm_events</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">timed_events</span> <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_type"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"corrective_maintenance"</span>
+        <span class="p">]</span>
+        <span class="n">last_cm_date</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="nb">max</span><span class="p">(</span><span class="n">cm_events</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">e</span><span class="p">:</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">e</span><span class="p">[</span><span class="s2">"timestamp"</span><span class="p">]))[</span><span class="s2">"timestamp"</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">cm_events</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
+
         <span class="k">return</span> <span class="p">{</span>
             <span class="s2">"repeat_failure_count"</span><span class="p">:</span> <span class="n">repeat_failure_count</span><span class="p">,</span>
             <span class="s2">"mean_inter_event_days"</span><span class="p">:</span> <span class="n">mean_inter_event_days</span><span class="p">,</span>
             <span class="s2">"trend"</span><span class="p">:</span> <span class="n">trend</span><span class="p">,</span>
+            <span class="s2">"last_cm_date"</span><span class="p">:</span> <span class="n">last_cm_date</span><span class="p">,</span>
             <span class="s2">"last_pm_date"</span><span class="p">:</span> <span class="n">last_pm_date</span><span class="p">,</span>
             <span class="s2">"pm_compliance_status"</span><span class="p">:</span> <span class="n">pm_compliance_status</span><span class="p">,</span>
         <span class="p">}</span></div>
@@ -1008,6 +1044,9 @@
                 <span class="n">cypher</span><span class="p">[:</span><span class="mi">120</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="s2">" "</span><span class="p">),</span>
                 <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="p">)</span>
+            <span class="c1"># Count the failure so the build method can distinguish a KG outage</span>
+            <span class="c1"># (kg_query_failed=True) from a genuinely empty history.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_query_failures</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_query_failures"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
             <span class="k">return</span> <span class="p">[]</span></div>
 
 

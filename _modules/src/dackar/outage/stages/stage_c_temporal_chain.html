@@ -89,7 +89,8 @@
 <span class="sd">       into a temporal interval [start, end].</span>
 <span class="sd">    2. For each prior event in the ComponentEventTimeline, apply Allen interval</span>
 <span class="sd">       algebra to classify the temporal relationship to the emergent activity:</span>
-<span class="sd">       PRECEDES, OVERLAPS, CONTAINS, DURING, FOLLOWS, SIMULTANEOUS, UNKNOWN.</span>
+<span class="sd">       PRECEDES, OVERLAPS, OVERLAPPED_BY, CONTAINS, DURING, FOLLOWS,</span>
+<span class="sd">       SIMULTANEOUS, UNKNOWN.</span>
 <span class="sd">    3. Score each link for causal relevance based on the Allen relation, onset</span>
 <span class="sd">       lag, and data quality of the prior event.</span>
 <span class="sd">    4. Label each link with a causal_strength: strong / moderate / weak /</span>
@@ -99,12 +100,13 @@
 <span class="sd">Output schema: outage/schemas/temporal_event_chain.json</span>
 
 <span class="sd">Allen relation → causal relevance reference:</span>
-<span class="sd">    OVERLAPS    → 0.90  prior event was active at emergent activity onset</span>
-<span class="sd">    CONTAINS    → 0.85  long-running degradation encompasses the activity window</span>
-<span class="sd">    PRECEDES    → 0.80  classic lead-time: ended before onset</span>
-<span class="sd">    SIMULTANEOUS→ 0.50  concurrent; possible common cause</span>
-<span class="sd">    DURING      → 0.30  started after onset; likely a symptom, not a cause</span>
-<span class="sd">    FOLLOWS     → 0.10  temporal contradiction; flag for analyst review</span>
+<span class="sd">    OVERLAPS     → 0.90  prior event started before and was active at onset (cause-like)</span>
+<span class="sd">    CONTAINS     → 0.85  long-running degradation encompasses the activity window</span>
+<span class="sd">    PRECEDES     → 0.80  classic lead-time: ended before onset</span>
+<span class="sd">    SIMULTANEOUS → 0.50  concurrent; possible common cause</span>
+<span class="sd">    DURING       → 0.30  entirely within the activity window; likely a symptom</span>
+<span class="sd">    OVERLAPPED_BY→ 0.30  started after onset and outlasted it; likely a symptom</span>
+<span class="sd">    FOLLOWS      → 0.10  temporal contradiction; flag for analyst review</span>
 
 <span class="sd">Reuse targets:</span>
 <span class="sd">    RCA.orchestrators.tskr_temporal_scorer.TSKRTemporalScorerV1</span>
@@ -143,6 +145,10 @@
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_c_temporal_chain/index.html#src.dackar.outage.stages.stage_c_temporal_chain._OVERLAPS">[docs]</a>
 <span class="n">_OVERLAPS</span> <span class="o">=</span> <span class="s2">"overlaps"</span></div>
 
+<div class="viewcode-block" id="_OVERLAPPED_BY">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_c_temporal_chain/index.html#src.dackar.outage.stages.stage_c_temporal_chain._OVERLAPPED_BY">[docs]</a>
+<span class="n">_OVERLAPPED_BY</span> <span class="o">=</span> <span class="s2">"overlapped_by"</span></div>
+
 <div class="viewcode-block" id="_CONTAINS">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_c_temporal_chain/index.html#src.dackar.outage.stages.stage_c_temporal_chain._CONTAINS">[docs]</a>
 <span class="n">_CONTAINS</span> <span class="o">=</span> <span class="s2">"contains"</span></div>
@@ -180,6 +186,10 @@
     <span class="n">_PRECEDES</span><span class="p">:</span> <span class="mf">0.80</span><span class="p">,</span>
     <span class="n">_SIMULTANEOUS</span><span class="p">:</span> <span class="mf">0.50</span><span class="p">,</span>
     <span class="n">_DURING</span><span class="p">:</span> <span class="mf">0.30</span><span class="p">,</span>
+    <span class="c1"># overlapped_by: the prior event STARTED AFTER the activity onset and</span>
+    <span class="c1"># outlasted it.  Like DURING, that is a post-onset event — a likely symptom,</span>
+    <span class="c1"># not a cause — so it carries the same low score rather than OVERLAPS' 0.90.</span>
+    <span class="n">_OVERLAPPED_BY</span><span class="p">:</span> <span class="mf">0.30</span><span class="p">,</span>
     <span class="n">_FOLLOWS</span><span class="p">:</span> <span class="mf">0.10</span><span class="p">,</span>
     <span class="n">_UNKNOWN</span><span class="p">:</span> <span class="mf">0.00</span><span class="p">,</span>
 <span class="p">}</span></div>
@@ -208,18 +218,6 @@
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_c_temporal_chain/index.html#src.dackar.outage.stages.stage_c_temporal_chain._RELATION_WEIGHT">[docs]</a>
 <span class="n">_RELATION_WEIGHT</span> <span class="o">=</span> <span class="mf">0.15</span>  <span class="c1"># base Allen relation score</span></div>
 
-
-<span class="c1"># Reuse: Interval dataclass and onset_lag_hours from RCA (read-only import)</span>
-<span class="k">try</span><span class="p">:</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">dackar.RCA.orchestrators.temporal_relations</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>  <span class="c1"># noqa: F401</span>
-        <span class="n">Interval</span> <span class="k">as</span> <span class="n">_RCAInterval</span><span class="p">,</span>
-    <span class="p">)</span>
-<div class="viewcode-block" id="_RCA_TEMPORAL_AVAILABLE">
-<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_c_temporal_chain/index.html#src.dackar.outage.stages.stage_c_temporal_chain._RCA_TEMPORAL_AVAILABLE">[docs]</a>
-    <span class="n">_RCA_TEMPORAL_AVAILABLE</span> <span class="o">=</span> <span class="kc">True</span></div>
-
-<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-    <span class="n">_RCA_TEMPORAL_AVAILABLE</span> <span class="o">=</span> <span class="kc">False</span>
 
 
 <span class="c1"># ---------------------------------------------------------------------------</span>
@@ -313,6 +311,46 @@
 
         <span class="n">activity_interval</span><span class="p">,</span> <span class="n">is_point</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_activity_interval</span><span class="p">(</span><span class="n">emergent_activity</span><span class="p">)</span>
         <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="n">component_event_timeline</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"events"</span><span class="p">,</span> <span class="p">[])</span>
+
+        <span class="c1"># If the activity's own start cannot be parsed, no Allen relation can be</span>
+        <span class="c1"># determined for any event (every one would be UNKNOWN).  That is a lack</span>
+        <span class="c1"># of data about the activity, not a weak-but-present chain, so report</span>
+        <span class="c1"># insufficient_data explicitly rather than letting it collapse to "weak".</span>
+        <span class="k">if</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">activity_interval</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Stage C (run=</span><span class="si">%s</span><span class="s2">): emergent activity </span><span class="si">%s</span><span class="s2"> has no parseable start "</span>
+                <span class="s2">"timestamp; emitting insufficient_data chain."</span><span class="p">,</span>
+                <span class="n">run_id</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">links</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">summary</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">"chain_length"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="s2">"strongest_link_id"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"strongest_allen_relation"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"max_relation_score"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+                <span class="s2">"has_temporal_contradiction"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+                <span class="s2">"causal_posture"</span><span class="p">:</span> <span class="s2">"insufficient_data"</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="k">return</span> <span class="p">{</span>
+                <span class="s2">"activity_id"</span><span class="p">:</span> <span class="n">activity_id</span><span class="p">,</span>
+                <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+                <span class="s2">"generated_at"</span><span class="p">:</span> <span class="n">run_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"started_at"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+                <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">component_id</span><span class="p">,</span>
+                <span class="s2">"emergent_activity_interval"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"start"</span><span class="p">:</span> <span class="n">activity_interval</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="s2">"end"</span><span class="p">:</span> <span class="n">activity_interval</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                    <span class="s2">"is_point_event"</span><span class="p">:</span> <span class="n">is_point</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="s2">"chain_links"</span><span class="p">:</span> <span class="n">links</span><span class="p">,</span>
+                <span class="s2">"summary"</span><span class="p">:</span> <span class="n">summary</span><span class="p">,</span>
+                <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"generated_by"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+                    <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+                    <span class="s2">"scorer_version"</span><span class="p">:</span> <span class="s2">"v1"</span><span class="p">,</span>
+                    <span class="s2">"epsilon_hours"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">epsilon_hours</span><span class="p">,</span>
+                    <span class="s2">"unparseable_activity_start"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                <span class="p">},</span>
+            <span class="p">}</span>
 
         <span class="n">links</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">events</span><span class="p">:</span>
@@ -456,7 +494,8 @@
         <span class="k">if</span> <span class="n">act_start</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">lag</span> <span class="o">=</span> <span class="p">(</span><span class="n">act_start</span> <span class="o">-</span> <span class="n">event_start</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">/</span> <span class="mf">3600.0</span>
 
-        <span class="n">dq</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"data_quality_score"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.5</span>
+        <span class="n">dq_raw</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"data_quality_score"</span><span class="p">)</span>
+        <span class="n">dq</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">dq_raw</span> <span class="k">if</span> <span class="n">dq_raw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.5</span>
         <span class="n">confidence</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_confidence</span><span class="p">(</span><span class="n">allen_rel</span><span class="p">,</span> <span class="n">dq</span><span class="p">,</span> <span class="n">lag</span><span class="p">)</span>
         <span class="n">causal_strength</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_assign_causal_strength</span><span class="p">(</span><span class="n">allen_rel</span><span class="p">,</span> <span class="n">confidence</span><span class="p">)</span>
 
@@ -492,13 +531,13 @@
 <span class="sd">        boundary are treated as simultaneous at that boundary.</span>
 
 <span class="sd">        Logic (interval A = prior event, interval B = activity):</span>
+<span class="sd">            A.start ≈ B.start and A.end ≈ B.end (within ε)  → SIMULTANEOUS</span>
 <span class="sd">            A.end   &lt; B.start - ε  → PRECEDES</span>
 <span class="sd">            A.start &gt; B.end   + ε  → FOLLOWS</span>
 <span class="sd">            A.start &lt; B.start - ε  and A.end &gt; B.end + ε  → CONTAINS</span>
-<span class="sd">            A.start &lt; B.start - ε  and A.end within B     → OVERLAPS  (left overlap)</span>
+<span class="sd">            A.start &lt; B.start - ε  and A.end within B     → OVERLAPS       (left overlap: cause-like)</span>
 <span class="sd">            A entirely within B                            → DURING</span>
-<span class="sd">            A.start within B       and A.end &gt; B.end + ε  → OVERLAPS  (right overlap)</span>
-<span class="sd">            otherwise                                      → SIMULTANEOUS</span>
+<span class="sd">            A.start within B       and A.end &gt; B.end + ε  → OVERLAPPED_BY  (right overlap: symptom-like)</span>
 <span class="sd">        """</span>
         <span class="k">if</span> <span class="n">prior_start</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">activity_start</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">_UNKNOWN</span>
@@ -513,6 +552,10 @@
         <span class="n">b_s</span> <span class="o">=</span> <span class="n">activity_start</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span>
         <span class="n">b_e</span> <span class="o">=</span> <span class="n">b_end</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span>
 
+        <span class="c1"># Equal intervals (both boundaries within ε) are SIMULTANEOUS.  This is</span>
+        <span class="c1"># tested first so identical intervals don't fall through to DURING.</span>
+        <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">a_s</span> <span class="o">-</span> <span class="n">b_s</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">eps</span> <span class="ow">and</span> <span class="nb">abs</span><span class="p">(</span><span class="n">a_e</span> <span class="o">-</span> <span class="n">b_e</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">eps</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_SIMULTANEOUS</span>
         <span class="k">if</span> <span class="n">a_e</span> <span class="o">&lt;</span> <span class="n">b_s</span> <span class="o">-</span> <span class="n">eps</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">_PRECEDES</span>
         <span class="k">if</span> <span class="n">a_s</span> <span class="o">&gt;</span> <span class="n">b_e</span> <span class="o">+</span> <span class="n">eps</span><span class="p">:</span>
@@ -524,8 +567,10 @@
         <span class="k">if</span> <span class="n">a_e</span> <span class="o">&lt;=</span> <span class="n">b_e</span> <span class="o">+</span> <span class="n">eps</span><span class="p">:</span>         <span class="c1"># a_s &gt;= b_s - eps: A entirely within B</span>
             <span class="k">return</span> <span class="n">_DURING</span>
         <span class="c1"># A started within B (a_s &gt;= b_s - eps) but extends beyond B (a_e &gt; b_e + eps):</span>
-        <span class="c1"># right-side overlap — prior event was active at activity onset and outlasted it.</span>
-        <span class="k">return</span> <span class="n">_OVERLAPS</span></div>
+        <span class="c1"># right-side overlap — the prior event began AFTER activity onset and</span>
+        <span class="c1"># outlasted it.  That is Allen "overlapped-by": a post-onset symptom, not</span>
+        <span class="c1"># a lead cause, so it is scored low (not the 0.90 of a left OVERLAPS).</span>
+        <span class="k">return</span> <span class="n">_OVERLAPPED_BY</span></div>
 
 
 <div class="viewcode-block" id="TemporalChainScorer._compute_confidence">
@@ -549,6 +594,8 @@
         <span class="c1"># (the prior event was active at or spanned the activity window).  Applying</span>
         <span class="c1"># lag-decay would penalise long-running degradation events that are exactly</span>
         <span class="c1"># the kind of cause we most want to surface.  Force lag_plausibility=1.0.</span>
+        <span class="c1"># OVERLAPPED_BY is deliberately excluded — it is a post-onset symptom, so it</span>
+        <span class="c1"># must not get the cause-like plausibility boost.</span>
         <span class="k">if</span> <span class="n">allen_relation</span> <span class="ow">in</span> <span class="p">(</span><span class="n">_OVERLAPS</span><span class="p">,</span> <span class="n">_CONTAINS</span><span class="p">):</span>
             <span class="n">lag_plausibility</span> <span class="o">=</span> <span class="mf">1.0</span>
         <span class="c1"># Lag plausibility: positive lags ≤ 24 h are most credible causal leads;</span>
@@ -563,8 +610,9 @@
             <span class="c1"># Smooth decay from 1.0 to 0.1 over 30 days (720 h)</span>
             <span class="n">lag_plausibility</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="p">(</span><span class="n">onset_lag_hours</span> <span class="o">-</span> <span class="mf">24.0</span><span class="p">)</span> <span class="o">/</span> <span class="mf">720.0</span><span class="p">)</span>
 
+        <span class="n">dq</span> <span class="o">=</span> <span class="n">data_quality_score</span> <span class="k">if</span> <span class="n">data_quality_score</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.5</span>
         <span class="k">return</span> <span class="p">(</span>
-            <span class="n">_ANOMALY_WEIGHT</span> <span class="o">*</span> <span class="p">(</span><span class="n">data_quality_score</span> <span class="ow">or</span> <span class="mf">0.5</span><span class="p">)</span>
+            <span class="n">_ANOMALY_WEIGHT</span> <span class="o">*</span> <span class="n">dq</span>
             <span class="o">+</span> <span class="n">_LATENCY_WEIGHT</span> <span class="o">*</span> <span class="n">lag_plausibility</span>
             <span class="o">+</span> <span class="n">_RELATION_WEIGHT</span> <span class="o">*</span> <span class="n">relation_component</span>
         <span class="p">)</span></div>

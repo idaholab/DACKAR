@@ -42,7 +42,9 @@ Attributes
    src.dackar.outage.stages.stage_a_intake.JsonDict
    src.dackar.outage.stages.stage_a_intake._CLEANERS_AVAILABLE
    src.dackar.outage.stages.stage_a_intake._ABBR_RESOLVER_AVAILABLE
-   src.dackar.outage.stages.stage_a_intake._REGULATORY_KEYWORDS_RE
+   src.dackar.outage.stages.stage_a_intake._REGULATORY_ACRONYMS_RE
+   src.dackar.outage.stages.stage_a_intake._REGULATORY_PHRASES_RE
+   src.dackar.outage.stages.stage_a_intake._PHYSICAL_LABEL_GROUPS
    src.dackar.outage.stages.stage_a_intake._SCOPE_KEYWORDS_RE
    src.dackar.outage.stages.stage_a_intake._SCHEDULE_OPT_KEYWORDS_RE
    src.dackar.outage.stages.stage_a_intake._DEGRADATION_KEYWORDS_RE
@@ -51,12 +53,15 @@ Attributes
    src.dackar.outage.stages.stage_a_intake._CR_REF_RE
    src.dackar.outage.stages.stage_a_intake._ABBR_CANDIDATE_RE
    src.dackar.outage.stages.stage_a_intake._COMMON_CAPS
+   src.dackar.outage.stages.stage_a_intake._REGULATORY_ACRONYM_PATTERNS
+   src.dackar.outage.stages.stage_a_intake._REGULATORY_PHRASE_PATTERNS
    src.dackar.outage.stages.stage_a_intake._REGULATORY_PATTERNS
    src.dackar.outage.stages.stage_a_intake._RP_HOLD_PATTERNS
    src.dackar.outage.stages.stage_a_intake._SCAFFOLD_PATTERNS
    src.dackar.outage.stages.stage_a_intake._CLEARANCE_PATTERNS
    src.dackar.outage.stages.stage_a_intake._VENDOR_PATTERNS
    src.dackar.outage.stages.stage_a_intake._SOURCE_CONFIDENCE
+   src.dackar.outage.stages.stage_a_intake._DEFAULT_NER_CONFIDENCE
 
 
 Classes
@@ -73,6 +78,8 @@ Functions
 
 .. autoapisummary::
 
+   src.dackar.outage.stages.stage_a_intake._match_regulatory_keyword
+   src.dackar.outage.stages.stage_a_intake._span_confidence
    src.dackar.outage.stages.stage_a_intake._make_entity
 
 
@@ -91,7 +98,23 @@ Module Contents
    :value: True
 
 
-.. py:data:: _REGULATORY_KEYWORDS_RE
+.. py:data:: _REGULATORY_ACRONYMS_RE
+
+.. py:data:: _REGULATORY_PHRASES_RE
+
+.. py:function:: _match_regulatory_keyword(raw_text, expanded_text = None)
+
+   Return the first regulatory keyword match, or None.
+
+   Acronyms (TS/LCO/NRC/ALARA/CAP/10 CFR) are matched CASE-SENSITIVELY on the
+   RAW text, so the common word "cap" is not mistaken for the CAP acronym and
+   uppercased acronyms are not lost to lower-casing.  Phrases are matched
+   case-insensitively on the EXPANDED text, so abbreviation expansion is
+   preserved (e.g. "ts" → "technical specification", "surv" → "surveillance").
+   When no expanded text is supplied, phrases fall back to the raw text.
+
+
+.. py:data:: _PHYSICAL_LABEL_GROUPS
 
 .. py:data:: _SCOPE_KEYWORDS_RE
 
@@ -108,6 +131,12 @@ Module Contents
 .. py:data:: _ABBR_CANDIDATE_RE
 
 .. py:data:: _COMMON_CAPS
+
+.. py:data:: _REGULATORY_ACRONYM_PATTERNS
+   :type:  List[Tuple[re.Pattern, str, bool]]
+
+.. py:data:: _REGULATORY_PHRASE_PATTERNS
+   :type:  List[Tuple[re.Pattern, str, bool]]
 
 .. py:data:: _REGULATORY_PATTERNS
    :type:  List[Tuple[re.Pattern, str, bool]]
@@ -334,17 +363,21 @@ Module Contents
 
 
 
-   .. py:method:: _run_ner(text, emergent_activity)
+   .. py:method:: _run_ner(text, emergent_activity, raw_text = None)
 
-      Extract named entities from the expanded description.
+      Extract named entities from the activity description.
 
       Returns a list of entity dicts conforming to the extracted_entities
       array in activity_intake_result.json.
 
       Extraction layers (applied in order, results merged):
-          1. Regex patterns for tag IDs, WO references, CR references.
+          1. Regex patterns for tag IDs, WO references, CR references — run on
+             the RAW description (``raw_text``), because ComponentIdRemover in
+             the cleaning stage strips exactly those identifiers from the
+             expanded text, so running regex on the expanded text would find
+             nothing.
           2. HybridNERPipeline (if injected) for component, action, failure-mode
-             entities via gazetteer + anchored NP generators.
+             entities via gazetteer + anchored NP generators (on expanded text).
           3. SpacyAnnotator (if injected) for temporal references and measurements.
 
       Each entity dict has keys: entity_id, text, entity_type, start, end,
@@ -356,13 +389,15 @@ Module Contents
 
       Resolve entity mentions to canonical IDs.
 
-      Returns (component_ids, system_ids, work_order_ids, cr_ids).
+      Returns (component_ids, system_ids, work_order_ids, cr_ids,
+      failure_mode_ids).
 
       Resolution strategy:
           - Pass-through known IDs from emergent_activity (highest confidence).
           - Collect WO/CR regex matches from extracted entities.
-          - EntityNormalizer (if injected) for additional component mentions
-            found by the NER pipeline (token-overlap → LLM fallback).
+          - EntityNormalizer (if injected) for physical component/asset NER
+            mentions (token-overlap → LLM fallback).  It indexes failure
+            modes, so it yields the owning component_id plus a failure-mode id.
 
 
 
@@ -379,7 +414,7 @@ Module Contents
 
 
 
-   .. py:method:: _classify_emergence_type(emergent_activity, entities, text)
+   .. py:method:: _classify_emergence_type(emergent_activity, entities, text, raw_text = None)
 
       Classify the emergence type of this activity.
 
@@ -393,6 +428,13 @@ Module Contents
           3. schedule_optimization — schedule-change language, no failure terms.
           4. truly_unplanned    — default; degradation / failure language, or
                                   no other rule matched.
+
+      :param text: the expanded (abbreviation-resolved) description; regulatory
+                   PHRASE patterns and the scope/schedule/degradation keyword
+                   matches run against this.
+      :param raw_text: the original raw description; regulatory ACRONYM patterns
+                       match case-sensitively against this. Falls back to ``text`` when
+                       not provided.
 
 
 
@@ -442,20 +484,28 @@ Module Contents
 
 
 
-   .. py:method:: _detect_regulatory_constraints(emergent_activity, entities, text)
+   .. py:method:: _detect_regulatory_constraints(emergent_activity, entities, text, raw_text = None)
 
       Identify regulatory constraints that restrict deferral.
 
       Returns (has_regulatory_constraint, regulatory_drivers).
 
+      :param text: the expanded (abbreviation-resolved) description; phrase
+                   patterns match against this.
+      :param raw_text: the original raw description; acronym patterns match
+                       case-sensitively against this. Falls back to ``text`` when not
+                       provided (older call sites).
+
       Sources checked in order:
           1. Structured regulatory fields in emergent_activity
              (technical_specification_reference, nrc_commitment_number, lco_number).
-          2. Pattern matching against expanded description using
-             _REGULATORY_PATTERNS (TS, LCO, NRC, ALARA, CAP, surveillance,
-             operability determination, hold point).
-          3. Supplementary patterns from config.regulatory_keywords_path, unioned
-             with the built-in set at detection time.
+          2. Acronym patterns (TS/LCO/NRC/10 CFR/ALARA/CAP) matched
+             case-sensitively on the RAW text, and phrase patterns
+             (technical specification, surveillance, operability determination,
+             hold point, …) matched case-insensitively on the EXPANDED text —
+             the same split and case rules as the emergence classifier.
+          3. Supplementary patterns from config.regulatory_keywords_path
+             (treated as phrases), unioned with the built-in set.
 
       Every driver includes: driver_id, driver_type, matched_text,
       defer_prohibited, source.
@@ -477,8 +527,27 @@ Module Contents
 
 
 
-.. py:function:: _make_entity(*, text, entity_type, start, end, source, confidence)
+.. py:data:: _DEFAULT_NER_CONFIDENCE
+   :value: 0.7
+
+
+.. py:function:: _span_confidence(span)
+
+   Best available confidence for a HybridNER ResolvedSpan.
+
+   ``ResolvedSpan.provenance`` has no top-level ``score`` key — it is
+   ``{"sources": [SourceHit.__dict__, ...], "selected_by": ...}`` (or
+   ``{"split_from": ...}``).  Take the max ``score`` across the source hits
+   when present; otherwise fall back to the default prior.
+
+
+.. py:function:: _make_entity(*, text, entity_type, start, end, source, confidence, label_group = None, offset_basis = None)
 
    Construct a standardised entity dict for the extracted_entities array.
+
+   ``offset_basis`` records which text the start/end offsets index
+   ("raw_description" for regex entities, "normalized_description" for NER/
+   spaCy entities), since regex runs on the raw text and NER on the expanded
+   text.
 
 

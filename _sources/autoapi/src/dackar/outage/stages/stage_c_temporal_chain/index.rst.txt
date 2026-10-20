@@ -12,7 +12,8 @@ src.dackar.outage.stages.stage_c_temporal_chain
           into a temporal interval [start, end].
        2. For each prior event in the ComponentEventTimeline, apply Allen interval
           algebra to classify the temporal relationship to the emergent activity:
-          PRECEDES, OVERLAPS, CONTAINS, DURING, FOLLOWS, SIMULTANEOUS, UNKNOWN.
+          PRECEDES, OVERLAPS, OVERLAPPED_BY, CONTAINS, DURING, FOLLOWS,
+          SIMULTANEOUS, UNKNOWN.
        3. Score each link for causal relevance based on the Allen relation, onset
           lag, and data quality of the prior event.
        4. Label each link with a causal_strength: strong / moderate / weak /
@@ -22,12 +23,13 @@ src.dackar.outage.stages.stage_c_temporal_chain
    Output schema: outage/schemas/temporal_event_chain.json
 
    Allen relation → causal relevance reference:
-       OVERLAPS    → 0.90  prior event was active at emergent activity onset
-       CONTAINS    → 0.85  long-running degradation encompasses the activity window
-       PRECEDES    → 0.80  classic lead-time: ended before onset
-       SIMULTANEOUS→ 0.50  concurrent; possible common cause
-       DURING      → 0.30  started after onset; likely a symptom, not a cause
-       FOLLOWS     → 0.10  temporal contradiction; flag for analyst review
+       OVERLAPS     → 0.90  prior event started before and was active at onset (cause-like)
+       CONTAINS     → 0.85  long-running degradation encompasses the activity window
+       PRECEDES     → 0.80  classic lead-time: ended before onset
+       SIMULTANEOUS → 0.50  concurrent; possible common cause
+       DURING       → 0.30  entirely within the activity window; likely a symptom
+       OVERLAPPED_BY→ 0.30  started after onset and outlasted it; likely a symptom
+       FOLLOWS      → 0.10  temporal contradiction; flag for analyst review
 
    Reuse targets:
        RCA.orchestrators.tskr_temporal_scorer.TSKRTemporalScorerV1
@@ -50,6 +52,7 @@ Attributes
    src.dackar.outage.stages.stage_c_temporal_chain.JsonDict
    src.dackar.outage.stages.stage_c_temporal_chain._PRECEDES
    src.dackar.outage.stages.stage_c_temporal_chain._OVERLAPS
+   src.dackar.outage.stages.stage_c_temporal_chain._OVERLAPPED_BY
    src.dackar.outage.stages.stage_c_temporal_chain._CONTAINS
    src.dackar.outage.stages.stage_c_temporal_chain._DURING
    src.dackar.outage.stages.stage_c_temporal_chain._FOLLOWS
@@ -61,7 +64,6 @@ Attributes
    src.dackar.outage.stages.stage_c_temporal_chain._ANOMALY_WEIGHT
    src.dackar.outage.stages.stage_c_temporal_chain._LATENCY_WEIGHT
    src.dackar.outage.stages.stage_c_temporal_chain._RELATION_WEIGHT
-   src.dackar.outage.stages.stage_c_temporal_chain._RCA_TEMPORAL_AVAILABLE
 
 
 Classes
@@ -94,6 +96,10 @@ Module Contents
 
 .. py:data:: _OVERLAPS
    :value: 'overlaps'
+
+
+.. py:data:: _OVERLAPPED_BY
+   :value: 'overlapped_by'
 
 
 .. py:data:: _CONTAINS
@@ -137,10 +143,6 @@ Module Contents
 
 .. py:data:: _RELATION_WEIGHT
    :value: 0.15
-
-
-.. py:data:: _RCA_TEMPORAL_AVAILABLE
-   :value: True
 
 
 .. py:function:: _parse_dt(iso_str)
@@ -245,13 +247,13 @@ Module Contents
       boundary are treated as simultaneous at that boundary.
 
       Logic (interval A = prior event, interval B = activity):
+          A.start ≈ B.start and A.end ≈ B.end (within ε)  → SIMULTANEOUS
           A.end   < B.start - ε  → PRECEDES
           A.start > B.end   + ε  → FOLLOWS
           A.start < B.start - ε  and A.end > B.end + ε  → CONTAINS
-          A.start < B.start - ε  and A.end within B     → OVERLAPS  (left overlap)
+          A.start < B.start - ε  and A.end within B     → OVERLAPS       (left overlap: cause-like)
           A entirely within B                            → DURING
-          A.start within B       and A.end > B.end + ε  → OVERLAPS  (right overlap)
-          otherwise                                      → SIMULTANEOUS
+          A.start within B       and A.end > B.end + ε  → OVERLAPPED_BY  (right overlap: symptom-like)
 
 
 
