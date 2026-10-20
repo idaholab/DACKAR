@@ -1039,8 +1039,13 @@ class OutageActivityOrchestrator:
         abbr_rate_high = abbr_rate > self.config.unknown_abbreviation_rate_warning
 
         # When kg_driver_available is absent (pre-computed artifact without the field),
-        # default to True to avoid spurious warnings on replayed runs.
-        kg_unavailable = not component_event_timeline.get("kg_driver_available", True)
+        # default to True to avoid spurious warnings on replayed runs.  A KG query
+        # failure (kg_query_failed) also counts as unavailable: the timeline may be
+        # incomplete even though a driver was injected.
+        kg_unavailable = (
+            not component_event_timeline.get("kg_driver_available", True)
+            or component_event_timeline.get("kg_query_failed", False)
+        )
 
         # When schedule_loader_unavailable is True Stage E produced a null stub;
         # the recommendation was made without schedule/CP data.

@@ -135,11 +135,16 @@
             "type": "string",
             "description": "Entity type emitted by the extractor (e.g. tag_id, work_order_reference, condition_report_reference, or an NER label such as comp_valve/deg_mech/task_replacement)."
           },
-          "start": { "type": "integer", "minimum": 0, "description": "Character offset start in normalized_description." },
-          "end": { "type": "integer", "minimum": 0, "description": "Character offset end in normalized_description." },
+          "start": { "type": "integer", "minimum": 0, "description": "Character offset start. Basis depends on source (see offset_basis): regex offsets index the RAW description; hybrid_ner / spacy offsets index the expanded (normalized) description." },
+          "end": { "type": "integer", "minimum": 0, "description": "Character offset end; same basis as start (see offset_basis)." },
           "source": {
             "type": "string",
             "description": "Which extractor produced this entity (e.g. regex, hybrid_ner, spacy)."
+          },
+          "offset_basis": {
+            "type": ["string", "null"],
+            "enum": ["raw_description", "normalized_description", null],
+            "description": "Which text the start/end offsets index: 'raw_description' for regex entities, 'normalized_description' for NER/spaCy entities."
           },
           "label": {
             "type": "string",
@@ -147,14 +152,18 @@
           },
           "label_group": {
             "type": ["string", "null"],
+            "description": "Group id of an NER entity, from RCA/ner/data/group-schema.json (span.groups[0]); null for regex entities. Enum tracks the group ids that schema actually emits.",
             "enum": [
               "G1_PHYSICAL_COMPONENT",
-              "G2_OPERATIONAL_DEVICE",
+              "G2_PHYSICAL_ASSET_SYSTEM",
+              "G3_MATERIAL_CHEMISTRY",
               "G4_MECHANISM_PROCESS",
               "G5_FAILURE_OUTCOME",
-              "G6_MAINTENANCE_ACTION",
-              "G7_TOOLS_METHODS",
-              "G8_PROPERTIES",
+              "G6_ACTION_MAINT_SURV",
+              "G7_TOOL_METHOD",
+              "G8_PROPERTY_STATE",
+              "G9_DIAGNOSTIC_QUAL",
+              "G10_ENV_BIO_CONTEXT",
               "TAG_ID",
               "WO_REF",
               "CR_REF",
@@ -193,6 +202,12 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "Condition report IDs extracted from text or passed through from intake."
+    },
+
+    "resolved_failure_mode_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Failure-mode IDs (fm_id, e.g. FM_AIR_INLEAK) resolved by EntityNormalizer from physical component/asset NER mentions. Kept separate from system IDs because EntityNormalizer indexes failure modes, not systems."
     },
 
     "discipline": {
