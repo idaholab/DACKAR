@@ -1,0 +1,463 @@
+src.dackar.outage.orchestrators.outage_activity_orchestrator
+============================================================
+
+.. py:module:: src.dackar.outage.orchestrators.outage_activity_orchestrator
+
+.. autoapi-nested-parse::
+
+   OutageActivityOrchestrator — stage-based pipeline for unexpected outage activities.
+
+   Executes stages A → B → C → D → E → F → G in sequence, validating and
+   optionally persisting each artifact at stage boundaries.  Any stage can be
+   skipped by passing a pre-computed artifact as a keyword argument to ``run()``;
+   this supports replay, partial re-runs, and unit testing of individual stages.
+
+   Stage execution order:
+       A  _stage_a_intake            emergent_activity → intake_result
+       B  _stage_b_kg_timeline       intake_result → component_event_timeline
+       C  _stage_c_temporal_chain    component_event_timeline → temporal_event_chain
+       D  _stage_d_analogs           intake_result → historical_analogs
+       E  _stage_e_schedule          historical_analogs → schedule_impact_assessment
+       F  _stage_f_options           all prior → insertion_options
+       G  _stage_g_recommendation    all prior → outage_activity_recommendation
+                                     + run_manifest
+
+   Design notes:
+     - Protocol implementations are injected at construction time; no concrete
+       backend is imported here.
+     - _validate_and_persist() mirrors the RCA orchestrator pattern: required
+       artifacts raise on validation failure (when stop_on_validation_error=True);
+       optional artifacts log a warning and continue.
+     - run() returns a dict of all artifacts keyed by artifact name, so callers
+       can inspect any intermediate result without reaching into the file store.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.orchestrators.outage_activity_orchestrator.LOGGER
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.orchestrators.outage_activity_orchestrator._validation_outcome
+   src.dackar.outage.orchestrators.outage_activity_orchestrator._validation_to_dict
+   src.dackar.outage.orchestrators.outage_activity_orchestrator._stub_component_event_timeline
+   src.dackar.outage.orchestrators.outage_activity_orchestrator._stub_schedule_impact_artifact
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:function:: _validation_outcome(validation)
+
+   Return (ok, issues) from a validator result of either shape.
+
+   The real :class:`OutageArtifactValidator` returns a ``ValidationReport``
+   dataclass (``.ok`` / ``.issues``); :class:`NoOpSchemaValidator` returns a
+   plain ``{"ok": ..., "issues": [...]}`` dict.  Reading ``ok`` only off the
+   dict shape (the previous behaviour) silently treated every real report as
+   passing, disabling validation entirely.
+
+
+.. py:function:: _validation_to_dict(validation)
+
+   Normalise a validator result to a JSON-serialisable dict for persistence.
+
+
+.. py:function:: _stub_component_event_timeline(run_id, activity_id, reason)
+
+   Return an empty ComponentEventTimeline used when Stage B cannot determine
+   a component_id (e.g. no resolved_component_ids and no known_component_id).
+
+   All history fields are empty/zero so downstream stages degrade gracefully:
+   Stage C produces ``causal_posture = "insufficient_data"`` with zero chain links.
+   Stage D runs independently and is unaffected.
+   Stage G cannot raise KG-derived attention flags (correct — no KG data available).
+
+   The ``kg_driver_available`` flag is ``False`` so the orchestrator surfaces
+   this in ``review_hooks`` as ``kg_unavailable``.
+
+
+.. py:function:: _stub_schedule_impact_artifact(run_id, activity_id, reason)
+
+   Return a null ScheduleImpactAssessment used when Stage E cannot load
+   the schedule network (e.g. ``schedule_loader`` not injected).
+
+   All CP-derived fields are ``None`` so downstream stages degrade gracefully:
+   Stage F defaults to permissive float estimates and Stage G cannot raise
+   ``_FLAG_CP_IMPACT`` (correct — no schedule information is available).
+
+   The stub is identified by ``schedule_version_id == "STUB::no_schedule"`` and
+   the reason string in ``notes``.  ``schedule_loader_unavailable`` is ``True``
+   so the orchestrator's review hook surfaces it, and ``criticality_label`` is
+   ``"unknown"`` rather than ``"non_critical"`` so Stage G does not read an
+   absent schedule as a safely non-critical one.
+
+
+.. py:class:: OutageActivityOrchestrator
+
+   Pipeline orchestrator for unexpected outage activity analysis.
+
+   All stage implementations are injected via their Protocols, keeping this
+   class free of any backend dependency.
+
+   Minimal wiring example (all no-ops)::
+
+       from dackar.outage.orchestrators.protocols import (
+           NoOpSchemaValidator, FileArtifactStore, OutageOrchestratorConfig,
+       )
+
+       class _StubStage:
+           def process(self, *a, **kw): return {}
+           def build(self, *a, **kw): return {}
+           def score(self, *a, **kw): return {}
+           def retrieve(self, *a, **kw): return {}
+           def assess(self, *a, **kw): return {}
+           def generate(self, *a, **kw): return {}
+           def synthesize(self, *a, **kw): return {}
+
+       stub = _StubStage()
+       orch = OutageActivityOrchestrator(
+           validator=NoOpSchemaValidator(),
+           artifact_store=FileArtifactStore("/tmp/outage_runs"),
+           intake_processor=stub,
+           kg_timeline_builder=stub,
+           temporal_chain_scorer=stub,
+           analog_retriever=stub,
+           schedule_impact_assessor=stub,
+           option_generator=stub,
+           recommendation_synthesizer=stub,
+       )
+       result = orch.run(emergent_activity={...})
+
+
+   .. py:attribute:: validator
+      :type:  src.dackar.outage.orchestrators.protocols.SchemaValidator
+
+
+   .. py:attribute:: artifact_store
+      :type:  src.dackar.outage.orchestrators.protocols.ArtifactStore
+
+
+   .. py:attribute:: intake_processor
+      :type:  src.dackar.outage.orchestrators.protocols.ActivityIntakeProcessor
+
+
+   .. py:attribute:: kg_timeline_builder
+      :type:  src.dackar.outage.orchestrators.protocols.KGTimelineBuilder
+
+
+   .. py:attribute:: temporal_chain_scorer
+      :type:  src.dackar.outage.orchestrators.protocols.TemporalChainScorer
+
+
+   .. py:attribute:: analog_retriever
+      :type:  src.dackar.outage.orchestrators.protocols.HistoricalAnalogRetriever
+
+
+   .. py:attribute:: schedule_impact_assessor
+      :type:  src.dackar.outage.orchestrators.protocols.ScheduleImpactAssessor
+
+
+   .. py:attribute:: option_generator
+      :type:  src.dackar.outage.orchestrators.protocols.InsertionOptionGeneratorProtocol
+
+
+   .. py:attribute:: recommendation_synthesizer
+      :type:  src.dackar.outage.orchestrators.protocols.RecommendationSynthesizerProtocol
+
+
+   .. py:attribute:: feedback_writer
+      :type:  Optional[Any]
+      :value: None
+
+
+      Optional :class:`~stages.completion_feedback.CompletionFeedbackWriter`
+      that closes the learning loop by writing actual execution data back into
+      the historical analog index after an activity completes in the field.
+
+      Typical wiring::
+
+          from dackar.outage.stages.completion_feedback import CompletionFeedbackWriter, CsvAnalogPersister
+
+          orchestrator = OutageActivityOrchestrator(
+              ...
+              feedback_writer=CompletionFeedbackWriter(
+                  index=analog_retriever.index,           # shared HistoricalActivityIndex
+                  persister=CsvAnalogPersister("/data/analogs/activities.csv"),
+              ),
+          )
+
+          # After the field activity completes, call record_completion():
+          result = orchestrator.record_completion(
+              activity_id="ACT-20260412-001",
+              run_id="OUTAGE::abc123",
+              actual_duration_hours=16.2,
+              actual_start="2026-04-12T08:00:00Z",
+              actual_finish="2026-04-13T00:12:00Z",
+              outcome_notes="Packing replaced; no scope expansion.",
+          )
+          # result.index_updated → True    (Stage D retrieval benefits immediately)
+          # result.persisted     → True    (next outage cycle sees this activity)
+
+      When ``None`` (default) calls to ``record_completion()`` log a WARNING and
+      return a no-op result; the pipeline continues unaffected.
+
+
+   .. py:attribute:: insertion_point_determiner
+      :type:  Optional[Any]
+      :value: None
+
+
+      Optional :class:`~stages.insertion_point_determiner.InsertionPointDeterminer`
+      injected to enable the two-pass analog retrieval design.
+
+      When provided the orchestrator runs a lightweight insertion-point
+      determination between Stage C and Stage D.  The resulting
+      ``ScheduleContext`` is threaded into both Stage D (structural affinity
+      re-ranking) and Stage E (insertion point reuse).
+
+      What the two-pass design saves: Stage E skips its own insertion-point
+      search because the answer is already in ``ScheduleContext``.
+      What it does NOT save: Stage E still loads the full schedule
+      independently for Monte Carlo simulation.  The schedule is therefore
+      loaded twice — once in the pre-pass and once in Stage E.  To eliminate
+      the second load, cache the loaded ``OutageData`` inside ``ScheduleContext``
+      and have Stage E read it from there instead of re-fetching.
+
+      When ``None`` (default) the pipeline behaves exactly as before: Stage D
+      runs without schedule context and Stage E determines the insertion point
+      independently as it always has.
+
+
+   .. py:attribute:: config
+      :type:  src.dackar.outage.orchestrators.protocols.OutageOrchestratorConfig
+
+
+   .. py:method:: run(emergent_activity, *, intake_result = None, component_event_timeline = None, temporal_event_chain = None, historical_analogs = None, schedule_impact_assessment = None, insertion_options = None)
+
+      Execute the full A → G pipeline for one emergent activity.
+
+      :param emergent_activity: Validated EmergentActivity artifact (required).
+      :param intake_result: Pre-computed Stage A output — skips Stage A if provided.
+      :param component_event_timeline: Pre-computed Stage B output.
+      :param temporal_event_chain: Pre-computed Stage C output.
+      :param historical_analogs: Pre-computed Stage D output.
+      :param schedule_impact_assessment: Pre-computed Stage E output.
+      :param insertion_options: Pre-computed Stage F output.
+
+      :returns:     run_context, intake_result, component_event_timeline,
+                    temporal_event_chain, historical_analogs,
+                    schedule_impact_assessment, insertion_options,
+                    outage_activity_recommendation, run_manifest.
+      :rtype: Dict containing all artifact keys
+
+
+
+   .. py:method:: record_completion(*, activity_id, run_id, actual_duration_hours, actual_start = None, actual_finish = None, outcome_notes = '', outage_id = None, plant_id = None)
+
+      Record that an emergent activity has completed in the field.
+
+      Delegates to the injected ``feedback_writer`` to:
+
+      1. Hot-update the in-memory ``HistoricalActivityIndex`` shared with
+         Stage D — subsequent Stage D retrievals in the same session
+         immediately incorporate the real execution time.
+      2. Persist the record to the backing analog store via the injected
+         ``AnalogPersister`` — the *next* outage cycle's ``build()`` call
+         will include this activity with its actual duration.
+
+      Both operations are best-effort: failures are logged and reflected in
+      the returned ``CompletionRecord`` rather than raised.
+
+      :param activity_id: The emergent activity that completed.
+      :param run_id: The pipeline run that produced the original recommendation.
+      :param actual_duration_hours: Observed field duration (must be > 0).
+      :param actual_start: ISO-8601 field start timestamp (optional).
+      :param actual_finish: ISO-8601 field finish timestamp (optional).
+      :param outcome_notes: Free-text operator notes (optional).
+      :param outage_id: Used when the activity is not in the index (fallback).
+      :param plant_id: Used when the activity is not in the index (fallback).
+
+      :returns: :class:`~stages.completion_feedback.CompletionRecord` with
+                ``index_updated``, ``persisted``, and ``validation_warnings``.
+                Returns a minimal no-op record if no ``feedback_writer`` is injected.
+
+
+
+   .. py:method:: _build_run_context(run_id, emergent_activity)
+
+      Build and persist the run metadata block.
+
+      This is always executed; it cannot be skipped via a pre-computed artifact.
+      Mirrors _stage_a_build_run_context in the RCA orchestrator.
+
+
+
+   .. py:method:: _stage_a_intake(run_id, emergent_activity, run_context, precomputed)
+
+      Stage A — Activity Intake.
+
+      NER, abbreviation expansion, emergence type classification, regulatory
+      flag detection, component/WO/CR reference resolution, DQ scoring.
+
+      Exits with analyst_review=True if unknown_abbreviation_rate exceeds
+      the configured warning threshold.
+
+
+
+   .. py:method:: _stage_b_kg_timeline(run_id, emergent_activity, intake_result, run_context, precomputed, optional_failures)
+
+      Stage B — KG Timeline Builder.
+
+      Queries the knowledge graph for the resolved component(s) and assembles
+      a time-ordered ComponentEventTimeline of CRs, WOs, maintenance events,
+      inspections, and prior emergent activities.
+
+      When ``kg_timeline_builder.build()`` raises ``ValueError`` (no resolvable
+      component_id), this method catches the error, logs a WARNING, appends to
+      ``optional_failures``, and returns an empty stub timeline so Stages C, F,
+      and G can still produce a partial recommendation.  The ``kg_driver_available``
+      flag in the stub is ``False``, which is surfaced in ``review_hooks`` as
+      ``kg_unavailable`` so the analyst knows the recommendation was made without
+      KG history.
+
+
+
+   .. py:method:: _stage_c_temporal_chain(run_id, emergent_activity, component_event_timeline, run_context, precomputed)
+
+      Stage C — Temporal Event Chain Scorer.
+
+      Applies Allen interval algebra to the ComponentEventTimeline.
+      Classifies each prior event as PRECEDES, OVERLAPS, CONTAINS, DURING,
+      FOLLOWS, or SIMULTANEOUS relative to the emergent activity interval.
+
+
+
+   .. py:method:: _stage_d_analogs(run_id, emergent_activity, intake_result, run_context, precomputed, schedule_context = None)
+
+      Stage D — Historical Analog Retriever.
+
+      Retrieves the most similar past emergent activities from the indexed
+      historical record and fits a duration distribution.  The duration
+      distribution is consumed by Stage E — this is why D runs before E.
+
+      When ``schedule_context`` is provided (Gap 4 two-pass design) the
+      retriever applies a structural affinity re-ranking pass and stamps
+      the query ActivityCase with predecessor/successor topology for
+      future DependencyPatternScorer activation.
+
+
+
+   .. py:method:: _stage_e_schedule(run_id, emergent_activity, intake_result, historical_analogs, run_context, precomputed, optional_failures, schedule_context = None)
+
+      Stage E — Schedule Impact Assessor.
+
+      Inserts the emergent activity into the current schedule network and
+      computes critical path impact using the duration distribution from
+      Stage D for Monte Carlo simulation.
+
+      When ``schedule_context`` is provided (Gap 4 two-pass design) the
+      assessor reuses the pre-computed insertion point rather than
+      re-loading and re-traversing the schedule network.
+
+      Any schedule failure degrades to a null stub rather than crashing the
+      run: a missing ``schedule_loader`` / ``schedule_graph_builder`` raises
+      ``RuntimeError``, but an empty or uncomputed schedule can also surface
+      as ``IndexError`` (no phase candidates) and loader/builder backends can
+      raise their own exceptions.  This method catches any of them, logs a
+      WARNING with the error type, appends to ``optional_failures``, and
+      returns the null stub so Stages F and G can still produce a partial
+      recommendation from analog data alone.  The ``schedule_loader_unavailable``
+      flag in the stub is surfaced in ``review_hooks`` so the analyst knows the
+      recommendation was made without schedule data.
+
+
+
+   .. py:method:: _stage_f_options(run_id, emergent_activity, intake_result, temporal_event_chain, schedule_impact_assessment, historical_analogs, run_context, precomputed)
+
+      Stage F — Insertion Option Generator.
+
+      Generates a ranked set of options for handling the emergent activity.
+      Filters options that violate regulatory constraints from Stage A.
+      Ranks feasible options by composite risk score.
+
+
+
+   .. py:method:: _stage_g_recommendation(run_id, emergent_activity, intake_result, component_event_timeline, temporal_event_chain, historical_analogs, schedule_impact_assessment, insertion_options, run_context, optional_failures)
+
+      Stage G — Recommendation Synthesizer.
+
+      Synthesizes all upstream artifacts into a single
+      OutageActivityRecommendation.  Sets analyst_review=True when:
+        - has_regulatory_constraint is True
+        - confidence_tier is low_confidence
+        - decision_status is INCONCLUSIVE
+        - any upstream stage produced an optional failure
+        - unknown_abbreviation_rate exceeded the warning threshold in Stage A
+
+
+
+   .. py:method:: _finalize_manifest(run_context, intake_result, component_event_timeline, temporal_event_chain, historical_analogs, schedule_impact_assessment, insertion_options, outage_activity_recommendation, optional_failures)
+
+      Build the run manifest: a single summary of what the pipeline produced.
+
+      Mirrors _stage_g_finalize_manifest in the RCA orchestrator.
+      Used for monitoring, audit, and the learning loop.
+
+
+
+   .. py:method:: _compute_review_hooks(intake_result, component_event_timeline, schedule_impact_assessment, outage_activity_recommendation, optional_failures)
+
+      Compute attention flags for the run manifest.
+
+      These hooks drive monitoring dashboards and the low-confidence watchlist
+      (WBS 11.3). Mirrors _compute_review_hooks in the RCA orchestrator.
+
+
+
+   .. py:method:: _precompute_schedule_context(emergent_activity, intake_result)
+
+      Run the lightweight insertion-point pre-pass (Gap 4 two-pass design).
+
+      Calls ``insertion_point_determiner.determine()`` and returns the
+      resulting ``ScheduleContext``.  Returns ``None`` when:
+
+      - ``insertion_point_determiner`` was not injected (default behavior).
+      - The determiner raises or returns ``None`` itself (graceful degradation).
+
+      Callers pass the result into both Stage D and Stage E; both stages
+      fall back to their existing behavior when ``None`` is received.
+
+
+
+   .. py:method:: _validate_and_persist(run_id, artifact_name, payload, *, optional = False, optional_failures = None)
+
+      Validate an artifact and optionally persist it to the ArtifactStore.
+
+      For required artifacts (optional=False): a validation failure raises
+      immediately when stop_on_validation_error=True; otherwise it is logged
+      as an error and execution continues.
+
+      For optional artifacts: a validation failure is logged as a warning and
+      appended to optional_failures (if provided).
+
+
+

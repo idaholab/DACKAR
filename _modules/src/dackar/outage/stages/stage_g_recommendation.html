@@ -1,0 +1,1170 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.stages.stage_g_recommendation &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.stages.stage_g_recommendation</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.stages.stage_g_recommendation</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Stage G — Recommendation Synthesizer.</span>
+
+<span class="sd">Responsibilities:</span>
+<span class="sd">    1. Select the primary recommendation from InsertionOptions.</span>
+<span class="sd">    2. Determine the decision_status (PROCEED / DEFER / ESCALATE / MONITOR /</span>
+<span class="sd">       INCONCLUSIVE).</span>
+<span class="sd">    3. Build the executive_summary (plain-language conclusion, confidence tier,</span>
+<span class="sd">       analyst attention flags).</span>
+<span class="sd">    4. Assemble the evidence chain from upstream artifacts — every claim must</span>
+<span class="sd">       cite a source (WBS 11.2 traceability requirement).</span>
+<span class="sd">    5. Surface all regulatory flags from Stage A.</span>
+<span class="sd">    6. Build schedule and history summaries for the executive view.</span>
+<span class="sd">    7. Set analyst_review=True when required (regulatory constraints present,</span>
+<span class="sd">       low confidence, INCONCLUSIVE status, upstream fallback used, or</span>
+<span class="sd">       unknown abbreviation rate &gt; threshold).</span>
+<span class="sd">    8. Compute the validation_status block.</span>
+
+<span class="sd">Output schema: outage/schemas/outage_activity_recommendation.json</span>
+
+<span class="sd">Design principle (from critical_analysis.md §8):</span>
+<span class="sd">    Every recommendation must surface:</span>
+<span class="sd">        (a) the specific historical outages it draws from</span>
+<span class="sd">        (b) the number of analogous events in the training data</span>
+<span class="sd">        (c) an explicit confidence tier</span>
+<span class="sd">        (d) a reject-with-reason path that feeds back into the learning loop</span>
+
+<span class="sd">Reuse targets:</span>
+<span class="sd">    RCA.synthesis.rca_synthesizer_v31  → evidence selection pattern, confidence</span>
+<span class="sd">                                         tier logic, fallback detection</span>
+<span class="sd">    RCA.validation.schema_validator    → _compute_validation_status()</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<div class="viewcode-block" id="LOGGER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.LOGGER">[docs]</a>
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<span class="c1"># Decision status constants</span>
+<div class="viewcode-block" id="_PROCEED">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._PROCEED">[docs]</a>
+<span class="n">_PROCEED</span> <span class="o">=</span> <span class="s2">"PROCEED"</span></div>
+
+<div class="viewcode-block" id="_DEFER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._DEFER">[docs]</a>
+<span class="n">_DEFER</span> <span class="o">=</span> <span class="s2">"DEFER"</span></div>
+
+<div class="viewcode-block" id="_ESCALATE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._ESCALATE">[docs]</a>
+<span class="n">_ESCALATE</span> <span class="o">=</span> <span class="s2">"ESCALATE"</span></div>
+
+<div class="viewcode-block" id="_MONITOR">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._MONITOR">[docs]</a>
+<span class="n">_MONITOR</span> <span class="o">=</span> <span class="s2">"MONITOR"</span></div>
+
+<div class="viewcode-block" id="_INCONCLUSIVE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._INCONCLUSIVE">[docs]</a>
+<span class="n">_INCONCLUSIVE</span> <span class="o">=</span> <span class="s2">"INCONCLUSIVE"</span></div>
+
+
+<span class="c1"># Analyst attention flag keys</span>
+<div class="viewcode-block" id="_FLAG_REGULATORY">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._FLAG_REGULATORY">[docs]</a>
+<span class="n">_FLAG_REGULATORY</span> <span class="o">=</span> <span class="s2">"regulatory_constraint_present"</span></div>
+
+<div class="viewcode-block" id="_FLAG_LOW_CONFIDENCE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._FLAG_LOW_CONFIDENCE">[docs]</a>
+<span class="n">_FLAG_LOW_CONFIDENCE</span> <span class="o">=</span> <span class="s2">"low_confidence_recommendation"</span></div>
+
+<div class="viewcode-block" id="_FLAG_LOW_ANALOGS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._FLAG_LOW_ANALOGS">[docs]</a>
+<span class="n">_FLAG_LOW_ANALOGS</span> <span class="o">=</span> <span class="s2">"low_analog_count"</span></div>
+
+<div class="viewcode-block" id="_FLAG_TEMPORAL_CONTRADICTION">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._FLAG_TEMPORAL_CONTRADICTION">[docs]</a>
+<span class="n">_FLAG_TEMPORAL_CONTRADICTION</span> <span class="o">=</span> <span class="s2">"temporal_contradiction_detected"</span></div>
+
+<div class="viewcode-block" id="_FLAG_CP_IMPACT">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._FLAG_CP_IMPACT">[docs]</a>
+<span class="n">_FLAG_CP_IMPACT</span> <span class="o">=</span> <span class="s2">"critical_path_impact"</span></div>
+
+<div class="viewcode-block" id="_FLAG_HIGH_ABBR_RATE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._FLAG_HIGH_ABBR_RATE">[docs]</a>
+<span class="n">_FLAG_HIGH_ABBR_RATE</span> <span class="o">=</span> <span class="s2">"high_unknown_abbreviation_rate"</span></div>
+
+<div class="viewcode-block" id="_FLAG_FALLBACK">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._FLAG_FALLBACK">[docs]</a>
+<span class="n">_FLAG_FALLBACK</span> <span class="o">=</span> <span class="s2">"fallback_distribution_used"</span></div>
+
+<div class="viewcode-block" id="_FLAG_DISPLACED_REGULATORY">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._FLAG_DISPLACED_REGULATORY">[docs]</a>
+<span class="n">_FLAG_DISPLACED_REGULATORY</span> <span class="o">=</span> <span class="s2">"displaced_regulatory_tasks"</span></div>
+
+<span class="c1"># M1: LCO action-level clock flags</span>
+<div class="viewcode-block" id="_FLAG_LCO_EXPIRED">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._FLAG_LCO_EXPIRED">[docs]</a>
+<span class="n">_FLAG_LCO_EXPIRED</span> <span class="o">=</span> <span class="s2">"lco_action_level_expired"</span></div>
+
+<div class="viewcode-block" id="_FLAG_LCO_CLOCK_CRITICAL">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._FLAG_LCO_CLOCK_CRITICAL">[docs]</a>
+<span class="n">_FLAG_LCO_CLOCK_CRITICAL</span> <span class="o">=</span> <span class="s2">"lco_action_level_critical"</span></div>
+
+
+<span class="c1"># LCO clock statuses that require immediate attention</span>
+<div class="viewcode-block" id="_LCO_URGENT_STATUSES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._LCO_URGENT_STATUSES">[docs]</a>
+<span class="n">_LCO_URGENT_STATUSES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"expired"</span><span class="p">,</span> <span class="s2">"critical"</span><span class="p">,</span> <span class="s2">"urgent"</span><span class="p">}</span></div>
+
+
+<span class="c1"># Option types that map to PROCEED</span>
+<div class="viewcode-block" id="_PROCEED_OPTION_TYPES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._PROCEED_OPTION_TYPES">[docs]</a>
+<span class="n">_PROCEED_OPTION_TYPES</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"insert_now"</span><span class="p">,</span>
+    <span class="s2">"add_contingency_buffer"</span><span class="p">,</span>
+    <span class="s2">"parallel_execution"</span><span class="p">,</span>
+    <span class="s2">"scope_reduction"</span><span class="p">,</span>
+    <span class="s2">"pre_outage_staging"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="RecommendationConfig">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationConfig">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RecommendationConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Configuration for Stage G."""</span>
+
+<div class="viewcode-block" id="RecommendationConfig.min_analog_count_for_no_flag">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationConfig.min_analog_count_for_no_flag">[docs]</a>
+    <span class="n">min_analog_count_for_no_flag</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span></div>
+
+<span class="w">    </span><span class="sd">"""Analog counts below this value trigger _FLAG_LOW_ANALOGS."""</span>
+
+<div class="viewcode-block" id="RecommendationConfig.unknown_abbreviation_rate_warning">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationConfig.unknown_abbreviation_rate_warning">[docs]</a>
+    <span class="n">unknown_abbreviation_rate_warning</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.25</span></div>
+
+<span class="w">    </span><span class="sd">"""Above this threshold _FLAG_HIGH_ABBR_RATE is raised."""</span>
+
+<div class="viewcode-block" id="RecommendationConfig.max_evidence_items">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationConfig.max_evidence_items">[docs]</a>
+    <span class="n">max_evidence_items</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span></div>
+
+<span class="w">    </span><span class="sd">"""Maximum evidence chain entries to include in the artifact."""</span>
+
+<div class="viewcode-block" id="RecommendationConfig.pipeline_version">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationConfig.pipeline_version">[docs]</a>
+    <span class="n">pipeline_version</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<span class="w">    </span><span class="sd">"""Human-readable pipeline version string written into every produced</span>
+<span class="sd">    artifact (e.g. ``"outage-pipeline-1.4.2"``).  Can also be supplied at</span>
+<span class="sd">    call time via ``run_context["pipeline_version"]``, which takes precedence.</span>
+<span class="sd">    Leave ``None`` to omit version tagging (acceptable during development, but</span>
+<span class="sd">    artifacts become indistinguishable across pipeline generations in storage)."""</span></div>
+
+
+
+<div class="viewcode-block" id="RecommendationSynthesizer">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RecommendationSynthesizer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Concrete Stage G implementation.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        config: Stage configuration.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">RecommendationConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="RecommendationSynthesizer.config">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer.config">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">RecommendationConfig</span><span class="p">()</span></div>
+
+
+    <span class="c1"># ── Protocol method ───────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="RecommendationSynthesizer.synthesize">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer.synthesize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">synthesize</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">component_event_timeline</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">temporal_event_chain</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact_assessment</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">insertion_options</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Execute Stage G for one emergent activity.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            OutageActivityRecommendation artifact conforming to</span>
+<span class="sd">            outage/schemas/outage_activity_recommendation.json.</span>
+<span class="sd">        """</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">run_context</span><span class="p">[</span><span class="s2">"run_id"</span><span class="p">]</span>
+        <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">emergent_activity</span><span class="p">[</span><span class="s2">"activity_id"</span><span class="p">]</span>
+        <span class="n">recommendation_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"REC::</span><span class="si">{</span><span class="n">activity_id</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">hex</span><span class="p">[:</span><span class="mi">8</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">"Stage G recommendation synthesis for </span><span class="si">%s</span><span class="s2"> (run=</span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">,</span> <span class="n">run_id</span>
+        <span class="p">)</span>
+
+        <span class="n">primary_option</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_select_primary_option</span><span class="p">(</span><span class="n">insertion_options</span><span class="p">)</span>
+        <span class="n">decision_status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_determine_decision_status</span><span class="p">(</span>
+            <span class="n">primary_option</span><span class="p">,</span> <span class="n">intake_result</span><span class="p">,</span> <span class="n">historical_analogs</span><span class="p">,</span> <span class="n">insertion_options</span><span class="p">,</span>
+            <span class="n">schedule_impact_assessment</span><span class="o">=</span><span class="n">schedule_impact_assessment</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">attention_flags</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_attention_flags</span><span class="p">(</span>
+            <span class="n">intake_result</span><span class="p">,</span> <span class="n">historical_analogs</span><span class="p">,</span> <span class="n">schedule_impact_assessment</span><span class="p">,</span>
+            <span class="n">temporal_event_chain</span><span class="p">,</span> <span class="n">insertion_options</span>
+        <span class="p">)</span>
+        <span class="n">confidence_tier</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_determine_confidence_tier</span><span class="p">(</span>
+            <span class="n">historical_analogs</span><span class="p">,</span> <span class="n">insertion_options</span>
+        <span class="p">)</span>
+        <span class="n">executive_summary</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_executive_summary</span><span class="p">(</span>
+            <span class="n">decision_status</span><span class="p">,</span> <span class="n">primary_option</span><span class="p">,</span> <span class="n">confidence_tier</span><span class="p">,</span> <span class="n">attention_flags</span><span class="p">,</span>
+            <span class="n">historical_analogs</span><span class="p">,</span> <span class="n">schedule_impact_assessment</span><span class="p">,</span>
+            <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">evidence_chain</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_assemble_evidence_chain</span><span class="p">(</span>
+            <span class="n">temporal_event_chain</span><span class="p">,</span> <span class="n">historical_analogs</span><span class="p">,</span>
+            <span class="n">schedule_impact_assessment</span><span class="p">,</span> <span class="n">component_event_timeline</span><span class="p">,</span>
+            <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">regulatory_flags</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_drivers"</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">history_summary</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_history_summary</span><span class="p">(</span>
+            <span class="n">historical_analogs</span><span class="p">,</span> <span class="n">component_event_timeline</span>
+        <span class="p">)</span>
+        <span class="n">schedule_summary</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_schedule_summary</span><span class="p">(</span>
+            <span class="n">schedule_impact_assessment</span>
+        <span class="p">)</span>
+        <span class="n">analyst_review</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_determine_analyst_review</span><span class="p">(</span>
+            <span class="n">decision_status</span><span class="p">,</span> <span class="n">intake_result</span><span class="p">,</span> <span class="n">historical_analogs</span><span class="p">,</span>
+            <span class="n">insertion_options</span><span class="p">,</span> <span class="n">attention_flags</span>
+        <span class="p">)</span>
+        <span class="n">validation_status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_validation_status</span><span class="p">(</span>
+            <span class="n">evidence_chain</span><span class="p">,</span> <span class="n">regulatory_flags</span><span class="p">,</span> <span class="n">historical_analogs</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"recommendation_id"</span><span class="p">:</span> <span class="n">recommendation_id</span><span class="p">,</span>
+            <span class="s2">"activity_id"</span><span class="p">:</span> <span class="n">activity_id</span><span class="p">,</span>
+            <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+            <span class="s2">"generated_at"</span><span class="p">:</span> <span class="n">run_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"started_at"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+            <span class="s2">"pipeline_version"</span><span class="p">:</span> <span class="p">(</span>
+                <span class="n">run_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pipeline_version"</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">pipeline_version</span>
+            <span class="p">),</span>
+            <span class="s2">"decision_status"</span><span class="p">:</span> <span class="n">decision_status</span><span class="p">,</span>
+            <span class="s2">"executive_summary"</span><span class="p">:</span> <span class="n">executive_summary</span><span class="p">,</span>
+            <span class="s2">"primary_recommendation"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_primary_recommendation</span><span class="p">(</span><span class="n">primary_option</span><span class="p">),</span>
+            <span class="s2">"regulatory_flags"</span><span class="p">:</span> <span class="n">regulatory_flags</span><span class="p">,</span>
+            <span class="s2">"evidence_chain"</span><span class="p">:</span> <span class="n">evidence_chain</span><span class="p">[:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_evidence_items</span><span class="p">],</span>
+            <span class="s2">"history_summary"</span><span class="p">:</span> <span class="n">history_summary</span><span class="p">,</span>
+            <span class="s2">"schedule_summary"</span><span class="p">:</span> <span class="n">schedule_summary</span><span class="p">,</span>
+            <span class="s2">"analyst_review"</span><span class="p">:</span> <span class="n">analyst_review</span><span class="p">,</span>
+            <span class="s2">"validation_status"</span><span class="p">:</span> <span class="n">validation_status</span><span class="p">,</span>
+            <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+                <span class="s2">"generated_by"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+                <span class="s2">"pipeline_version"</span><span class="p">:</span> <span class="p">(</span>
+                    <span class="n">run_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pipeline_version"</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">pipeline_version</span>
+                <span class="p">),</span>
+                <span class="s2">"input_artifacts"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"emergent_activity_id"</span><span class="p">:</span> <span class="n">activity_id</span><span class="p">,</span>
+                    <span class="s2">"schedule_version_id"</span><span class="p">:</span> <span class="n">schedule_impact_assessment</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"schedule_version_id"</span><span class="p">),</span>
+                    <span class="s2">"intake_result_run_id"</span><span class="p">:</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_id"</span><span class="p">),</span>
+                    <span class="s2">"timeline_run_id"</span><span class="p">:</span> <span class="n">component_event_timeline</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_id"</span><span class="p">),</span>
+                    <span class="s2">"temporal_chain_run_id"</span><span class="p">:</span> <span class="n">temporal_event_chain</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_id"</span><span class="p">),</span>
+                    <span class="s2">"schedule_impact_run_id"</span><span class="p">:</span> <span class="n">schedule_impact_assessment</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_id"</span><span class="p">),</span>
+                    <span class="s2">"analogs_run_id"</span><span class="p">:</span> <span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_id"</span><span class="p">),</span>
+                    <span class="s2">"insertion_options_run_id"</span><span class="p">:</span> <span class="n">insertion_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_id"</span><span class="p">),</span>
+                <span class="p">},</span>
+            <span class="p">},</span>
+        <span class="p">}</span></div>
+
+
+    <span class="c1"># ── Private step methods ──────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="RecommendationSynthesizer._select_primary_option">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer._select_primary_option">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_select_primary_option</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">insertion_options</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Retrieve the recommended option object from InsertionOptions.</span>
+
+<span class="sd">        Looks up insertion_options['recommended_option_id'] in the options list.</span>
+<span class="sd">        Returns None if recommended_option_id is None or not found.</span>
+<span class="sd">        """</span>
+        <span class="n">recommended_id</span> <span class="o">=</span> <span class="n">insertion_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"recommended_option_id"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">recommended_id</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">option</span> <span class="ow">in</span> <span class="n">insertion_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"options"</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="k">if</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_id"</span><span class="p">)</span> <span class="o">==</span> <span class="n">recommended_id</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">option</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="RecommendationSynthesizer._determine_decision_status">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer._determine_decision_status">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_determine_decision_status</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">primary_option</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">insertion_options</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact_assessment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Map the primary option and context to a decision_status enum value.</span>
+
+<span class="sd">        Logic (evaluated in priority order):</span>
+<span class="sd">            INCONCLUSIVE — no feasible, regulatory-cleared option exists</span>
+<span class="sd">            ESCALATE     — primary option type is escalate_to_management</span>
+<span class="sd">            DEFER        — primary option type is defer_to_post_outage</span>
+<span class="sd">            MONITOR      — low confidence + no historical analogues + activity</span>
+<span class="sd">                           is non-critical path (watch, but no action yet warranted)</span>
+<span class="sd">            PROCEED      — primary option type is insert_now / contingency /</span>
+<span class="sd">                           parallel / scope_reduction / pre_outage_staging</span>
+
+<span class="sd">        ``schedule_impact_assessment`` (N5 fix): criticality_label is now read</span>
+<span class="sd">        from ``schedule_impact_assessment["float_analysis"]["criticality_label"]``</span>
+<span class="sd">        rather than the non-existent ``insertion_options["schedule_summary"]``</span>
+<span class="sd">        field that Stage F never produces.  The parameter is optional and defaults</span>
+<span class="sd">        to None so existing call sites that have not yet been updated continue to</span>
+<span class="sd">        work; absence is treated as non_critical (permissive MONITOR condition).</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">primary_option</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_INCONCLUSIVE</span>
+
+        <span class="n">option_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">primary_option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_type"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">option_type</span> <span class="o">==</span> <span class="s2">"escalate_to_management"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_ESCALATE</span>
+
+        <span class="k">if</span> <span class="n">option_type</span> <span class="o">==</span> <span class="s2">"defer_to_post_outage"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_DEFER</span>
+
+        <span class="c1"># MONITOR: no historical support + non-critical → watch, no immediate action</span>
+        <span class="c1"># Previous condition required cp_impact==0 AND analog_count==0 AND low_confidence</span>
+        <span class="c1"># simultaneously.  In practice cp_impact is almost never exactly 0.0 even for</span>
+        <span class="c1"># non-critical activities (any float consumption produces a nonzero value), so</span>
+        <span class="c1"># MONITOR was never reachable.  The intent is: when we have no analog data and</span>
+        <span class="c1"># the activity doesn't clearly threaten the critical path, flag it for monitoring</span>
+        <span class="c1"># rather than committing to a PROCEED recommendation built on no evidence.</span>
+        <span class="n">analog_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"retrieval_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analog_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">dist_tier</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"duration_distribution"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+            <span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_tier"</span><span class="p">,</span> <span class="s2">"low_confidence"</span><span class="p">)</span>
+        <span class="p">)</span> <span class="ow">or</span> <span class="s2">"low_confidence"</span>
+        <span class="c1"># N5 fix: read criticality_label from schedule_impact_assessment["float_analysis"]</span>
+        <span class="c1"># instead of the non-existent insertion_options["schedule_summary"] field.</span>
+        <span class="n">criticality_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">((</span><span class="n">schedule_impact_assessment</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_analysis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+            <span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">,</span> <span class="s2">"non_critical"</span><span class="p">)</span>
+        <span class="p">)</span> <span class="ow">or</span> <span class="s2">"non_critical"</span>
+        <span class="k">if</span> <span class="n">dist_tier</span> <span class="o">==</span> <span class="s2">"low_confidence"</span> <span class="ow">and</span> <span class="n">analog_count</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">criticality_label</span> <span class="o">==</span> <span class="s2">"non_critical"</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">_MONITOR</span>
+
+        <span class="k">if</span> <span class="n">option_type</span> <span class="ow">in</span> <span class="n">_PROCEED_OPTION_TYPES</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_PROCEED</span>
+
+        <span class="c1"># Fallback for unknown option types</span>
+        <span class="k">return</span> <span class="n">_INCONCLUSIVE</span></div>
+
+
+<div class="viewcode-block" id="RecommendationSynthesizer._compute_attention_flags">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer._compute_attention_flags">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compute_attention_flags</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">temporal_chain</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">insertion_options</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Compute the list of analyst attention flags.</span>
+
+<span class="sd">        Each flag is a string constant defined at module level.  Flags are</span>
+<span class="sd">        raised when:</span>
+<span class="sd">            _FLAG_REGULATORY        — intake_result.has_regulatory_constraint</span>
+<span class="sd">            _FLAG_LOW_CONFIDENCE    — confidence_tier == 'low_confidence'</span>
+<span class="sd">            _FLAG_LOW_ANALOGS       — analog_count &lt; config.min_analog_count_for_no_flag</span>
+<span class="sd">            _FLAG_TEMPORAL_CONTRADICTION — temporal_chain.summary.has_temporal_contradiction</span>
+<span class="sd">            _FLAG_CP_IMPACT         — schedule_impact.float_analysis.criticality_label == "critical"</span>
+<span class="sd">            _FLAG_HIGH_ABBR_RATE    — intake_result.unknown_abbreviation_rate &gt; threshold</span>
+<span class="sd">            _FLAG_FALLBACK          — historical_analogs.retrieval_summary.fallback_used</span>
+<span class="sd">            _FLAG_DISPLACED_REGULATORY — any displaced task has has_regulatory_constraint=True</span>
+<span class="sd">            _FLAG_LCO_EXPIRED       — intake_result.lco_clock_status == "expired"</span>
+<span class="sd">            _FLAG_LCO_CLOCK_CRITICAL — lco_clock_status in {"critical", "urgent", "unknown"}</span>
+<span class="sd">                                       and active LCO is present</span>
+<span class="sd">        """</span>
+        <span class="n">flags</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># Regulatory constraint</span>
+        <span class="k">if</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_regulatory_constraint"</span><span class="p">):</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_FLAG_REGULATORY</span><span class="p">)</span>
+
+        <span class="c1"># Low confidence tier</span>
+        <span class="n">dist_tier</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"duration_distribution"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+            <span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_tier"</span><span class="p">,</span> <span class="s2">"low_confidence"</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">dist_tier</span> <span class="o">==</span> <span class="s2">"low_confidence"</span><span class="p">:</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_FLAG_LOW_CONFIDENCE</span><span class="p">)</span>
+
+        <span class="c1"># Low analog count</span>
+        <span class="n">analog_count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"retrieval_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analog_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">analog_count</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">min_analog_count_for_no_flag</span><span class="p">:</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_FLAG_LOW_ANALOGS</span><span class="p">)</span>
+
+        <span class="c1"># Temporal contradiction</span>
+        <span class="n">chain_summary</span> <span class="o">=</span> <span class="n">temporal_chain</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">chain_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_temporal_contradiction"</span><span class="p">):</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_FLAG_TEMPORAL_CONTRADICTION</span><span class="p">)</span>
+
+        <span class="c1"># Critical path impact</span>
+        <span class="n">float_analysis</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_analysis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"critical"</span><span class="p">:</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_FLAG_CP_IMPACT</span><span class="p">)</span>
+
+        <span class="c1"># High unknown abbreviation rate</span>
+        <span class="n">abbr_rate</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"unknown_abbreviation_rate"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">abbr_rate</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">unknown_abbreviation_rate_warning</span><span class="p">:</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_FLAG_HIGH_ABBR_RATE</span><span class="p">)</span>
+
+        <span class="c1"># Fallback distribution used</span>
+        <span class="n">retrieval_summary</span> <span class="o">=</span> <span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"retrieval_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">retrieval_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fallback_used"</span><span class="p">):</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_FLAG_FALLBACK</span><span class="p">)</span>
+
+        <span class="c1"># Displaced regulatory tasks</span>
+        <span class="n">displaced_tasks</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"displaced_tasks"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_regulatory_constraint"</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">displaced_tasks</span><span class="p">):</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_FLAG_DISPLACED_REGULATORY</span><span class="p">)</span>
+
+        <span class="c1"># M1: LCO action-level clock flags</span>
+        <span class="n">lco_clock_status</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"lco_clock_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"not_applicable"</span>
+        <span class="k">if</span> <span class="n">lco_clock_status</span> <span class="o">==</span> <span class="s2">"expired"</span><span class="p">:</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_FLAG_LCO_EXPIRED</span><span class="p">)</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_FLAG_LCO_CLOCK_CRITICAL</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">lco_clock_status</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"critical"</span><span class="p">,</span> <span class="s2">"urgent"</span><span class="p">):</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_FLAG_LCO_CLOCK_CRITICAL</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">lco_clock_status</span> <span class="o">==</span> <span class="s2">"unknown"</span><span class="p">:</span>
+            <span class="c1"># Active LCO with no known deadline — treat as critical until proven otherwise</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_FLAG_LCO_CLOCK_CRITICAL</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">flags</span></div>
+
+
+<div class="viewcode-block" id="RecommendationSynthesizer._determine_confidence_tier">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer._determine_confidence_tier">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_determine_confidence_tier</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span> <span class="n">insertion_options</span><span class="p">:</span> <span class="n">JsonDict</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return the overall confidence tier for the recommendation.</span>
+
+<span class="sd">        Derived from the duration distribution confidence_tier in Stage D.</span>
+<span class="sd">        Degrades to low_confidence if the recommended option has confidence &lt; 0.4.</span>
+<span class="sd">        """</span>
+        <span class="n">dist</span> <span class="o">=</span> <span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"duration_distribution"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">tier</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_tier"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"low_confidence"</span>
+
+        <span class="c1"># Degrade if the recommended option itself has low confidence</span>
+        <span class="n">recommended_id</span> <span class="o">=</span> <span class="n">insertion_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"recommended_option_id"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">recommended_id</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">option</span> <span class="ow">in</span> <span class="n">insertion_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"options"</span><span class="p">,</span> <span class="p">[]):</span>
+                <span class="k">if</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_id"</span><span class="p">)</span> <span class="o">==</span> <span class="n">recommended_id</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="nb">float</span><span class="p">(</span><span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">0.4</span><span class="p">:</span>
+                        <span class="k">return</span> <span class="s2">"low_confidence"</span>
+                    <span class="k">break</span>
+
+        <span class="k">return</span> <span class="n">tier</span></div>
+
+
+<div class="viewcode-block" id="RecommendationSynthesizer._build_executive_summary">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer._build_executive_summary">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_executive_summary</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">decision_status</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">primary_option</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">confidence_tier</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">attention_flags</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Build the plain-language executive summary for the outage manager.</span>
+
+<span class="sd">        primary_conclusion: one sentence stating the decision and key evidence.</span>
+<span class="sd">        Example: 'Insert now — non-critical path impact (4 h float consumed);</span>
+<span class="sd">        3 similar valve seal events in historical record, median 6.5 h.'</span>
+
+<span class="sd">        M1: when lco_clock_status indicates an active or expired action-level</span>
+<span class="sd">        deadline, the conclusion is prefixed with the clock warning so the most</span>
+<span class="sd">        time-critical information appears first — before any schedule or analog text.</span>
+
+<span class="sd">        States low_confidence explicitly when applicable.</span>
+<span class="sd">        """</span>
+        <span class="n">dist</span> <span class="o">=</span> <span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"duration_distribution"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">retrieval_summary</span> <span class="o">=</span> <span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"retrieval_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">float_analysis</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_analysis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">cp_impact</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+
+        <span class="n">analog_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">retrieval_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analog_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+        <span class="n">p50</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"p50_hours"</span><span class="p">)</span>
+        <span class="n">cp_drag</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">cp_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_drag_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">float_consumed</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_consumed_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">criticality_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">,</span> <span class="s2">"non_critical"</span><span class="p">)</span>
+
+        <span class="c1"># Build primary conclusion sentence</span>
+        <span class="k">if</span> <span class="n">decision_status</span> <span class="o">==</span> <span class="n">_INCONCLUSIVE</span><span class="p">:</span>
+            <span class="n">conclusion</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="s2">"Inconclusive — no feasible, regulatory-cleared insertion option could "</span>
+                <span class="s2">"be identified. Analyst review required before proceeding."</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">decision_status</span> <span class="o">==</span> <span class="n">_ESCALATE</span><span class="p">:</span>
+            <span class="n">conclusion</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Escalate to management — CP drag of </span><span class="si">{</span><span class="n">cp_drag</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h exceeds "</span>
+                <span class="s2">"the auto-escalation threshold. Schedule re-baseline decision required."</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">decision_status</span> <span class="o">==</span> <span class="n">_DEFER</span><span class="p">:</span>
+            <span class="n">conclusion</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="s2">"Defer to post-outage — no regulatory constraint prevents deferral "</span>
+                <span class="s2">"and in-outage schedule impact is avoided."</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">decision_status</span> <span class="o">==</span> <span class="n">_MONITOR</span><span class="p">:</span>
+            <span class="n">conclusion</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="s2">"Monitor — no critical path impact detected and historical analog "</span>
+                <span class="s2">"support is insufficient for a confident action recommendation."</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># PROCEED</span>
+            <span class="n">option_type</span> <span class="o">=</span> <span class="p">(</span><span class="n">primary_option</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_type"</span><span class="p">,</span> <span class="s2">"insert_now"</span><span class="p">)</span>
+            <span class="n">action_label</span> <span class="o">=</span> <span class="n">option_type</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"_"</span><span class="p">,</span> <span class="s2">" "</span><span class="p">)</span><span class="o">.</span><span class="n">capitalize</span><span class="p">()</span>
+            <span class="n">sched_clause</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"critical path impact (</span><span class="si">{</span><span class="n">cp_drag</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h CP drag)"</span>
+                <span class="k">if</span> <span class="n">criticality_label</span> <span class="o">==</span> <span class="s2">"critical"</span>
+                <span class="k">else</span> <span class="sa">f</span><span class="s2">"non-critical path impact (</span><span class="si">{</span><span class="n">float_consumed</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h float consumed)"</span>
+            <span class="p">)</span>
+            <span class="n">analog_clause</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">analog_count</span><span class="si">}</span><span class="s2"> analogous event(s) in historical record"</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="sa">f</span><span class="s1">', median </span><span class="si">{</span><span class="n">p50</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1"> h'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">p50</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">''</span><span class="si">}</span><span class="s2">"</span>
+                <span class="k">if</span> <span class="n">analog_count</span> <span class="o">&gt;</span> <span class="mi">0</span>
+                <span class="k">else</span> <span class="s2">"no historical analogues available"</span>
+            <span class="p">)</span>
+            <span class="n">conclusion</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">action_label</span><span class="si">}</span><span class="s2"> — </span><span class="si">{</span><span class="n">sched_clause</span><span class="si">}</span><span class="s2">; </span><span class="si">{</span><span class="n">analog_clause</span><span class="si">}</span><span class="s2">."</span>
+
+        <span class="c1"># §3: Regulatory constraints must be surfaced in the primary conclusion —</span>
+        <span class="c1"># a recommendation that touches deferral or reprioritisation without</span>
+        <span class="c1"># flagging regulatory constraints is a potential compliance liability.</span>
+        <span class="c1"># Driver detail is available in regulatory_flags at the artifact level.</span>
+        <span class="k">if</span> <span class="n">_FLAG_REGULATORY</span> <span class="ow">in</span> <span class="n">attention_flags</span><span class="p">:</span>
+            <span class="n">conclusion</span> <span class="o">+=</span> <span class="p">(</span>
+                <span class="s2">" </span><span class="se">\u26a0</span><span class="s2"> REGULATORY CONSTRAINT PRESENT — do not defer or reduce "</span>
+                <span class="s2">"scope without licensing review."</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">confidence_tier</span> <span class="o">==</span> <span class="s2">"low_confidence"</span><span class="p">:</span>
+            <span class="n">conclusion</span> <span class="o">+=</span> <span class="s2">" [LOW CONFIDENCE — verify with SME before acting]"</span>
+
+        <span class="c1"># M1: prepend LCO action-level clock warning so it leads the briefing.</span>
+        <span class="c1"># This is the most time-critical information; it must appear first.</span>
+        <span class="n">lco_prefix</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_lco_clock_prefix</span><span class="p">(</span><span class="n">intake_result</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">lco_prefix</span><span class="p">:</span>
+            <span class="n">conclusion</span> <span class="o">=</span> <span class="n">lco_prefix</span> <span class="o">+</span> <span class="s2">" "</span> <span class="o">+</span> <span class="n">conclusion</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"primary_conclusion"</span><span class="p">:</span> <span class="n">conclusion</span><span class="p">,</span>
+            <span class="s2">"decision_status"</span><span class="p">:</span> <span class="n">decision_status</span><span class="p">,</span>
+            <span class="s2">"confidence_tier"</span><span class="p">:</span> <span class="n">confidence_tier</span><span class="p">,</span>
+            <span class="s2">"analyst_attention_flags"</span><span class="p">:</span> <span class="n">attention_flags</span><span class="p">,</span>
+            <span class="s2">"analog_support_count"</span><span class="p">:</span> <span class="n">analog_count</span><span class="p">,</span>
+            <span class="s2">"duration_p50_hours"</span><span class="p">:</span> <span class="n">p50</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="RecommendationSynthesizer._build_lco_clock_prefix">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer._build_lco_clock_prefix">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_lco_clock_prefix</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">intake_result</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Build an LCO action-level clock warning prefix for the primary conclusion.</span>
+
+<span class="sd">        M1: Returns a non-empty string when the LCO clock demands immediate</span>
+<span class="sd">        attention (expired/critical/urgent/unknown-active-lco), empty string</span>
+<span class="sd">        otherwise.  The prefix is prepended to the conclusion by</span>
+<span class="sd">        _build_executive_summary() so it always leads the manager briefing.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">intake_result</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">""</span>
+
+        <span class="n">lco_status</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"lco_clock_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"not_applicable"</span>
+        <span class="n">hours</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hours_to_action_level"</span><span class="p">)</span>
+        <span class="n">lco_number</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"lco_number"</span><span class="p">)</span>
+        <span class="n">lco_clause</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">" (LCO </span><span class="si">{</span><span class="n">lco_number</span><span class="si">}</span><span class="s2">)"</span> <span class="k">if</span> <span class="n">lco_number</span> <span class="k">else</span> <span class="s2">""</span>
+
+        <span class="k">if</span> <span class="n">lco_status</span> <span class="o">==</span> <span class="s2">"expired"</span><span class="p">:</span>
+            <span class="n">hours_str</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">abs</span><span class="p">(</span><span class="n">hours</span><span class="p">)</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h ago"</span> <span class="k">if</span> <span class="n">hours</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">"unknown time ago"</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="se">\U0001f6a8</span><span class="s2"> LCO ACTION LEVEL EXPIRED</span><span class="si">{</span><span class="n">lco_clause</span><span class="si">}</span><span class="s2"> — deadline passed "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">hours_str</span><span class="si">}</span><span class="s2">. Immediate management notification required."</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">lco_status</span> <span class="o">==</span> <span class="s2">"critical"</span><span class="p">:</span>
+            <span class="n">hours_str</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">hours</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h"</span> <span class="k">if</span> <span class="n">hours</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">"&lt; 4 h"</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="se">\U0001f6a8</span><span class="s2"> LCO ACTION LEVEL CRITICAL</span><span class="si">{</span><span class="n">lco_clause</span><span class="si">}</span><span class="s2"> — "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">hours_str</span><span class="si">}</span><span class="s2"> remaining. Immediate action required."</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">lco_status</span> <span class="o">==</span> <span class="s2">"urgent"</span><span class="p">:</span>
+            <span class="n">hours_str</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">hours</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h"</span> <span class="k">if</span> <span class="n">hours</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">"&lt; 24 h"</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="se">\u26a0</span><span class="s2"> LCO ACTION LEVEL URGENT</span><span class="si">{</span><span class="n">lco_clause</span><span class="si">}</span><span class="s2"> — "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">hours_str</span><span class="si">}</span><span class="s2"> remaining. Action required this shift."</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">lco_status</span> <span class="o">==</span> <span class="s2">"unknown"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="se">\u26a0</span><span class="s2"> ACTIVE LCO</span><span class="si">{</span><span class="n">lco_clause</span><span class="si">}</span><span class="s2"> — action-level deadline not provided. "</span>
+                <span class="s2">"Confirm hours-to-deadline with licensing immediately."</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="s2">""</span></div>
+
+
+<div class="viewcode-block" id="RecommendationSynthesizer._build_primary_recommendation">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer._build_primary_recommendation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_primary_recommendation</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">primary_option</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Extract the primary_recommendation block from the option dict.</span>
+
+<span class="sd">        Returns None if primary_option is None (maps to INCONCLUSIVE).</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">primary_option</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"option_id"</span><span class="p">:</span> <span class="n">primary_option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_id"</span><span class="p">),</span>
+            <span class="s2">"option_type"</span><span class="p">:</span> <span class="n">primary_option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_type"</span><span class="p">),</span>
+            <span class="s2">"rationale"</span><span class="p">:</span> <span class="n">primary_option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rationale"</span><span class="p">),</span>
+            <span class="s2">"cp_impact_hours"</span><span class="p">:</span> <span class="n">primary_option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact_hours"</span><span class="p">),</span>
+            <span class="s2">"criticality_label"</span><span class="p">:</span> <span class="n">primary_option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">),</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="RecommendationSynthesizer._assemble_evidence_chain">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer._assemble_evidence_chain">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_assemble_evidence_chain</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">temporal_event_chain</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">component_event_timeline</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Build the evidence chain for the recommendation.</span>
+
+<span class="sd">        Each entry cites one specific piece of supporting evidence.</span>
+<span class="sd">        Sources in priority order:</span>
+<span class="sd">            0. regulatory_constraint — inserted at position 0 when</span>
+<span class="sd">               intake_result.has_regulatory_constraint is True (N6 fix:</span>
+<span class="sd">               the max_evidence_items cap must never displace a regulatory</span>
+<span class="sd">               entry; anchoring it first guarantees it survives truncation)</span>
+<span class="sd">            1. temporal_chain_link   — strongest Allen relation link(s)</span>
+<span class="sd">            2. historical_analog     — top-similarity analogs with duration data</span>
+<span class="sd">            3. schedule_analysis     — CP drag / float analysis result</span>
+<span class="sd">            4. condition_report      — highest-DQ CR from the component timeline</span>
+
+<span class="sd">        Each entry: evidence_id, source_type, source_id, snippet,</span>
+<span class="sd">        relevance_score, supports.</span>
+
+<span class="sd">        Mirrors _summarize_primary_evidence() from the RCA orchestrator but</span>
+<span class="sd">        operates on outage artifact types (read-only reuse pattern).</span>
+<span class="sd">        """</span>
+        <span class="n">evidence</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># ── 0. Regulatory constraint pinned to position 0 ─────────────────────</span>
+        <span class="c1"># N6: When a regulatory constraint is present the chain cap</span>
+        <span class="c1"># (max_evidence_items) must never push it out — anchor it first.</span>
+        <span class="k">if</span> <span class="n">intake_result</span> <span class="ow">and</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_regulatory_constraint"</span><span class="p">):</span>
+            <span class="n">regulatory_drivers</span> <span class="o">=</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_drivers"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="n">driver_types</span> <span class="o">=</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"driver_type"</span><span class="p">,</span> <span class="s2">"regulatory"</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">regulatory_drivers</span><span class="p">[:</span><span class="mi">3</span><span class="p">]</span>
+            <span class="p">)</span> <span class="ow">or</span> <span class="s2">"regulatory_constraint"</span>
+            <span class="n">evidence</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_make_evidence</span><span class="p">(</span>
+                <span class="n">source_type</span><span class="o">=</span><span class="s2">"regulatory_constraint"</span><span class="p">,</span>
+                <span class="n">source_id</span><span class="o">=</span><span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"activity_id"</span><span class="p">,</span> <span class="s2">"intake"</span><span class="p">),</span>
+                <span class="n">snippet</span><span class="o">=</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"Regulatory constraint present — deferral or scope reduction "</span>
+                    <span class="sa">f</span><span class="s2">"requires licensing review. Drivers: </span><span class="si">{</span><span class="n">driver_types</span><span class="si">}</span><span class="s2">."</span>
+                <span class="p">),</span>
+                <span class="n">relevance_score</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+                <span class="n">supports</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>  <span class="c1"># constrains the decision; not causal support</span>
+            <span class="p">))</span>
+
+        <span class="c1"># ── 1. Strongest temporal chain link(s) ───────────────────────────────</span>
+        <span class="n">chain_summary</span> <span class="o">=</span> <span class="n">temporal_event_chain</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">strongest_link_id</span> <span class="o">=</span> <span class="n">chain_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"strongest_link_id"</span><span class="p">)</span>
+        <span class="n">max_relation_score</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">chain_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"max_relation_score"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">causal_posture</span> <span class="o">=</span> <span class="n">chain_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causal_posture"</span><span class="p">,</span> <span class="s2">"insufficient_data"</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">strongest_link_id</span><span class="p">:</span>
+            <span class="c1"># Find the full link record</span>
+            <span class="n">strongest_link</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">lnk</span> <span class="k">for</span> <span class="n">lnk</span> <span class="ow">in</span> <span class="n">temporal_event_chain</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"chain_links"</span><span class="p">,</span> <span class="p">[])</span>
+                 <span class="k">if</span> <span class="n">lnk</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"link_id"</span><span class="p">)</span> <span class="o">==</span> <span class="n">strongest_link_id</span><span class="p">),</span>
+                <span class="kc">None</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">strongest_link</span><span class="p">:</span>
+                <span class="n">snippet</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"Allen relation: </span><span class="si">{</span><span class="n">strongest_link</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'allen_relation'</span><span class="p">)</span><span class="si">}</span><span class="s2"> "</span>
+                    <span class="sa">f</span><span class="s2">"(score </span><span class="si">{</span><span class="n">strongest_link</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'relation_score'</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">); "</span>
+                    <span class="sa">f</span><span class="s2">"onset lag </span><span class="si">{</span><span class="n">strongest_link</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'onset_lag_hours'</span><span class="p">,</span><span class="w"> </span><span class="s1">'?'</span><span class="p">)</span><span class="si">}</span><span class="s2"> h; "</span>
+                    <span class="sa">f</span><span class="s2">"causal strength: </span><span class="si">{</span><span class="n">strongest_link</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'causal_strength'</span><span class="p">)</span><span class="si">}</span><span class="s2">."</span>
+                <span class="p">)</span>
+                <span class="n">evidence</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_make_evidence</span><span class="p">(</span>
+                    <span class="n">source_type</span><span class="o">=</span><span class="s2">"temporal_chain_link"</span><span class="p">,</span>
+                    <span class="n">source_id</span><span class="o">=</span><span class="n">strongest_link_id</span><span class="p">,</span>
+                    <span class="n">snippet</span><span class="o">=</span><span class="n">snippet</span><span class="p">,</span>
+                    <span class="n">relevance_score</span><span class="o">=</span><span class="n">max_relation_score</span><span class="p">,</span>
+                    <span class="n">supports</span><span class="o">=</span><span class="n">causal_posture</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"supported"</span><span class="p">,</span> <span class="s2">"partial"</span><span class="p">},</span>
+                <span class="p">))</span>
+
+        <span class="c1"># Include temporal contradiction link if present</span>
+        <span class="k">if</span> <span class="n">chain_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_temporal_contradiction"</span><span class="p">):</span>
+            <span class="n">contradiction_links</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">lnk</span> <span class="k">for</span> <span class="n">lnk</span> <span class="ow">in</span> <span class="n">temporal_event_chain</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"chain_links"</span><span class="p">,</span> <span class="p">[])</span>
+                <span class="k">if</span> <span class="n">lnk</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causal_strength"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"temporal_contradiction"</span>
+            <span class="p">]</span>
+            <span class="k">for</span> <span class="n">lnk</span> <span class="ow">in</span> <span class="n">contradiction_links</span><span class="p">[:</span><span class="mi">2</span><span class="p">]:</span>
+                <span class="n">evidence</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_make_evidence</span><span class="p">(</span>
+                    <span class="n">source_type</span><span class="o">=</span><span class="s2">"temporal_chain_link"</span><span class="p">,</span>
+                    <span class="n">source_id</span><span class="o">=</span><span class="n">lnk</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"link_id"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">),</span>
+                    <span class="n">snippet</span><span class="o">=</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">"TEMPORAL CONTRADICTION: event </span><span class="si">{</span><span class="n">lnk</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'event_id'</span><span class="p">)</span><span class="si">}</span><span class="s2"> "</span>
+                        <span class="sa">f</span><span class="s2">"follows the emergent activity (Allen: </span><span class="si">{</span><span class="n">lnk</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'allen_relation'</span><span class="p">)</span><span class="si">}</span><span class="s2">). "</span>
+                        <span class="s2">"This event is a likely symptom, not a cause."</span>
+                    <span class="p">),</span>
+                    <span class="n">relevance_score</span><span class="o">=</span><span class="mf">0.10</span><span class="p">,</span>
+                    <span class="n">supports</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="p">))</span>
+
+        <span class="c1"># ── 2. Top historical analogs with duration data ──────────────────────</span>
+        <span class="n">analogs</span> <span class="o">=</span> <span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analogs"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">analogs_with_duration</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">analogs</span> <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"actual_duration_hours"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="p">]</span>
+        <span class="k">for</span> <span class="n">analog</span> <span class="ow">in</span> <span class="n">analogs_with_duration</span><span class="p">[:</span><span class="mi">3</span><span class="p">]:</span>
+            <span class="n">snippet</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Similarity </span><span class="si">{</span><span class="n">analog</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'similarity_score'</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">; "</span>
+                <span class="sa">f</span><span class="s2">"actual duration </span><span class="si">{</span><span class="n">analog</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'actual_duration_hours'</span><span class="p">)</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h "</span>
+                <span class="sa">f</span><span class="s2">"(plant </span><span class="si">{</span><span class="n">analog</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'plant_id'</span><span class="p">,</span><span class="w"> </span><span class="s1">'?'</span><span class="p">)</span><span class="si">}</span><span class="s2">, "</span>
+                <span class="sa">f</span><span class="s2">"outage </span><span class="si">{</span><span class="n">analog</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'outage_id'</span><span class="p">,</span><span class="w"> </span><span class="s1">'?'</span><span class="p">)</span><span class="si">}</span><span class="s2">): "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">analog</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'description'</span><span class="p">,</span><span class="w"> </span><span class="s1">''</span><span class="p">))[:</span><span class="mi">120</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span>
+            <span class="p">)</span>
+            <span class="n">evidence</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_make_evidence</span><span class="p">(</span>
+                <span class="n">source_type</span><span class="o">=</span><span class="s2">"historical_analog"</span><span class="p">,</span>
+                <span class="n">source_id</span><span class="o">=</span><span class="n">analog</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analog_id"</span><span class="p">,</span> <span class="n">analog</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_activity_id"</span><span class="p">,</span> <span class="s2">"?"</span><span class="p">)),</span>
+                <span class="n">snippet</span><span class="o">=</span><span class="n">snippet</span><span class="p">,</span>
+                <span class="n">relevance_score</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">analog</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"similarity_score"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">),</span>
+                <span class="n">supports</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">))</span>
+
+        <span class="c1"># ── 3. Schedule analysis result ───────────────────────────────────────</span>
+        <span class="n">float_analysis</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_analysis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">cp_impact</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">float_analysis</span> <span class="ow">or</span> <span class="n">cp_impact</span><span class="p">:</span>
+            <span class="n">criticality</span> <span class="o">=</span> <span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">)</span>
+            <span class="n">cp_drag</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">cp_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_drag_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="n">float_consumed</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_consumed_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="n">snippet</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Criticality: </span><span class="si">{</span><span class="n">criticality</span><span class="si">}</span><span class="s2">; "</span>
+                <span class="sa">f</span><span class="s2">"CP drag: </span><span class="si">{</span><span class="n">cp_drag</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h; "</span>
+                <span class="sa">f</span><span class="s2">"float consumed: </span><span class="si">{</span><span class="n">float_consumed</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h; "</span>
+                <span class="sa">f</span><span class="s2">"CP sensitivity: </span><span class="si">{</span><span class="n">cp_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'cp_sensitivity_score'</span><span class="p">,</span><span class="w"> </span><span class="s1">'?'</span><span class="p">)</span><span class="si">}</span><span class="s2">."</span>
+            <span class="p">)</span>
+            <span class="n">supports</span> <span class="o">=</span> <span class="n">criticality</span> <span class="o">!=</span> <span class="s2">"critical"</span> <span class="ow">or</span> <span class="n">cp_drag</span> <span class="o">&lt;</span> <span class="mf">8.0</span>
+            <span class="n">evidence</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_make_evidence</span><span class="p">(</span>
+                <span class="n">source_type</span><span class="o">=</span><span class="s2">"schedule_analysis"</span><span class="p">,</span>
+                <span class="n">source_id</span><span class="o">=</span><span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_id"</span><span class="p">,</span> <span class="s2">"schedule_impact"</span><span class="p">),</span>
+                <span class="n">snippet</span><span class="o">=</span><span class="n">snippet</span><span class="p">,</span>
+                <span class="n">relevance_score</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.70</span><span class="p">),</span>
+                <span class="n">supports</span><span class="o">=</span><span class="n">supports</span><span class="p">,</span>
+            <span class="p">))</span>
+
+        <span class="c1"># ── 4. Highest-DQ condition report from the component timeline ────────</span>
+        <span class="n">timeline_events</span> <span class="o">=</span> <span class="n">component_event_timeline</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"events"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">cr_events</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">timeline_events</span>
+            <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_type"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"condition_report"</span>
+            <span class="ow">and</span> <span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"description"</span><span class="p">)</span>
+        <span class="p">]</span>
+        <span class="k">if</span> <span class="n">cr_events</span><span class="p">:</span>
+            <span class="n">best_cr</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">cr_events</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">e</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"data_quality_score"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">))</span>
+            <span class="n">snippet</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"CR </span><span class="si">{</span><span class="n">best_cr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'event_id'</span><span class="p">)</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">best_cr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'timestamp'</span><span class="p">,</span><span class="w"> </span><span class="s1">'?'</span><span class="p">)</span><span class="si">}</span><span class="s2">): "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">best_cr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'description'</span><span class="p">,</span><span class="w"> </span><span class="s1">''</span><span class="p">))[:</span><span class="mi">150</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span>
+            <span class="p">)</span>
+            <span class="n">evidence</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_make_evidence</span><span class="p">(</span>
+                <span class="n">source_type</span><span class="o">=</span><span class="s2">"condition_report"</span><span class="p">,</span>
+                <span class="n">source_id</span><span class="o">=</span><span class="n">best_cr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_doc_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">best_cr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">,</span> <span class="s2">"?"</span><span class="p">),</span>
+                <span class="n">snippet</span><span class="o">=</span><span class="n">snippet</span><span class="p">,</span>
+                <span class="n">relevance_score</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">best_cr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"data_quality_score"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.5</span><span class="p">),</span>
+                <span class="n">supports</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">evidence</span></div>
+
+
+<div class="viewcode-block" id="RecommendationSynthesizer._build_history_summary">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer._build_history_summary">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_history_summary</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">component_event_timeline</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Build the history_summary block for the executive view.</span>
+
+<span class="sd">        Extracts: analog_count, outages_represented, recurrence_pattern</span>
+<span class="sd">        (one sentence from recurrence_indicators), duration_p50_hours,</span>
+<span class="sd">        duration_p80_hours.</span>
+<span class="sd">        """</span>
+        <span class="n">retrieval_summary</span> <span class="o">=</span> <span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"retrieval_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">dist</span> <span class="o">=</span> <span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"duration_distribution"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">recurrence</span> <span class="o">=</span> <span class="n">component_event_timeline</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"recurrence_indicators"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+
+        <span class="n">analog_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">retrieval_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analog_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+        <span class="n">outages_represented</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">retrieval_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"outages_represented"</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+
+        <span class="c1"># Build one-sentence recurrence pattern description</span>
+        <span class="n">trend</span> <span class="o">=</span> <span class="n">recurrence</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"trend"</span><span class="p">,</span> <span class="s2">"insufficient_data"</span><span class="p">)</span>
+        <span class="n">repeat_count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">recurrence</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"repeat_failure_count"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">mean_inter</span> <span class="o">=</span> <span class="n">recurrence</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mean_inter_event_days"</span><span class="p">)</span>
+        <span class="n">pm_status</span> <span class="o">=</span> <span class="n">recurrence</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pm_compliance_status"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">trend</span> <span class="o">==</span> <span class="s2">"insufficient_data"</span> <span class="ow">or</span> <span class="n">repeat_count</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">recurrence_pattern</span> <span class="o">=</span> <span class="s2">"Insufficient historical data to characterise a recurrence pattern."</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">inter_clause</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">" Mean inter-event interval: </span><span class="si">{</span><span class="n">mean_inter</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> days."</span>
+                <span class="k">if</span> <span class="n">mean_inter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">""</span>
+            <span class="p">)</span>
+            <span class="n">pm_clause</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">" PM status: </span><span class="si">{</span><span class="n">pm_status</span><span class="si">}</span><span class="s2">."</span>
+                <span class="k">if</span> <span class="n">pm_status</span> <span class="o">!=</span> <span class="s2">"unknown"</span> <span class="k">else</span> <span class="s2">""</span>
+            <span class="p">)</span>
+            <span class="n">recurrence_pattern</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">repeat_count</span><span class="si">}</span><span class="s2"> prior failure event(s) on this component; "</span>
+                <span class="sa">f</span><span class="s2">"trend: </span><span class="si">{</span><span class="n">trend</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">inter_clause</span><span class="si">}{</span><span class="n">pm_clause</span><span class="si">}</span><span class="s2">"</span>
+            <span class="p">)</span>
+
+        <span class="c1"># §8(a): surface the specific outage IDs the recommendation draws from</span>
+        <span class="n">outage_ids</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">({</span>
+            <span class="n">a</span><span class="p">[</span><span class="s2">"outage_id"</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="p">(</span><span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analogs"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+            <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"outage_id"</span><span class="p">)</span>
+        <span class="p">})</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"analog_count"</span><span class="p">:</span> <span class="n">analog_count</span><span class="p">,</span>
+            <span class="s2">"outages_represented"</span><span class="p">:</span> <span class="n">outages_represented</span><span class="p">,</span>
+            <span class="s2">"outage_ids"</span><span class="p">:</span> <span class="n">outage_ids</span><span class="p">,</span>
+            <span class="s2">"recurrence_pattern"</span><span class="p">:</span> <span class="n">recurrence_pattern</span><span class="p">,</span>
+            <span class="s2">"duration_p50_hours"</span><span class="p">:</span> <span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"p50_hours"</span><span class="p">),</span>
+            <span class="s2">"duration_p80_hours"</span><span class="p">:</span> <span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"p80_hours"</span><span class="p">),</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="RecommendationSynthesizer._build_schedule_summary">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer._build_schedule_summary">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_schedule_summary</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">schedule_impact</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Extract cp_impact_hours, criticality_label, float_consumed_hours,</span>
+<span class="sd">        displaced_task_count, and has_displaced_regulatory_tasks."""</span>
+        <span class="n">cp_impact</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">float_analysis</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_analysis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">displaced_tasks</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"displaced_tasks"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+
+        <span class="n">has_displaced_regulatory</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
+            <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_regulatory_constraint"</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">displaced_tasks</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"cp_impact_hours"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">cp_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_drag_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">),</span>
+            <span class="s2">"criticality_label"</span><span class="p">:</span> <span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">,</span> <span class="s2">"non_critical"</span><span class="p">),</span>
+            <span class="s2">"float_consumed_hours"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span>
+                <span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_consumed_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span>
+            <span class="p">),</span>
+            <span class="s2">"displaced_task_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">displaced_tasks</span><span class="p">),</span>
+            <span class="s2">"has_displaced_regulatory_tasks"</span><span class="p">:</span> <span class="n">has_displaced_regulatory</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="RecommendationSynthesizer._determine_analyst_review">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer._determine_analyst_review">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_determine_analyst_review</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">decision_status</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">insertion_options</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">attention_flags</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Determine whether analyst review is required before acting.</span>
+
+<span class="sd">        required=True when any of:</span>
+<span class="sd">            - has_regulatory_constraint is True</span>
+<span class="sd">            - decision_status is INCONCLUSIVE</span>
+<span class="sd">            - duration distribution confidence_tier is low_confidence</span>
+<span class="sd">            - _FLAG_FALLBACK is in attention_flags</span>
+<span class="sd">            - _FLAG_HIGH_ABBR_RATE is in attention_flags (§6 exit criterion:</span>
+<span class="sd">              NER entity extraction unreliable when unknown_abbreviation_rate</span>
+<span class="sd">              exceeds RecommendationConfig.unknown_abbreviation_rate_warning)</span>
+<span class="sd">            - no feasible + regulatory-cleared option exists</span>
+
+<span class="sd">        reason: brief string summarising why review is required.</span>
+<span class="sd">        reviewer_decision initialised to None (populated by the analyst UI).</span>
+<span class="sd">        """</span>
+        <span class="n">reasons</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">if</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_regulatory_constraint"</span><span class="p">):</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"regulatory constraint present — verify compliance before proceeding"</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">decision_status</span> <span class="o">==</span> <span class="n">_INCONCLUSIVE</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"no feasible option identified — manual scheduling decision required"</span><span class="p">)</span>
+
+        <span class="n">dist_tier</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"duration_distribution"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+            <span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_tier"</span><span class="p">,</span> <span class="s2">"low_confidence"</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">dist_tier</span> <span class="o">==</span> <span class="s2">"low_confidence"</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="s2">"low-confidence duration estimate — SME input required to validate duration"</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">_FLAG_FALLBACK</span> <span class="ow">in</span> <span class="n">attention_flags</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="s2">"fallback distribution used — no analogous historical events found"</span>
+            <span class="p">)</span>
+
+        <span class="c1"># §6 exit criterion: high unknown abbreviation rate makes NER-derived</span>
+        <span class="c1"># causal chains unreliable — analyst must verify entity extraction</span>
+        <span class="k">if</span> <span class="n">_FLAG_HIGH_ABBR_RATE</span> <span class="ow">in</span> <span class="n">attention_flags</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="s2">"high unknown abbreviation rate — NER entity extraction unreliable; "</span>
+                <span class="s2">"verify component and failure-mode identification before acting"</span>
+            <span class="p">)</span>
+
+        <span class="c1"># No feasible + cleared option</span>
+        <span class="n">feasible_cleared</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">o</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">insertion_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"options"</span><span class="p">,</span> <span class="p">[])</span>
+            <span class="k">if</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span> <span class="ow">and</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+        <span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">feasible_cleared</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"no feasible, regulatory-cleared option exists"</span><span class="p">)</span>
+
+        <span class="n">required</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">reasons</span><span class="p">)</span>
+        <span class="n">reason_text</span> <span class="o">=</span> <span class="s2">"; "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">reasons</span><span class="p">)</span> <span class="k">if</span> <span class="n">reasons</span> <span class="k">else</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"required"</span><span class="p">:</span> <span class="n">required</span><span class="p">,</span>
+            <span class="s2">"reason"</span><span class="p">:</span> <span class="n">reason_text</span><span class="p">,</span>
+            <span class="s2">"reviewer_decision"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>   <span class="c1"># populated by analyst UI after review</span>
+            <span class="s2">"rejection_reason"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>    <span class="c1"># §8(d): analyst populates when rejecting recommendation</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="RecommendationSynthesizer._compute_validation_status">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer._compute_validation_status">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compute_validation_status</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">evidence_chain</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">regulatory_flags</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Compute the validation_status block.</span>
+
+<span class="sd">        schema_valid:                  always True here (schema validation runs</span>
+<span class="sd">                                       in the orchestrator's _validate_and_persist).</span>
+<span class="sd">        all_regulatory_flags_resolved: True if every regulatory_flag entry has</span>
+<span class="sd">                                       a corresponding evidence_chain item that</span>
+<span class="sd">                                       supports=True, or if there are no flags.</span>
+<span class="sd">        minimum_evidence_met:          True if len(evidence_chain) &gt;= 1 with at</span>
+<span class="sd">                                       least one supports=True entry.</span>
+<span class="sd">        fallback_used:                 from historical_analogs.retrieval_summary.</span>
+<span class="sd">        """</span>
+        <span class="c1"># Regulatory flags resolved: each flag must have a supporting evidence item</span>
+        <span class="n">all_resolved</span><span class="p">:</span> <span class="nb">bool</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">regulatory_flags</span><span class="p">:</span>
+            <span class="n">all_resolved</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">supporting_sources</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_id"</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">evidence_chain</span>
+                <span class="k">if</span> <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"supports"</span><span class="p">)</span>
+            <span class="p">}</span>
+            <span class="c1"># A flag is "resolved" when its driver_id or driver_type appears in</span>
+            <span class="c1"># a supporting evidence item, OR when a schedule/temporal analysis</span>
+            <span class="c1"># evidence item (which covers the activity holistically) is present.</span>
+            <span class="n">holistic_evidence</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
+                <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"schedule_analysis"</span><span class="p">,</span> <span class="s2">"temporal_chain_link"</span><span class="p">}</span>
+                <span class="ow">and</span> <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"supports"</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">evidence_chain</span>
+            <span class="p">)</span>
+            <span class="n">all_resolved</span> <span class="o">=</span> <span class="n">holistic_evidence</span> <span class="ow">or</span> <span class="nb">bool</span><span class="p">(</span><span class="n">supporting_sources</span><span class="p">)</span>
+
+        <span class="n">minimum_evidence_met</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">evidence_chain</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span>
+            <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"supports"</span><span class="p">)</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">evidence_chain</span>
+        <span class="p">)</span>
+
+        <span class="n">fallback_used</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"retrieval_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fallback_used"</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"schema_valid"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">"all_regulatory_flags_resolved"</span><span class="p">:</span> <span class="n">all_resolved</span><span class="p">,</span>
+            <span class="s2">"minimum_evidence_met"</span><span class="p">:</span> <span class="n">minimum_evidence_met</span><span class="p">,</span>
+            <span class="s2">"fallback_used"</span><span class="p">:</span> <span class="n">fallback_used</span><span class="p">,</span>
+        <span class="p">}</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Module-level helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_make_evidence">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._make_evidence">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_evidence</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">source_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">source_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">snippet</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">relevance_score</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">supports</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Construct a standardised evidence chain entry."""</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"evidence_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"EVD::</span><span class="si">{</span><span class="n">source_type</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">hex</span><span class="p">[:</span><span class="mi">6</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+        <span class="s2">"source_type"</span><span class="p">:</span> <span class="n">source_type</span><span class="p">,</span>
+        <span class="s2">"source_id"</span><span class="p">:</span> <span class="n">source_id</span><span class="p">,</span>
+        <span class="s2">"snippet"</span><span class="p">:</span> <span class="n">snippet</span><span class="p">,</span>
+        <span class="s2">"relevance_score"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">relevance_score</span><span class="p">)),</span> <span class="mi">4</span><span class="p">),</span>
+        <span class="s2">"supports"</span><span class="p">:</span> <span class="n">supports</span><span class="p">,</span>
+    <span class="p">}</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

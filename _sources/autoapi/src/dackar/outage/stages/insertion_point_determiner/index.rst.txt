@@ -1,0 +1,292 @@
+src.dackar.outage.stages.insertion_point_determiner
+===================================================
+
+.. py:module:: src.dackar.outage.stages.insertion_point_determiner
+
+.. autoapi-nested-parse::
+
+   Insertion point determination pre-pass for the two-pass analog retrieval design.
+
+   Background
+   ----------
+   Stage D (analog retrieval) runs before Stage E (schedule impact) because Stage E
+   needs the duration distribution produced by Stage D to drive its Monte Carlo
+   simulation.  This ordering means Stage D cannot use schedule-position signals
+   during similarity scoring — it has no knowledge of *where* the emergent activity
+   will sit in the network.
+
+   The key insight is that **determining the insertion point does not require the
+   duration distribution**.  It only needs:
+
+       1. The schedule network (LOGOS Pert, loadable independently).
+       2. The emergent activity's ``actual_start`` / ``outage_phase`` metadata.
+
+   ``InsertionPointDeterminer`` executes this lightweight pre-pass between Stage C
+   and Stage D, producing a ``ScheduleContext`` that carries:
+
+       - Insertion topology: ``after_task_id``, ``before_task_id``, degree metrics.
+       - Schedule risk indicators: ``available_float_hours``, ``insertion_on_cp``.
+
+   This context is then threaded through both Stage D and Stage E:
+
+       Stage D:  ``_rerank_by_schedule_context()`` uses the signals to apply a
+                 structural affinity boost to the ranked analog pool (Layer 1).
+                 The query ``ActivityCase`` also receives ``predecessor_ids`` /
+                 ``successor_ids`` so ``DependencyPatternScorer`` activates
+                 automatically once historical topology data enters the index
+                 (Layer 2, deferred).
+
+       Stage E:  ``ScheduleContext.to_insertion_point()`` provides the pre-computed
+                 insertion point dict, avoiding a redundant second determination.
+
+   Typical wiring in the orchestrator::
+
+       from dackar.outage.stages.insertion_point_determiner import InsertionPointDeterminer
+
+       determiner = InsertionPointDeterminer(
+           schedule_loader=my_loader,
+           schedule_graph_builder=my_builder,
+           schedule_version="working",
+       )
+       # Called between Stage C and Stage D:
+       schedule_context = determiner.determine(emergent_activity, intake_result)
+
+   Graceful degradation
+   --------------------
+   All failures in ``determine()`` are caught and logged; the method returns
+   ``None`` rather than raising.  Stage D and Stage E fall back to their existing
+   behavior when ``schedule_context`` is ``None``.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.insertion_point_determiner.LOGGER
+   src.dackar.outage.stages.insertion_point_determiner.JsonDict
+   src.dackar.outage.stages.insertion_point_determiner._FLOAT_EPSILON
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.insertion_point_determiner.ScheduleContext
+   src.dackar.outage.stages.insertion_point_determiner.InsertionPointDeterminer
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.insertion_point_determiner._parse_dt
+   src.dackar.outage.stages.insertion_point_determiner._ensure_tz
+   src.dackar.outage.stages.insertion_point_determiner._default_phase_windows
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:data:: JsonDict
+
+.. py:data:: _FLOAT_EPSILON
+   :value: 0.01
+
+
+.. py:class:: ScheduleContext
+
+   Immutable snapshot of the insertion site's schedule topology.
+
+   Produced by :class:`InsertionPointDeterminer` and consumed by Stage D
+   (structural affinity re-ranking) and Stage E (insertion point reuse).
+
+   .. attribute:: activity_id
+
+      The emergent activity this context was computed for.
+
+   .. attribute:: after_task_id
+
+      The schedule task immediately before the insertion point (the activity
+      the emergent task will follow).  ``None`` when the schedule is empty or
+      no suitable predecessor was found.
+
+   .. attribute:: before_task_id
+
+      The schedule task immediately after the insertion point (the first
+      successor of ``after_task_id`` on the critical path).  ``None`` when
+      ``after_task_id`` is a sink.
+
+   .. attribute:: outage_phase
+
+      Outage phase label at the insertion site (from intake result or
+      inferred from schedule position).
+
+   .. attribute:: proposed_start
+
+      ISO-8601 datetime of the proposed insertion start, derived from the
+      schedule network's project start + ``after_task`` EF.
+
+   .. attribute:: proposed_finish
+
+      ISO-8601 datetime of the proposed insertion finish.  Uses
+      ``planned_duration_hours`` from the emergent activity as the best
+      available pre-analog estimate.  Stage D will overwrite this with the
+      p50 distribution estimate when available.
+
+   .. attribute:: insertion_in_degree
+
+      Number of predecessors of ``after_task_id`` in the schedule network.
+      High in-degree signals a merge point (multiple work streams converging)
+      where coordination overhead is elevated.
+
+   .. attribute:: insertion_out_degree
+
+      Number of successors of ``after_task_id`` in the schedule network.
+      High out-degree signals a burst point (work-package fan-out) where the
+      insertion blocks multiple downstream tasks simultaneously.
+
+   .. attribute:: available_float_hours
+
+      Total float (slack) at ``after_task_id`` before insertion.  Small
+      values indicate the insertion site is near-critical; zero means
+      any delay propagates directly to the outage completion date.
+
+   .. attribute:: insertion_on_cp
+
+      True when ``available_float_hours`` ≤ ``_FLOAT_EPSILON`` — i.e. the
+      insertion site is on or adjacent to the critical path.
+
+
+   .. py:attribute:: activity_id
+      :type:  str
+
+
+   .. py:attribute:: after_task_id
+      :type:  Optional[str]
+
+
+   .. py:attribute:: before_task_id
+      :type:  Optional[str]
+
+
+   .. py:attribute:: outage_phase
+      :type:  str
+
+
+   .. py:attribute:: proposed_start
+      :type:  Optional[str]
+
+
+   .. py:attribute:: proposed_finish
+      :type:  Optional[str]
+
+
+   .. py:attribute:: insertion_in_degree
+      :type:  int
+
+
+   .. py:attribute:: insertion_out_degree
+      :type:  int
+
+
+   .. py:attribute:: available_float_hours
+      :type:  float
+
+
+   .. py:attribute:: insertion_on_cp
+      :type:  bool
+
+
+   .. py:method:: to_insertion_point()
+
+      Return an insertion_point dict compatible with Stage E's artifact schema.
+
+      Stage E accepts this in place of the output of
+      ``_determine_insertion_point()`` so the schedule network does not need
+      to be traversed a second time.
+
+
+
+.. py:class:: InsertionPointDeterminer(schedule_loader=None, schedule_graph_builder=None, schedule_version = 'working', near_critical_float_threshold_hours = 8.0)
+
+   Lightweight pre-pass that determines where the emergent activity inserts.
+
+   Loads the schedule network (same loader / builder pair used by Stage E),
+   finds the insertion point, and extracts topology metrics — all without
+   needing the duration distribution from Stage D.
+
+   :param schedule_loader: ``callable(outage_id, version=...) → OutageData``.
+                           The same loader injected into ``ScheduleImpactAssessor``.
+   :param schedule_graph_builder: Object with ``.build(outage_data) → Pert``.
+                                  The builder must return a Pert with ``generateInfo()`` called so
+                                  ``infoDict`` is populated.
+   :param schedule_version: Schedule version tag to load.  Defaults to
+                            ``"working"`` (same default as Stage E).
+   :param near_critical_float_threshold_hours: Float below which a site is
+                                               considered near-critical.  Used only for logging; the binary
+                                               ``insertion_on_cp`` uses ``_FLOAT_EPSILON``.
+
+
+   .. py:attribute:: schedule_loader
+      :value: None
+
+
+
+   .. py:attribute:: schedule_graph_builder
+      :value: None
+
+
+
+   .. py:attribute:: schedule_version
+      :value: 'working'
+
+
+
+   .. py:attribute:: near_critical_float_threshold_hours
+      :value: 8.0
+
+
+
+   .. py:method:: determine(emergent_activity, intake_result)
+
+      Determine the insertion point and return a ScheduleContext.
+
+      Returns ``None`` on any failure (missing loader, schedule load error,
+      empty schedule) so callers can safely treat ``None`` as "no context
+      available — fall back to existing behavior."
+
+      :param emergent_activity: Raw EmergentActivity artifact (must include
+                                ``activity_id`` and ``outage_id``).
+      :param intake_result: Stage A output (used for ``outage_phase``).
+
+
+
+   .. py:method:: _build_context(pert, emergent_activity, intake_result, activity_id)
+
+
+   .. py:method:: _find_after_task(pert, emergent_activity, outage_phase)
+
+      Find the schedule task the emergent activity should follow.
+
+      Mirrors Stage E's ``_determine_insertion_point()`` strategy:
+
+      1. If ``actual_start`` is known, find the task active at that offset.
+      2. Otherwise filter by ``outage_phase`` window and pick max-float task.
+
+
+
+.. py:function:: _parse_dt(iso_str)
+
+.. py:function:: _ensure_tz(dt)
+
+.. py:function:: _default_phase_windows(outage_phase, total_hours)
+
+   Map outage phase label to approximate (start_offset, end_offset) range.
+
+

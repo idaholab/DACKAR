@@ -1,0 +1,302 @@
+src.dackar.outage.stages.stage_c_temporal_chain
+===============================================
+
+.. py:module:: src.dackar.outage.stages.stage_c_temporal_chain
+
+.. autoapi-nested-parse::
+
+   Stage C — Temporal Event Chain Scorer.
+
+   Responsibilities:
+       1. Parse the emergent activity's detection timestamp (and duration if known)
+          into a temporal interval [start, end].
+       2. For each prior event in the ComponentEventTimeline, apply Allen interval
+          algebra to classify the temporal relationship to the emergent activity:
+          PRECEDES, OVERLAPS, CONTAINS, DURING, FOLLOWS, SIMULTANEOUS, UNKNOWN.
+       3. Score each link for causal relevance based on the Allen relation, onset
+          lag, and data quality of the prior event.
+       4. Label each link with a causal_strength: strong / moderate / weak /
+          temporal_contradiction.
+       5. Summarise the chain: strongest link, causal posture, contradiction flags.
+
+   Output schema: outage/schemas/temporal_event_chain.json
+
+   Allen relation → causal relevance reference:
+       OVERLAPS    → 0.90  prior event was active at emergent activity onset
+       CONTAINS    → 0.85  long-running degradation encompasses the activity window
+       PRECEDES    → 0.80  classic lead-time: ended before onset
+       SIMULTANEOUS→ 0.50  concurrent; possible common cause
+       DURING      → 0.30  started after onset; likely a symptom, not a cause
+       FOLLOWS     → 0.10  temporal contradiction; flag for analyst review
+
+   Reuse targets:
+       RCA.orchestrators.tskr_temporal_scorer.TSKRTemporalScorerV1
+           Adaptation: operate on CR/WO event intervals rather than telemetry
+           anomaly windows. The Allen relation algebra and confidence scoring
+           logic are unchanged; only the input data model differs.
+       dackar.RCA.orchestrators.temporal_relations
+           Interval dataclass and onset_lag_hours utility are imported directly.
+           The allen_relation() function is NOT reused because Stage C extends
+           the 5-relation RCA vocabulary with SIMULTANEOUS and UNKNOWN.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_c_temporal_chain.LOGGER
+   src.dackar.outage.stages.stage_c_temporal_chain.JsonDict
+   src.dackar.outage.stages.stage_c_temporal_chain._PRECEDES
+   src.dackar.outage.stages.stage_c_temporal_chain._OVERLAPS
+   src.dackar.outage.stages.stage_c_temporal_chain._CONTAINS
+   src.dackar.outage.stages.stage_c_temporal_chain._DURING
+   src.dackar.outage.stages.stage_c_temporal_chain._FOLLOWS
+   src.dackar.outage.stages.stage_c_temporal_chain._SIMULTANEOUS
+   src.dackar.outage.stages.stage_c_temporal_chain._UNKNOWN
+   src.dackar.outage.stages.stage_c_temporal_chain._RELATION_SCORES
+   src.dackar.outage.stages.stage_c_temporal_chain._STRONG_THRESHOLD
+   src.dackar.outage.stages.stage_c_temporal_chain._MODERATE_THRESHOLD
+   src.dackar.outage.stages.stage_c_temporal_chain._ANOMALY_WEIGHT
+   src.dackar.outage.stages.stage_c_temporal_chain._LATENCY_WEIGHT
+   src.dackar.outage.stages.stage_c_temporal_chain._RELATION_WEIGHT
+   src.dackar.outage.stages.stage_c_temporal_chain._RCA_TEMPORAL_AVAILABLE
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_c_temporal_chain.TemporalChainConfig
+   src.dackar.outage.stages.stage_c_temporal_chain.TemporalChainScorer
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_c_temporal_chain._parse_dt
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:data:: JsonDict
+
+.. py:data:: _PRECEDES
+   :value: 'precedes'
+
+
+.. py:data:: _OVERLAPS
+   :value: 'overlaps'
+
+
+.. py:data:: _CONTAINS
+   :value: 'contains'
+
+
+.. py:data:: _DURING
+   :value: 'during'
+
+
+.. py:data:: _FOLLOWS
+   :value: 'follows'
+
+
+.. py:data:: _SIMULTANEOUS
+   :value: 'simultaneous'
+
+
+.. py:data:: _UNKNOWN
+   :value: 'unknown'
+
+
+.. py:data:: _RELATION_SCORES
+   :type:  Dict[str, float]
+
+.. py:data:: _STRONG_THRESHOLD
+   :value: 0.75
+
+
+.. py:data:: _MODERATE_THRESHOLD
+   :value: 0.4
+
+
+.. py:data:: _ANOMALY_WEIGHT
+   :value: 0.55
+
+
+.. py:data:: _LATENCY_WEIGHT
+   :value: 0.3
+
+
+.. py:data:: _RELATION_WEIGHT
+   :value: 0.15
+
+
+.. py:data:: _RCA_TEMPORAL_AVAILABLE
+   :value: True
+
+
+.. py:function:: _parse_dt(iso_str)
+
+   Parse an ISO-8601 string to a timezone-aware datetime.
+
+   Naive datetimes are assumed UTC.  Returns None on invalid input.
+
+
+.. py:class:: TemporalChainConfig
+
+   Configuration for Stage C.
+
+
+   .. py:attribute:: epsilon_hours
+      :type:  float
+      :value: 0.5
+
+
+      Tolerance for Allen relation boundary comparisons.  Events within
+      epsilon_hours of a boundary are treated as simultaneous at that boundary.
+
+
+   .. py:attribute:: include_follows_relations
+      :type:  bool
+      :value: True
+
+
+      If True, FOLLOWS links are retained with causal_strength='temporal_contradiction'.
+      If False, they are silently dropped from the chain.
+
+
+   .. py:attribute:: min_relation_score_threshold
+      :type:  float
+      :value: 0.0
+
+
+      Drop links with relation_score below this value. Default 0.0 (keep all).
+
+
+.. py:class:: TemporalChainScorer(config = None)
+
+   Concrete Stage C implementation.
+
+   :param config: Stage configuration.
+
+
+   .. py:attribute:: config
+
+
+   .. py:method:: score(emergent_activity, component_event_timeline, run_context)
+
+      Execute Stage C for one emergent activity.
+
+      :returns: TemporalEventChain artifact conforming to
+                outage/schemas/temporal_event_chain.json.
+
+
+
+   .. py:method:: _parse_activity_interval(emergent_activity)
+
+      Extract the temporal interval of the emergent activity.
+
+      Returns ((start_iso, end_iso), is_point_event).
+
+      is_point_event=True when only a detection timestamp is known (no
+      planned duration or actual start/finish), indicating the interval
+      collapses to a point for Allen relation purposes.
+
+      Priority for start: actual_start > detection_timestamp > planned_start.
+      Priority for end: actual_finish > planned_finish > (start + planned_duration).
+
+
+
+   .. py:method:: _score_event_link(event, activity_interval, is_point_event)
+
+      Score one prior event against the emergent activity interval.
+
+      Returns a chain_link dict conforming to temporal_event_chain.json, or
+      None if the event timestamp is missing and the relation cannot be
+      determined.
+
+      Steps:
+          1. Parse event interval from event['timestamp'] and event duration.
+          2. Compute Allen relation via _allen_relation().
+          3. Lookup relation_score from _RELATION_SCORES.
+          4. Compute onset_lag_hours.
+          5. Compute confidence from event data_quality_score and relation score.
+          6. Assign causal_strength label.
+
+
+
+   .. py:method:: _allen_relation(prior_start, prior_end, activity_start, activity_end)
+
+      Classify the Allen interval relation of the prior event relative to
+      the emergent activity interval.
+
+      Mirrors the allen_relation() function in TSKRTemporalScorerV1 but
+      extends the 5-relation RCA vocabulary with SIMULTANEOUS and UNKNOWN.
+
+      Boundary epsilon: events within self.config.epsilon_hours of a
+      boundary are treated as simultaneous at that boundary.
+
+      Logic (interval A = prior event, interval B = activity):
+          A.end   < B.start - ε  → PRECEDES
+          A.start > B.end   + ε  → FOLLOWS
+          A.start < B.start - ε  and A.end > B.end + ε  → CONTAINS
+          A.start < B.start - ε  and A.end within B     → OVERLAPS  (left overlap)
+          A entirely within B                            → DURING
+          A.start within B       and A.end > B.end + ε  → OVERLAPS  (right overlap)
+          otherwise                                      → SIMULTANEOUS
+
+
+
+   .. py:method:: _compute_confidence(allen_relation, data_quality_score, onset_lag_hours)
+
+      Compute link confidence combining relation strength and data quality.
+
+      Mirrors TSKR multi-factor confidence:
+          anomaly_weight  (0.55) → data_quality_score of the prior event
+          latency_weight  (0.30) → onset_lag plausibility
+          relation_weight (0.15) → _RELATION_SCORES[allen_relation]
+
+
+
+   .. py:method:: _assign_causal_strength(relation, confidence)
+
+      Map (relation, confidence) to a causal_strength label.
+
+      temporal_contradiction: relation == FOLLOWS
+      strong:   relation in {OVERLAPS, CONTAINS, PRECEDES} and confidence >= 0.75
+      moderate: relation in {OVERLAPS, CONTAINS, PRECEDES} and confidence >= 0.40
+      weak:     otherwise
+
+
+
+   .. py:method:: _summarize_chain(links)
+
+      Aggregate per-link results into a chain summary.
+
+      Computes:
+          chain_length, strongest_link_id, strongest_allen_relation,
+          max_relation_score, has_temporal_contradiction, causal_posture.
+
+      causal_posture logic:
+          'contradicted_with_support' — contradiction(s) present AND at least one
+                                        strong or moderate supporting link.
+                                        Contradictions may reflect data-entry errors
+                                        or async documentation; the positive evidence
+                                        is preserved for analyst review.
+          'contradicted'       — contradiction(s) present AND no strong/moderate link
+                                 (all remaining links are weak or none)
+          'supported'          — strong link present, no contradiction
+          'partial'            — moderate link present, no strong, no contradiction
+          'weak'               — all links are weak, no contradiction
+          'insufficient_data'  — no links
+
+
+

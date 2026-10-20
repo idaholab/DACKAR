@@ -1,0 +1,701 @@
+src.dackar.outage.stages.stage_e_schedule
+=========================================
+
+.. py:module:: src.dackar.outage.stages.stage_e_schedule
+
+.. autoapi-nested-parse::
+
+   Stage E — Schedule Impact Assessor.
+
+   Responsibilities:
+       1. Load the current schedule network for the outage from the OutageDataset.
+       2. Determine the insertion point for the emergent activity (after which
+          task, in which phase, with what resource requirements).
+       3. Compute float analysis: float consumed, remaining float, criticality label.
+       4. Run a Monte Carlo simulation using the duration distribution from Stage D
+          to produce probabilistic CP impact metrics (p50/p80/p90 finish times,
+          expected delay, CP drag, CP sensitivity).
+       5. Identify displaced tasks downstream of the insertion point.
+       6. Check for resource conflicts at the insertion point.
+
+   Output schema: outage/schemas/schedule_impact_assessment.json
+
+   Reuse targets:
+       LOGOS.src.CPM.pert.Pert                     → schedule network, CPM engine
+       LOGOS.src.CPM.activity.Activity             → task nodes
+       LOGOS.src.CPM.outage_data.OutageData        → schedule data container
+       LOGOS.src.CPM.BaseCPMmodel.BaseCPMmodel     → RAVEN/Monte-Carlo pattern
+           The MC simulation loop in _run_monte_carlo() mirrors the
+           BaseCPMmodel.run() pattern: build Pert once, vary durations via
+           set_durations(), call generateInfo() per iteration.
+
+   Integration notes:
+       - schedule_loader callable must accept (outage_id, version) and return a
+         LOGOS OutageData (or any object whose .outage_config has a 'version_id').
+       - schedule_graph_builder must expose a .build(outage_data) method that
+         returns a LOGOS Pert object with generateInfo() already called.
+       - LOGOS requires Python ≥ 3.10 (uses X | Y union type syntax).
+
+   Python path note:
+       Add the LOGOS project root to sys.path before importing:
+           sys.path.insert(0, '/path/to/LOGOS')
+       Then imports resolve as: from src.CPM.pert import Pert
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_e_schedule.LOGGER
+   src.dackar.outage.stages.stage_e_schedule.JsonDict
+   src.dackar.outage.stages.stage_e_schedule._CONFIDENCE_SCORE
+   src.dackar.outage.stages.stage_e_schedule._FLOAT_EPSILON
+   src.dackar.outage.stages.stage_e_schedule._REGULATORY_KEYWORDS_RE
+   src.dackar.outage.stages.stage_e_schedule._MIN_DURATION_HOURS
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_e_schedule._ScheduleNetwork
+   src.dackar.outage.stages.stage_e_schedule._SimResult
+   src.dackar.outage.stages.stage_e_schedule.ScheduleImpactConfig
+   src.dackar.outage.stages.stage_e_schedule.ScheduleImpactAssessor
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_e_schedule._off_shift_overlap_hours
+   src.dackar.outage.stages.stage_e_schedule._has_shift_boundary
+   src.dackar.outage.stages.stage_e_schedule._has_regulatory_constraint
+   src.dackar.outage.stages.stage_e_schedule._parse_dt
+   src.dackar.outage.stages.stage_e_schedule._ensure_tz
+   src.dackar.outage.stages.stage_e_schedule._default_phase_windows
+   src.dackar.outage.stages.stage_e_schedule._shift_insertion_times
+   src.dackar.outage.stages.stage_e_schedule._compute_permit_lead_time
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:data:: JsonDict
+
+.. py:data:: _CONFIDENCE_SCORE
+   :type:  Dict[str, float]
+
+.. py:data:: _FLOAT_EPSILON
+   :value: 0.01
+
+
+.. py:data:: _REGULATORY_KEYWORDS_RE
+
+.. py:data:: _MIN_DURATION_HOURS
+   :value: 0.1
+
+
+.. py:class:: _ScheduleNetwork
+
+   Thin wrapper around a LOGOS Pert instance.
+
+   Satisfies the 'schedule_network.baseline_cp_hours' contract used
+   throughout this stage, and provides a factory for building modified
+   network copies with an emergent activity inserted.
+
+
+   .. py:attribute:: pert
+      :type:  Any
+
+
+   .. py:attribute:: baseline_cp_hours
+      :type:  float
+
+
+   .. py:attribute:: locked_baseline_cp_hours
+      :type:  Optional[float]
+      :value: None
+
+
+
+   .. py:attribute:: locked_baseline_start
+      :type:  Optional[datetime.datetime]
+      :value: None
+
+
+
+   .. py:attribute:: working_start
+      :type:  Optional[datetime.datetime]
+      :value: None
+
+
+
+.. py:class:: _SimResult
+
+   Output of _run_monte_carlo().
+
+
+   .. py:attribute:: project_durations
+      :type:  List[float]
+
+      Sampled project-completion durations (hours from outage start).
+
+
+   .. py:attribute:: on_cp_count
+      :type:  int
+
+      Number of MC runs in which the emergent activity had zero slack.
+
+
+   .. py:attribute:: n_runs
+      :type:  int
+
+
+   .. py:attribute:: emergent_task_id
+      :type:  str
+
+
+.. py:class:: ScheduleImpactConfig
+
+   Configuration for Stage E.
+
+
+   .. py:attribute:: use_p80_for_float_analysis
+      :type:  bool
+      :value: False
+
+
+      If True, float analysis uses the p80 duration estimate (conservative).
+      Default False uses p50 (expected-value basis).
+
+
+   .. py:attribute:: near_critical_float_threshold_hours
+      :type:  float
+      :value: 8.0
+
+
+      Remaining float below this value triggers 'near_critical' label.
+
+
+   .. py:attribute:: monte_carlo_runs
+      :type:  int
+      :value: 1000
+
+
+      Number of Monte Carlo simulation samples.
+
+
+   .. py:attribute:: max_displaced_tasks_reported
+      :type:  int
+      :value: 20
+
+
+      Maximum displaced tasks to surface in the artifact.
+
+
+   .. py:attribute:: check_resource_conflicts
+      :type:  bool
+      :value: True
+
+
+      Whether to check for crew and vendor resource conflicts.
+
+
+   .. py:attribute:: schedule_version_preference
+      :type:  str
+      :value: 'working'
+
+
+      'baseline', 'working', or 'as_run'.
+      'working' (latest update) is the correct basis for live outage decisions.
+
+      :type: Which schedule version to load
+
+
+   .. py:attribute:: baseline_schedule_version
+      :type:  str
+      :value: 'baseline'
+
+
+      Version tag for the locked kickoff baseline schedule.  When non-empty,
+      Stage E loads a second copy of the schedule at this version to compute
+      schedule variance (how far the outage has already slipped from the original
+      plan) and total overrun (variance + cp_drag from this activity).
+      Set to empty string to disable baseline locking.
+
+
+   .. py:attribute:: high_crew_utilization_threshold
+      :type:  float
+      :value: 0.8
+
+
+      Crew utilization fraction (0–1) above which a skill type is flagged as
+      high-utilization in the crew_continuity section.  0.80 = 80% of available
+      crew already committed at the insertion window.
+
+
+   .. py:attribute:: fatigue_risk_off_shift_hours
+      :type:  float
+      :value: 2.0
+
+
+      Hours of off-shift overlap in the insertion window that trigger a
+      fatigue_risk flag.  When the proposed insertion window extends more than
+      this many hours into off-shift time the crew continuity assessment flags
+      a potential fatigue / overnight-work risk.
+
+
+   .. py:attribute:: permit_lead_times_enabled
+      :type:  bool
+      :value: True
+
+
+      Master switch for permit/approval lead time modeling.  When False the
+      proposed_start is not adjusted and no permit overhead is added to Monte
+      Carlo scenarios.  Set to False to restore the pre-permit-lead-time behavior
+      for comparison or backward-compatible testing.
+
+
+   .. py:attribute:: rp_hold_lead_time_hours
+      :type:  float
+      :value: 4.0
+
+
+      Hours of RP (radiation protection) survey + ALARA briefing required
+      before work can start when ``has_rp_hold`` is True.  Represents one RP
+      review cycle; complex high-dose jobs may require more.
+
+
+   .. py:attribute:: scaffold_lead_time_hours
+      :type:  float
+      :value: 8.0
+
+
+      Hours for scaffold erection and inspection sign-off when
+      ``requires_scaffold`` is True.  Sized as one full shift — scaffold must
+      be erected, inspected, and certified before the activity starts.
+
+
+   .. py:attribute:: clearance_lead_time_hours
+      :type:  float
+      :value: 2.0
+
+
+      Hours for electrical or mechanical clearance / LOTO procedures when
+      ``has_clearance`` is True.  LOTO establishment typically takes 1–3 hours
+      depending on the number of isolation points.
+
+
+   .. py:attribute:: permit_lead_time_mode
+      :type:  str
+      :value: 'max'
+
+
+      How to combine overlapping permits when multiple flags are active.
+
+      ``"max"``  (default) — permits are requested in parallel; the longest
+                 single permit drives the delay.  Appropriate when the outage
+                 manager can start all approval processes simultaneously.
+
+      ``"sum"``  — permits must be obtained sequentially; lead times are added.
+                 Use for plants whose procedures require serial sign-off (e.g.
+                 clearance must precede RP survey at that unit).
+
+
+.. py:class:: ScheduleImpactAssessor(config = None, *, schedule_loader=None, schedule_graph_builder=None, monte_carlo=None, cp_analyzer=None)
+
+   Concrete Stage E implementation.
+
+   :param config: Stage configuration.
+   :param schedule_loader: Callable(outage_id, version) → LOGOS OutageData.
+                           Use the P6_adapter loader or a thin shim that
+                           returns an object with .outage_config['version_id'].
+   :param schedule_graph_builder: Object with .build(outage_data) → LOGOS Pert.
+                                  The Pert must have generateInfo() already called
+                                  (i.e. infoDict is populated with ES/EF/LS/LF/slack).
+   :param monte_carlo: Unused — MC sampling is implemented directly in this
+                       stage via ``_run_monte_carlo()`` using the LOGOS
+                       ``set_durations()`` + ``generateInfo()`` pattern.
+                       Reserved for future external injection.
+   :param cp_analyzer: Unused — CP metrics are computed directly from the
+                       ``_SimResult`` distributions.  Reserved for future
+                       external injection.
+
+
+   .. py:attribute:: config
+
+
+   .. py:attribute:: schedule_loader
+      :value: None
+
+
+
+   .. py:attribute:: schedule_graph_builder
+      :value: None
+
+
+
+   .. py:attribute:: monte_carlo
+      :value: None
+
+
+
+   .. py:attribute:: cp_analyzer
+      :value: None
+
+
+
+   .. py:method:: assess(emergent_activity, intake_result, historical_analogs, run_context, *, schedule_context = None)
+
+      Execute Stage E for one emergent activity.
+
+      :param emergent_activity: EmergentActivity artifact.
+      :param intake_result: Stage A output.
+      :param historical_analogs: Stage D output (duration distribution consumed here).
+      :param run_context: Run metadata block.
+      :param schedule_context: Optional :class:`~stages.insertion_point_determiner.ScheduleContext`
+                               produced by the pre-pass ``InsertionPointDeterminer``.  When
+                               provided the insertion point determination step is skipped —
+                               ``schedule_context.to_insertion_point()`` is used directly.
+                               This avoids loading and traversing the schedule network twice
+                               (once in the pre-pass and once here).
+
+      :returns: ScheduleImpactAssessment artifact conforming to
+                outage/schemas/schedule_impact_assessment.json.
+
+
+
+   .. py:method:: _load_schedule_network(emergent_activity)
+
+      Load the current schedule network for the outage.
+
+      Steps:
+          1. Call schedule_loader(outage_id, version=config.schedule_version_preference)
+             to get a LOGOS OutageData.
+          2. Call schedule_graph_builder.build(dataset) to get a LOGOS Pert
+             (generateInfo() must be called by the builder so infoDict is
+             populated on return).
+          3. Wrap Pert in _ScheduleNetwork and return (network, version_id).
+
+      The LOGOS Pert exposes:
+          - infoDict[activity] with keys: es, ef, ls, lf, slack, duration
+          - getProjectDuration() → baseline_cp_hours
+          - task_to_activity: Dict[str, Activity]
+          - forwardDict / backwardDict for graph traversal
+          - set_durations({task_id: hours}) + generateInfo() for MC iterations
+
+
+
+   .. py:method:: _determine_insertion_point(emergent_activity, intake_result, schedule_network)
+
+      Determine where in the schedule network to insert the emergent activity.
+
+      Strategy:
+          1. If actual_start is known, find the task active at that time:
+             task with ES ≤ actual_start_offset ≤ EF.  The emergent activity
+             is inserted immediately after that task.
+          2. If actual_start is unknown, use outage_phase to restrict
+             candidate tasks to the appropriate phase window, then select
+             the task with the most available float (least disruptive).
+          3. The before_task_id is the top-ranked immediate successor of
+             after_task_id on the critical path (or None if after_task is
+             a sink).
+
+      Returns insertion_point dict with:
+          after_task_id, before_task_id, outage_phase, proposed_start (ISO),
+          proposed_finish (ISO), emergent_task_id.
+
+
+
+   .. py:method:: _compute_float_analysis(schedule_network, insertion_point, duration_hours)
+
+      Compute float consumed and criticality label at the insertion point.
+
+      Steps:
+          1. Read available_float_before from after_task's slack.
+          2. Build a modified Pert with the emergent activity inserted.
+          3. Recompute CPM via generateInfo().
+          4. Read remaining_float_after from before_task's new slack.
+          5. Assign criticality_label.
+
+      If duration_hours is None or zero, returns a non_critical placeholder.
+
+
+
+   .. py:method:: _run_monte_carlo(schedule_network, insertion_point, duration_dist, *, permit_lead_hours = 0.0)
+
+      Run Monte Carlo simulation for probabilistic CP impact.
+
+      Samples task duration from a lognormal distribution fitted to the
+      Stage D percentile estimates (p50 as median; sigma fitted from p80
+      when available, or from mean/std via method-of-moments).  Each
+      sample is fed to the LOGOS Pert CPM engine using the
+      ``BaseCPMmodel`` pattern: clone once, insert once, then loop
+      ``set_durations()`` + ``resetInfo()`` + ``generateInfo()`` per
+      iteration, recording the project duration and CP membership of the
+      emergent activity.
+
+      When ``set_durations`` is not available on the Pert object, falls
+      back to cloning the Pert on every iteration (slower but correct for
+      any duck-typed Pert-like object).
+
+      When ``config.monte_carlo_runs < 10``, falls back to the lightweight
+      3-scenario deterministic proxy (p50/p80/p90) for backwards
+      compatibility with unit tests and low-latency scoring contexts.
+
+      :param permit_lead_hours: Fixed approval/permit overhead (hours) added to
+                                every sample before it is fed to the CPM engine.  This shifts
+                                the CP distribution uniformly upward, correctly increasing
+                                cp_drag for activities that require RP surveys, scaffold
+                                erection, or LOTO clearances before starting.
+
+
+
+   .. py:method:: _run_3scenario_proxy(schedule_network, insertion_point, duration_dist, *, permit_lead_hours = 0.0)
+
+      3-scenario deterministic proxy (p50 / p80 / p90).
+
+      Used when ``config.monte_carlo_runs < 10`` — lightweight alternative
+      for backwards-compatible tests and low-latency scoring contexts.
+      ``_compute_cp_metrics()`` detects fewer than 10 samples and maps
+      the three values directly to estimated_new_cp / p80_cp / p90_cp.
+
+
+
+   .. py:method:: _build_duration_sampler(duration_dist, permit_lead_hours = 0.0)
+
+      Return a callable that draws one lognormal sample (hours) per call.
+
+      Fitting priority:
+          1. ``mean_hours`` + ``std_hours`` → method-of-moments lognormal.
+          2. ``p50_hours`` + ``p80_hours``  → sigma from 80th percentile
+             (Φ⁻¹(0.80) ≈ 0.8416).
+          3. ``p50_hours`` + ``p90_hours``  → sigma from 90th percentile
+             (Φ⁻¹(0.90) ≈ 1.2816).
+          4. ``p50_hours`` only             → minimal spread (σ = 0.10),
+             near-deterministic behaviour.
+
+      ``permit_lead_hours`` is added to every sample so that the approval
+      overhead is always included in the effective task duration fed to the
+      CPM engine.  Samples below ``_MIN_DURATION_HOURS`` are clamped.
+
+
+
+   .. py:method:: _compute_cp_metrics(sim_result, baseline_cp_hours, locked_baseline_cp_hours = None, locked_baseline_start = None, working_start = None)
+
+      Compute project-level CP impact metrics from the simulation result.
+
+      When the MC proxy provides only 3 scenarios (p50/p80/p90), the values
+      map directly:
+          estimated_new_cp_hours  — scenario[0]  (p50 run)
+          p80_cp_hours            — scenario[1]  (p80 run)
+          p90_cp_hours            — scenario[2]  (p90 run)
+          cp_drag_hours           — max(0, estimated_new_cp - baseline_cp)
+          cp_sensitivity_score    — fraction of scenarios where emergent
+                                    task was on CP (0 / 0.33 / 0.67 / 1.0)
+
+      When locked_baseline_cp_hours is provided (baseline locking enabled),
+      additional variance fields are computed:
+          schedule_variance_hours — baseline_cp_hours - locked_baseline_cp_hours
+                                    Positive means the outage has already slipped
+                                    from the original kickoff plan before this
+                                    activity is considered.
+          total_overrun_hours     — max(0, estimated_new_cp - locked_baseline_cp_hours)
+                                    Total slip vs. original plan after insertion.
+          locked_baseline_finish  — ISO datetime of original planned outage finish.
+          projected_finish_after_insertion
+                                  — ISO datetime of projected finish after inserting
+                                    the emergent activity (p50 scenario).
+
+      When a full MC result is available (future RAVEN integration), the
+      same fields are computed from the full distribution.
+
+
+
+   .. py:method:: _locked_baseline_fields(estimated_new_cp, working_cp, locked_baseline_cp_hours, locked_baseline_start, working_start)
+      :staticmethod:
+
+
+      Compute schedule-variance fields relative to the locked baseline.
+
+      :param estimated_new_cp: p50 project duration after inserting the activity.
+      :param working_cp: Current working-plan duration (pre-insertion).
+      :param locked_baseline_cp_hours: Original kickoff plan duration.
+      :param locked_baseline_start: Original planned start datetime.
+      :param working_start: Current working-plan start datetime.
+
+
+
+   .. py:method:: _identify_displaced_tasks(schedule_network, insertion_point, duration_hours)
+
+      Find tasks downstream of the insertion point that would be delayed.
+
+      Traverses successor edges from the insertion node in the modified Pert
+      and collects tasks whose ES shifts by > 0 hours after the insertion.
+
+      has_regulatory_constraint is populated by a KG query; currently set to
+      False as a placeholder — the orchestrator should enrich this field.
+
+
+
+   .. py:method:: _check_resource_conflicts(emergent_activity, insertion_point, schedule_network)
+
+      Check for crew, equipment, location, and vendor conflicts at the insertion point.
+
+      Queries the LOGOS ResourcePool, EquipmentPool, and LocationPool at the
+      proposed insertion window and compares against the emergent activity's
+      required_resources, required_equipment, and location_id.
+
+      Returns a list of conflict dicts (empty if no conflicts).
+
+
+
+   .. py:method:: _assess_crew_continuity(emergent_activity, insertion_point, schedule_network)
+
+      Assess shift-boundary, fatigue, and background-utilization risks.
+
+      Unlike ``_check_resource_conflicts()`` — which answers the binary
+      question "do we have enough crew?" — this method quantifies *how tight*
+      the resource situation is and whether the insertion window crosses shift
+      boundaries or extends into off-shift hours.
+
+      Three sub-assessments are produced:
+
+      Shift calendar:
+          ``off_shift_overlap_hours`` — hours of the insertion window that
+          fall outside the active shift.  Zero on 24/7 schedules.
+          ``shift_boundary_conflict`` — True when a shift-start event
+          (crew handover) falls inside the window; mid-job handovers
+          require explicit work-package transfer.
+          ``fatigue_risk`` — True when ``off_shift_overlap_hours`` exceeds
+          ``config.fatigue_risk_off_shift_hours``.
+
+      Background utilization (per skill type in the crew pool):
+          For each skill: available crew (minimum over window) vs. the
+          number of workers already committed to other tasks in that window
+          (derived from the infoDict ES/EF).  Flags skills above the
+          ``config.high_crew_utilization_threshold`` fraction.
+
+      Returns a dict suitable for inclusion in the Stage E artifact as the
+      ``crew_continuity`` key.  When no crew pool is attached to the Pert
+      (e.g. CPM-only stub schedules) the method returns a minimal dict with
+      ``available: false`` rather than raising.
+
+
+
+   .. py:method:: _compute_confidence(duration_dist, schedule_network)
+
+      Overall confidence in this assessment.
+
+      Combines:
+          - Duration distribution confidence_tier weight (0.60)
+              data_supported=0.9 / sme_informed=0.6 / low_confidence=0.3
+          - Schedule data completeness (0.30): fraction of tasks with
+            complete ES/EF/slack data in the LOGOS infoDict.
+          - Monte Carlo convergence (0.10): ratio of actual MC runs to
+            a baseline of 500 runs that signals reasonable convergence.
+
+
+
+   .. py:method:: _build_modified_pert(pert, task_id, duration_hours, after_task_id, before_task_id)
+
+      Return an analysis copy of pert with the emergent activity inserted.
+
+      Delegates to Pert.clone_for_analysis() for the copy and to
+      Pert.insert_task() for the topology mutation, so that no Pert
+      internals are touched directly from this stage.
+
+
+
+.. py:function:: _off_shift_overlap_hours(start, end, shift_start_hour, working_hours_per_day)
+
+   Return the number of hours in [start, end) that fall outside the active shift.
+
+   On a 24/7 schedule (``working_hours_per_day >= 24``) this is always 0.
+   For partial-day schedules the shift runs daily from ``shift_start_hour``
+   for ``working_hours_per_day`` hours; hours outside that window are counted.
+
+   Scans in 1-hour increments from the first whole hour >= start to end,
+   weighting each segment by the fraction that overlaps [start, end).
+   This is straightforward and correct up to the nearest minute; a more
+   sophisticated closed-form approach is not needed for this application.
+
+
+.. py:function:: _has_shift_boundary(start, end, shift_start_hour, working_hours_per_day)
+
+   Return True if a shift-start event falls strictly inside (start, end).
+
+   On 24/7 schedules there are no shift boundaries; returns False.
+   A shift-start event occurs once per day at ``shift_start_hour``; crossing
+   this boundary mid-job requires a formal work-package handover.
+
+
+.. py:function:: _has_regulatory_constraint(text)
+
+   Return True if *text* contains regulatory-constraint keywords.
+
+   Mirrors the pattern set in stage_a_intake so that displaced tasks and
+   other description-bearing artifacts can be enriched without a KG lookup.
+
+
+.. py:function:: _parse_dt(iso_str)
+
+   Parse an ISO-8601 string to a timezone-aware datetime.
+
+
+.. py:function:: _ensure_tz(dt)
+
+   Return a timezone-aware datetime, assuming UTC if naive.
+
+
+.. py:function:: _default_phase_windows(outage_phase, total_hours)
+
+   Map an outage phase label to an approximate (start, end) offset range.
+
+   Used as a coarse filter when actual_start is unknown.
+   Fractions based on typical nuclear refuelling outage phase ordering.
+
+
+.. py:function:: _shift_insertion_times(insertion_point, lead_hours)
+
+   Return a new insertion_point dict with proposed_start and proposed_finish
+   shifted forward by ``lead_hours``.
+
+   If either ISO field is absent or unparseable the original value is kept
+   unchanged (graceful degradation — the shift is best-effort).
+
+
+.. py:function:: _compute_permit_lead_time(execution_mode_flags, *, rp_hold_hours, scaffold_hours, clearance_hours, mode = 'max')
+
+   Compute the permit/approval lead time for an emergent activity.
+
+   The lead time is the calendar overhead that must elapse *before* the
+   activity can start — permits and approvals happen before the first wrench
+   turn, not concurrently with the work.
+
+   :param execution_mode_flags: Dict with boolean keys ``has_rp_hold``,
+                                ``requires_scaffold``, ``has_clearance`` (all default False when
+                                absent — safe to pass an empty dict).
+   :param rp_hold_hours: RP survey + ALARA briefing lead time (from config).
+   :param scaffold_hours: Scaffold erection + inspection lead time (from config).
+   :param clearance_hours: E/M LOTO procedure lead time (from config).
+   :param mode: ``"max"`` (parallel permits, longest drives delay) or
+                ``"sum"`` (sequential permits, all times added).
+
+   :returns:     total_lead_hours        – effective delay before work can start
+                 rp_hold_hours           – contribution from RP hold (0 if inactive)
+                 scaffold_hours          – contribution from scaffold (0 if inactive)
+                 clearance_hours         – contribution from clearance (0 if inactive)
+                 start_adjusted          – True when total_lead_hours > 0
+                 combination_mode        – ``"max"`` or ``"sum"``
+                 notes                   – list of human-readable strings
+   :rtype: Dict with keys
+
+

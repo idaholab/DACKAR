@@ -1,0 +1,421 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.workflows.completion_feedback_workflow &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.workflows.completion_feedback_workflow</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.workflows.completion_feedback_workflow</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Post-Completion Feedback Ingestion Workflow — M5.</span>
+
+<span class="sd">Closes the learning loop after an emergent activity completes in the field.</span>
+<span class="sd">Accepts a Stage G recommendation artifact plus field-measured completion data</span>
+<span class="sd">and writes the result back into the historical analog index via the</span>
+<span class="sd">orchestrator's ``record_completion()`` method.</span>
+
+<span class="sd">Why a workflow layer?</span>
+<span class="sd">---------------------</span>
+<span class="sd">``OutageActivityOrchestrator.record_completion()`` accepts loose keyword</span>
+<span class="sd">arguments.  The Stage G artifact already carries ``activity_id``, ``run_id``,</span>
+<span class="sd">and the analyst's verdict (``analyst_review.reviewer_decision``), so callers</span>
+<span class="sd">should not have to re-extract those fields manually.  This workflow:</span>
+
+<span class="sd">1. Extracts the relevant fields from the recommendation artifact.</span>
+<span class="sd">2. Routes based on ``reviewer_decision`` — accepted, rejected, modified,</span>
+<span class="sd">   pending, or absent.</span>
+<span class="sd">3. Prefixes ``outcome_notes`` with a rejection marker when the analyst</span>
+<span class="sd">   rejected the recommendation, so the data is still stored for negative</span>
+<span class="sd">   learning without silently polluting the index.</span>
+<span class="sd">4. Delegates to ``orchestrator.record_completion()`` and wraps the result</span>
+<span class="sd">   in an :class:`IngestionReceipt`.</span>
+
+<span class="sd">Rejection storage rationale</span>
+<span class="sd">----------------------------</span>
+<span class="sd">When an analyst rejects a recommendation, the actual field duration is still</span>
+<span class="sd">valid historical data.  The rejection reflects recommendation quality, not</span>
+<span class="sd">activity outcome.  We therefore write the record with an</span>
+<span class="sd">``RECOMMENDATION_REJECTED: &lt;reviewer_notes&gt;`` prefix in ``outcome_notes`` so</span>
+<span class="sd">future Stage D retrievals can identify and optionally down-weight it.  Skipping</span>
+<span class="sd">write-back on rejection would starve the index of real-world data from the very</span>
+<span class="sd">activities that were hard to predict.</span>
+
+<span class="sd">Usage::</span>
+
+<span class="sd">    from dackar.outage.workflows.completion_feedback_workflow import CompletionFeedbackWorkflow</span>
+
+<span class="sd">    workflow = CompletionFeedbackWorkflow(orchestrator=orchestrator)</span>
+<span class="sd">    receipt = workflow.ingest(</span>
+<span class="sd">        recommendation=stage_g_artifact,</span>
+<span class="sd">        actual_duration_hours=16.2,</span>
+<span class="sd">        actual_start="2026-04-12T08:00:00Z",</span>
+<span class="sd">        actual_finish="2026-04-13T00:12:00Z",</span>
+<span class="sd">        outcome_notes="Packing replaced; no scope expansion.",</span>
+<span class="sd">    )</span>
+<span class="sd">    # receipt.skipped          → False</span>
+<span class="sd">    # receipt.completion_record.index_updated → True</span>
+<span class="sd">    # receipt.completion_record.persisted     → True</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span>
+
+<div class="viewcode-block" id="LOGGER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow.LOGGER">[docs]</a>
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<span class="c1"># Sentinel prefix written to outcome_notes for rejected recommendations.</span>
+<span class="c1"># Downstream consumers can filter on this prefix when training or querying.</span>
+<div class="viewcode-block" id="_REJECTION_PREFIX">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow._REJECTION_PREFIX">[docs]</a>
+<span class="n">_REJECTION_PREFIX</span> <span class="o">=</span> <span class="s2">"RECOMMENDATION_REJECTED"</span></div>
+
+
+<span class="c1"># Reviewer decisions that trigger a write-back (everything except "pending").</span>
+<div class="viewcode-block" id="_WRITE_DECISIONS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow._WRITE_DECISIONS">[docs]</a>
+<span class="n">_WRITE_DECISIONS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"accepted"</span><span class="p">,</span> <span class="s2">"rejected"</span><span class="p">,</span> <span class="s2">"modified"</span><span class="p">,</span> <span class="kc">None</span><span class="p">}</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># IngestionReceipt</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="viewcode-block" id="IngestionReceipt">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow.IngestionReceipt">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">IngestionReceipt</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Immutable receipt for one post-completion ingestion operation.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    activity_id</span>
+<span class="sd">        The emergent activity that completed.</span>
+<span class="sd">    run_id</span>
+<span class="sd">        The pipeline run that produced the original recommendation.</span>
+<span class="sd">    reviewer_decision</span>
+<span class="sd">        The analyst's verdict extracted from the recommendation artifact.</span>
+<span class="sd">        ``None`` when no analyst review was performed (review not required).</span>
+<span class="sd">    actual_duration_hours</span>
+<span class="sd">        Field-measured duration passed to the workflow.</span>
+<span class="sd">    completion_record</span>
+<span class="sd">        The :class:`~stages.completion_feedback.CompletionRecord` returned</span>
+<span class="sd">        by the orchestrator.  ``None`` when the ingestion was skipped.</span>
+<span class="sd">    skipped</span>
+<span class="sd">        ``True`` when the workflow decided not to call ``record_completion()``</span>
+<span class="sd">        (e.g., review still pending, or ``activity_id`` is missing).</span>
+<span class="sd">    skip_reason</span>
+<span class="sd">        Human-readable explanation for why ingestion was skipped.</span>
+<span class="sd">        ``None`` when ``skipped=False``.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="IngestionReceipt.activity_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow.IngestionReceipt.activity_id">[docs]</a>
+    <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="IngestionReceipt.run_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow.IngestionReceipt.run_id">[docs]</a>
+    <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="IngestionReceipt.reviewer_decision">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow.IngestionReceipt.reviewer_decision">[docs]</a>
+    <span class="n">reviewer_decision</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="IngestionReceipt.actual_duration_hours">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow.IngestionReceipt.actual_duration_hours">[docs]</a>
+    <span class="n">actual_duration_hours</span><span class="p">:</span> <span class="nb">float</span></div>
+
+<div class="viewcode-block" id="IngestionReceipt.completion_record">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow.IngestionReceipt.completion_record">[docs]</a>
+    <span class="n">completion_record</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span>   <span class="c1"># CompletionRecord | None</span></div>
+
+<div class="viewcode-block" id="IngestionReceipt.skipped">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow.IngestionReceipt.skipped">[docs]</a>
+    <span class="n">skipped</span><span class="p">:</span> <span class="nb">bool</span></div>
+
+<div class="viewcode-block" id="IngestionReceipt.skip_reason">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow.IngestionReceipt.skip_reason">[docs]</a>
+    <span class="n">skip_reason</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># CompletionFeedbackWorkflow</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="CompletionFeedbackWorkflow">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow.CompletionFeedbackWorkflow">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CompletionFeedbackWorkflow</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Bridge between a Stage G recommendation artifact and the feedback loop.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        orchestrator: An ``OutageActivityOrchestrator`` instance (or any object</span>
+<span class="sd">                      with a ``record_completion(**kwargs)`` method).  The</span>
+<span class="sd">                      orchestrator must have a ``feedback_writer`` injected to</span>
+<span class="sd">                      actually update the index and persist to CSV; without it</span>
+<span class="sd">                      the orchestrator logs a WARNING and returns a no-op</span>
+<span class="sd">                      ``CompletionRecord``.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">orchestrator</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="CompletionFeedbackWorkflow._orchestrator">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow.CompletionFeedbackWorkflow._orchestrator">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_orchestrator</span> <span class="o">=</span> <span class="n">orchestrator</span></div>
+
+
+    <span class="c1"># ── Public entry point ────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="CompletionFeedbackWorkflow.ingest">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow.CompletionFeedbackWorkflow.ingest">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ingest</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">recommendation</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">actual_duration_hours</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">actual_start</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">actual_finish</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">outcome_notes</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">IngestionReceipt</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Ingest a completed Stage G recommendation into the analog index.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            recommendation: The full Stage G artifact dict</span>
+<span class="sd">                            (``outage_activity_recommendation.json`` shape).</span>
+<span class="sd">            actual_duration_hours: Field-measured execution duration.  Must be</span>
+<span class="sd">                                   &gt; 0; otherwise ``CompletionFeedbackWriter``</span>
+<span class="sd">                                   will skip the write and record a validation</span>
+<span class="sd">                                   warning.</span>
+<span class="sd">            actual_start: ISO-8601 field start timestamp (optional).</span>
+<span class="sd">            actual_finish: ISO-8601 field finish timestamp (optional).</span>
+<span class="sd">            outcome_notes: Caller-supplied free-text notes (optional).</span>
+<span class="sd">                           When ``reviewer_decision == "rejected"`` these are</span>
+<span class="sd">                           appended after the rejection prefix.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            :class:`IngestionReceipt` with the outcome of the ingestion.</span>
+<span class="sd">        """</span>
+        <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">recommendation</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"activity_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">recommendation</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+
+        <span class="c1"># ── Guard: missing activity_id ────────────────────────────────────────</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">activity_id</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"CompletionFeedbackWorkflow.ingest: recommendation has no "</span>
+                <span class="s2">"activity_id — ingestion skipped (run_id=</span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span> <span class="n">run_id</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">IngestionReceipt</span><span class="p">(</span>
+                <span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span>
+                <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+                <span class="n">reviewer_decision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">actual_duration_hours</span><span class="o">=</span><span class="n">actual_duration_hours</span><span class="p">,</span>
+                <span class="n">completion_record</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">skipped</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">skip_reason</span><span class="o">=</span><span class="s2">"missing activity_id"</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="c1"># ── Extract analyst review fields ─────────────────────────────────────</span>
+        <span class="n">analyst_review</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="n">recommendation</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_review"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">reviewer_decision</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">analyst_review</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"reviewer_decision"</span><span class="p">)</span>
+        <span class="n">reviewer_notes</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">analyst_review</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"reviewer_notes"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+
+        <span class="c1"># ── Guard: pending review ─────────────────────────────────────────────</span>
+        <span class="k">if</span> <span class="n">reviewer_decision</span> <span class="o">==</span> <span class="s2">"pending"</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">"CompletionFeedbackWorkflow.ingest: analyst review is pending "</span>
+                <span class="s2">"for activity </span><span class="si">%s</span><span class="s2"> (run=</span><span class="si">%s</span><span class="s2">) — ingestion deferred"</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">,</span> <span class="n">run_id</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">IngestionReceipt</span><span class="p">(</span>
+                <span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span>
+                <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+                <span class="n">reviewer_decision</span><span class="o">=</span><span class="n">reviewer_decision</span><span class="p">,</span>
+                <span class="n">actual_duration_hours</span><span class="o">=</span><span class="n">actual_duration_hours</span><span class="p">,</span>
+                <span class="n">completion_record</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">skipped</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">skip_reason</span><span class="o">=</span><span class="s2">"analyst review pending"</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="c1"># ── Warn on unrecognised decision (treat as accepted) ─────────────────</span>
+        <span class="k">if</span> <span class="n">reviewer_decision</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_WRITE_DECISIONS</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"CompletionFeedbackWorkflow.ingest: unrecognised "</span>
+                <span class="s2">"reviewer_decision=</span><span class="si">%r</span><span class="s2"> for activity </span><span class="si">%s</span><span class="s2"> — treating as accepted"</span><span class="p">,</span>
+                <span class="n">reviewer_decision</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="c1"># ── Build final outcome_notes ─────────────────────────────────────────</span>
+        <span class="n">final_notes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_outcome_notes</span><span class="p">(</span>
+            <span class="n">reviewer_decision</span><span class="o">=</span><span class="n">reviewer_decision</span><span class="p">,</span>
+            <span class="n">reviewer_notes</span><span class="o">=</span><span class="n">reviewer_notes</span><span class="p">,</span>
+            <span class="n">caller_notes</span><span class="o">=</span><span class="n">outcome_notes</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># ── Delegate to orchestrator ──────────────────────────────────────────</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">"CompletionFeedbackWorkflow.ingest: calling record_completion for "</span>
+            <span class="s2">"activity=</span><span class="si">%s</span><span class="s2"> run=</span><span class="si">%s</span><span class="s2"> reviewer_decision=</span><span class="si">%r</span><span class="s2"> duration=</span><span class="si">%.2f</span><span class="s2">h"</span><span class="p">,</span>
+            <span class="n">activity_id</span><span class="p">,</span> <span class="n">run_id</span><span class="p">,</span> <span class="n">reviewer_decision</span><span class="p">,</span> <span class="n">actual_duration_hours</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">completion_record</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_orchestrator</span><span class="o">.</span><span class="n">record_completion</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span>
+            <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+            <span class="n">actual_duration_hours</span><span class="o">=</span><span class="n">actual_duration_hours</span><span class="p">,</span>
+            <span class="n">actual_start</span><span class="o">=</span><span class="n">actual_start</span><span class="p">,</span>
+            <span class="n">actual_finish</span><span class="o">=</span><span class="n">actual_finish</span><span class="p">,</span>
+            <span class="n">outcome_notes</span><span class="o">=</span><span class="n">final_notes</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">IngestionReceipt</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span>
+            <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+            <span class="n">reviewer_decision</span><span class="o">=</span><span class="n">reviewer_decision</span><span class="p">,</span>
+            <span class="n">actual_duration_hours</span><span class="o">=</span><span class="n">actual_duration_hours</span><span class="p">,</span>
+            <span class="n">completion_record</span><span class="o">=</span><span class="n">completion_record</span><span class="p">,</span>
+            <span class="n">skipped</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">skip_reason</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># ── Private helpers ───────────────────────────────────────────────────────</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="CompletionFeedbackWorkflow._build_outcome_notes">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/workflows/completion_feedback_workflow/index.html#src.dackar.outage.workflows.completion_feedback_workflow.CompletionFeedbackWorkflow._build_outcome_notes">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_outcome_notes</span><span class="p">(</span>
+        <span class="n">reviewer_decision</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">reviewer_notes</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">caller_notes</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Compose the final outcome_notes string.</span>
+
+<span class="sd">        - ``rejected`` → ``"RECOMMENDATION_REJECTED: {reviewer_notes}\\n{caller_notes}"``</span>
+<span class="sd">        - all other decisions → ``"{caller_notes}\\n{reviewer_notes}"`` (blank lines stripped)</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">reviewer_decision</span> <span class="o">==</span> <span class="s2">"rejected"</span><span class="p">:</span>
+            <span class="n">prefix</span> <span class="o">=</span> <span class="n">_REJECTION_PREFIX</span>
+            <span class="k">if</span> <span class="n">reviewer_notes</span><span class="p">:</span>
+                <span class="n">prefix</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">_REJECTION_PREFIX</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">reviewer_notes</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">parts</span> <span class="o">=</span> <span class="p">[</span><span class="n">prefix</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">caller_notes</span><span class="p">:</span>
+                <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">caller_notes</span><span class="p">)</span>
+            <span class="k">return</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span>
+
+        <span class="c1"># accepted / modified / None / unrecognised</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="p">(</span><span class="n">caller_notes</span><span class="p">,</span> <span class="n">reviewer_notes</span><span class="p">)</span> <span class="k">if</span> <span class="n">p</span><span class="p">]</span>
+        <span class="k">return</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

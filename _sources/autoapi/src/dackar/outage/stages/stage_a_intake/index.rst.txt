@@ -1,0 +1,484 @@
+src.dackar.outage.stages.stage_a_intake
+=======================================
+
+.. py:module:: src.dackar.outage.stages.stage_a_intake
+
+.. autoapi-nested-parse::
+
+   Stage A — Activity Intake Processor.
+
+   Responsibilities:
+       1. Clean and normalize the raw activity description.
+       2. Expand abbreviations and shorthand using the nuclear abbreviation dictionary.
+       3. Run the NER pipeline to extract component, system, action, failure-mode,
+          tag-ID, WO-reference, and CR-reference entities.
+       4. Resolve extracted entity mentions to canonical component / system IDs.
+       5. Classify the emergence type (truly_unplanned, scope_expansion,
+          regulatory_driven, schedule_optimization).
+       6. Detect regulatory constraints (TS surveillance, NRC commitment, CAP
+          commitment, hold points, ALARA).
+       7. Compute data quality score and unknown abbreviation rate.
+
+   Output schema: outage/schemas/activity_intake_result.json
+
+   Reuse targets:
+       outage_uncertainty.preprocessing.cleaners          → _clean_description()
+       outage_uncertainty.preprocessing.abbreviations     → _expand_abbreviations()
+       outage_uncertainty.preprocessing.nuclear_abbreviations
+       outage_uncertainty.preprocessing.label_mapper      → _classify_labels()
+       outage_uncertainty.preprocessing.feature_builder
+       RCA.ner.hybrid_ner.pipeline.HybridNERPipeline      → _run_ner()
+       RCA.ner.spacy_annotator.SpacyAnnotator             → _run_ner() (temporal, measurements)
+       RCA.ner.entity_normalizer.EntityNormalizer         → _resolve_references()
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_a_intake.LOGGER
+   src.dackar.outage.stages.stage_a_intake.JsonDict
+   src.dackar.outage.stages.stage_a_intake._CLEANERS_AVAILABLE
+   src.dackar.outage.stages.stage_a_intake._ABBR_RESOLVER_AVAILABLE
+   src.dackar.outage.stages.stage_a_intake._REGULATORY_KEYWORDS_RE
+   src.dackar.outage.stages.stage_a_intake._SCOPE_KEYWORDS_RE
+   src.dackar.outage.stages.stage_a_intake._SCHEDULE_OPT_KEYWORDS_RE
+   src.dackar.outage.stages.stage_a_intake._DEGRADATION_KEYWORDS_RE
+   src.dackar.outage.stages.stage_a_intake._TAG_ID_RE
+   src.dackar.outage.stages.stage_a_intake._WO_REF_RE
+   src.dackar.outage.stages.stage_a_intake._CR_REF_RE
+   src.dackar.outage.stages.stage_a_intake._ABBR_CANDIDATE_RE
+   src.dackar.outage.stages.stage_a_intake._COMMON_CAPS
+   src.dackar.outage.stages.stage_a_intake._REGULATORY_PATTERNS
+   src.dackar.outage.stages.stage_a_intake._RP_HOLD_PATTERNS
+   src.dackar.outage.stages.stage_a_intake._SCAFFOLD_PATTERNS
+   src.dackar.outage.stages.stage_a_intake._CLEARANCE_PATTERNS
+   src.dackar.outage.stages.stage_a_intake._VENDOR_PATTERNS
+   src.dackar.outage.stages.stage_a_intake._SOURCE_CONFIDENCE
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_a_intake.ActivityIntakeConfig
+   src.dackar.outage.stages.stage_a_intake.ActivityIntakeProcessor
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_a_intake._make_entity
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:data:: JsonDict
+
+.. py:data:: _CLEANERS_AVAILABLE
+   :value: True
+
+
+.. py:data:: _ABBR_RESOLVER_AVAILABLE
+   :value: True
+
+
+.. py:data:: _REGULATORY_KEYWORDS_RE
+
+.. py:data:: _SCOPE_KEYWORDS_RE
+
+.. py:data:: _SCHEDULE_OPT_KEYWORDS_RE
+
+.. py:data:: _DEGRADATION_KEYWORDS_RE
+
+.. py:data:: _TAG_ID_RE
+
+.. py:data:: _WO_REF_RE
+
+.. py:data:: _CR_REF_RE
+
+.. py:data:: _ABBR_CANDIDATE_RE
+
+.. py:data:: _COMMON_CAPS
+
+.. py:data:: _REGULATORY_PATTERNS
+   :type:  List[Tuple[re.Pattern, str, bool]]
+
+.. py:data:: _RP_HOLD_PATTERNS
+
+.. py:data:: _SCAFFOLD_PATTERNS
+
+.. py:data:: _CLEARANCE_PATTERNS
+
+.. py:data:: _VENDOR_PATTERNS
+
+.. py:data:: _SOURCE_CONFIDENCE
+   :type:  Dict[str, float]
+
+.. py:class:: ActivityIntakeConfig
+
+   Configuration for Stage A.
+
+
+   .. py:attribute:: ner_generator_mode
+      :type:  str
+      :value: 'anchored_np'
+
+
+      gazetteer_only, anchored_np, full_np.
+      anchored_np is the recommended default (precision/recall balance).
+
+      :type: NER pipeline generator mode. One of
+
+
+   .. py:attribute:: np_score_threshold
+      :type:  float
+      :value: 0.65
+
+
+      Minimum score for noun-phrase NER candidates.
+
+
+   .. py:attribute:: unknown_abbreviation_rate_warning
+      :type:  float
+      :value: 0.25
+
+
+      Fraction of unresolved tokens above which downstream NER results are
+      flagged as unreliable (WBS exit criterion 4.7).
+
+
+   .. py:attribute:: abbreviation_dict_path
+      :type:  Optional[pathlib.Path]
+      :value: None
+
+
+      Path to the plant-specific abbreviation dictionary (CSV or JSON).
+      Falls back to the built-in nuclear abbreviations if None.
+
+
+   .. py:attribute:: taxonomy_rules_path
+      :type:  Optional[pathlib.Path]
+      :value: None
+
+
+      Path to custom taxonomy rules (YAML/JSON).
+      Merged on top of DEFAULT_TAXONOMY_RULES if provided.
+
+
+   .. py:attribute:: gazetteer_path
+      :type:  Optional[pathlib.Path]
+      :value: None
+
+
+      Path to the gazetteer Excel file for HybridNERPipeline.
+
+
+   .. py:attribute:: regulatory_keywords_path
+      :type:  Optional[pathlib.Path]
+      :value: None
+
+
+      Path to a pipe-delimited file of supplementary regulatory patterns.
+      Each non-comment line: <regex_pattern>|<driver_type>|<defer_prohibited>
+      Patterns are unioned with the built-in _REGULATORY_PATTERNS set at
+      construction time.  Use this for plant-specific TS numbers or local
+      program acronyms not covered by the default vocabulary.
+
+
+   .. py:attribute:: entity_normalizer_token_overlap_threshold
+      :type:  float
+      :value: 0.6
+
+
+      Minimum Jaccard token-overlap score for EntityNormalizer phase-1 match.
+
+
+.. py:class:: ActivityIntakeProcessor(config = None, *, text_cleaner=None, abbreviation_expander=None, ner_pipeline=None, spacy_annotator=None, entity_normalizer=None, label_mapper=None)
+
+   Concrete Stage A implementation.
+
+   All NLP backends are injected to keep this class testable without a live
+   model or dictionary file.  Pass None to defer injection until a backend
+   is available; calls to process() will raise NotImplementedError.
+
+   :param config: Stage configuration.
+   :param text_cleaner: Callable or object with a clean(text) → str method.
+                        Use outage_uncertainty.preprocessing.cleaners.TextCleaner.
+   :param abbreviation_expander: Callable or object with an expand(text) → str method.
+                                 Use outage_uncertainty.preprocessing.abbreviations.AbbreviationExpander.
+   :param ner_pipeline: HybridNERPipeline instance from RCA.ner.hybrid_ner.pipeline.
+                        Must be pre-built with the outage gazetteer and schema.
+   :param spacy_annotator: SpacyAnnotator from RCA.ner.spacy_annotator.
+   :param entity_normalizer: EntityNormalizer from RCA.ner.entity_normalizer.
+   :param label_mapper: TaskLabelMapper from outage_uncertainty.preprocessing.label_mapper.
+
+
+   .. py:attribute:: config
+
+
+   .. py:attribute:: text_cleaner
+      :value: None
+
+
+
+   .. py:attribute:: abbreviation_expander
+      :value: None
+
+
+
+   .. py:attribute:: ner_pipeline
+      :value: None
+
+
+
+   .. py:attribute:: spacy_annotator
+      :value: None
+
+
+
+   .. py:attribute:: entity_normalizer
+      :value: None
+
+
+
+   .. py:attribute:: label_mapper
+      :value: None
+
+
+
+   .. py:attribute:: _supplementary_regulatory_patterns
+      :type:  List[Tuple[re.Pattern, str, bool]]
+      :value: []
+
+
+
+   .. py:method:: process(emergent_activity, run_context)
+
+      Execute Stage A for one emergent activity.
+
+      :returns: ActivityIntakeResult artifact conforming to
+                outage/schemas/activity_intake_result.json.
+
+
+
+   .. py:method:: _compute_lco_clock(emergent_activity, run_context)
+
+      Compute the TS/LCO action-level countdown clock fields.
+
+      M1 fix: surfaces the remaining time before an LCO action-level deadline
+      so the outage manager has the single most time-critical piece of
+      information immediately, rather than having to look it up manually.
+
+      :returns: (lco_action_level_expires_at, hours_to_action_level, lco_clock_status)
+
+                lco_action_level_expires_at — ISO datetime passed through from
+                    emergent_activity["lco_action_level_expires_at"], or None.
+                hours_to_action_level       — float hours between reference_time and
+                    expiry; negative means the action level has already expired.
+                    None when the expiry timestamp is unavailable.
+                lco_clock_status — one of:
+                    "not_applicable" — active_lco falsy AND no lco_action_level_expires_at
+                    "unknown"        — active_lco=True but no expiry timestamp; the LCO
+                                       clock is running but the deadline was not supplied
+                    "expired"        — hours_to_action_level < 0
+                    "critical"       — 0 ≤ hours < 4   (immediate management action required)
+                    "urgent"         — 4 ≤ hours < 24  (same shift action required)
+                    "normal"         — hours ≥ 24       (deadline is beyond current shift)
+
+      Reference time priority:
+          run_context["started_at"] > emergent_activity["detection_timestamp"]
+          > datetime.now(UTC)
+
+
+
+   .. py:method:: _parse_iso(iso_str)
+      :staticmethod:
+
+
+      Parse an ISO-8601 string to a timezone-aware datetime.  Returns None on failure.
+
+
+
+   .. py:method:: _clean_description(raw)
+
+      Normalize whitespace, punctuation, and case.
+
+      Uses the injected text_cleaner if available.  Falls back to
+      ComponentIdRemover → TextacyPreprocessor from the preprocessing module
+      (initialised once in __init__).  Does NOT run abbreviation expansion —
+      that is a separate step so the abbreviation rate can be computed
+      independently.
+
+
+
+   .. py:method:: _expand_abbreviations(text)
+
+      Expand nuclear abbreviations and return (expanded_text, unknown_rate).
+
+      unknown_rate: fraction of ALL-CAPS candidate tokens in the *original*
+      text that remain unresolved (still ALL-CAPS) after expansion.
+      Values > config.unknown_abbreviation_rate_warning trigger analyst
+      review flag (WBS exit criterion 4.7).
+
+      Uses the injected abbreviation_expander if available.  Falls back to
+      AbbreviationResolver with the built-in NUCLEAR_OUTAGE_ABBREVIATIONS dict.
+
+
+
+   .. py:method:: _run_ner(text, emergent_activity)
+
+      Extract named entities from the expanded description.
+
+      Returns a list of entity dicts conforming to the extracted_entities
+      array in activity_intake_result.json.
+
+      Extraction layers (applied in order, results merged):
+          1. Regex patterns for tag IDs, WO references, CR references.
+          2. HybridNERPipeline (if injected) for component, action, failure-mode
+             entities via gazetteer + anchored NP generators.
+          3. SpacyAnnotator (if injected) for temporal references and measurements.
+
+      Each entity dict has keys: entity_id, text, entity_type, start, end,
+      source, confidence.
+
+
+
+   .. py:method:: _resolve_references(entities, emergent_activity)
+
+      Resolve entity mentions to canonical IDs.
+
+      Returns (component_ids, system_ids, work_order_ids, cr_ids).
+
+      Resolution strategy:
+          - Pass-through known IDs from emergent_activity (highest confidence).
+          - Collect WO/CR regex matches from extracted entities.
+          - EntityNormalizer (if injected) for additional component mentions
+            found by the NER pipeline (token-overlap → LLM fallback).
+
+
+
+   .. py:method:: _classify_labels(text, entities)
+
+      Classify discipline, task_family, component_family.
+
+      Returns (discipline, task_family, component_family).
+
+      Uses the injected label_mapper (TaskLabelMapper) via an ActivityCase
+      wrapper when available.  Falls back to direct pattern iteration over
+      label_mapper._patterns if ActivityCase cannot be imported, or returns
+      (None, None, None) if no label_mapper is injected.
+
+
+
+   .. py:method:: _classify_emergence_type(emergent_activity, entities, text)
+
+      Classify the emergence type of this activity.
+
+      Returns (emergence_type, confidence, rationale).
+
+      Rule priority (highest to lowest):
+          1. regulatory_driven  — TS/NRC/LCO/ALARA/CAP keyword match, or
+                                  explicit regulatory fields in intake record.
+          2. scope_expansion    — scope-language keywords AND an existing WO
+                                  is referenced (expanding known work).
+          3. schedule_optimization — schedule-change language, no failure terms.
+          4. truly_unplanned    — default; degradation / failure language, or
+                                  no other rule matched.
+
+
+
+   .. py:method:: _extract_execution_mode_flags(text)
+
+      Detect execution mode conditions from the expanded work description.
+
+      These four flags are strong predictors of duration variance — tasks
+      that require radiation protection holds, scaffold erection, equipment
+      clearances, or vendor/OEM support consistently run longer and more
+      variably than routine tasks.  They feed the mixture_weight computation
+      in Stage D (disrupted-execution pool weighting).
+
+      Pattern matching is intentionally conservative: a flag is set only when
+      a specific keyword or phrase is found, not inferred from absence.
+
+      Returns a dict with boolean values for each flag:
+          has_rp_hold          — radiation protection hold or ALARA constraint
+          requires_scaffold    — scaffold erection or temporary access platform
+          has_clearance        — electrical/mechanical clearance or LOTO
+          is_vendor_supported  — OEM/vendor/manufacturer representative involved
+
+      These map directly to the corresponding fields on ActivityCase and are
+      persisted into the HistoricalAnalogs artifact so Stage D can weight
+      the extended (disrupted) duration pool appropriately.
+
+
+
+   .. py:method:: _load_supplementary_regulatory_patterns()
+
+      Load plant-specific regulatory patterns from config.regulatory_keywords_path.
+
+      File format — pipe-delimited, one entry per line::
+
+          # comment lines are ignored
+          TS\s*3\.4\.\d+|technical_specification|true
+          MAINT-HOLD|custom_hold_point|true
+          ALARA\s+review|alara_requirement|false
+
+      Fields:
+          regex_pattern   — Python regex string (re.IGNORECASE applied)
+          driver_type     — driver_type label written to the artifact
+          defer_prohibited — "true" / "false"
+
+      Invalid lines are skipped with a WARNING.  Returns [] when the path
+      is not configured or the file cannot be read.
+
+
+
+   .. py:method:: _detect_regulatory_constraints(emergent_activity, entities, text)
+
+      Identify regulatory constraints that restrict deferral.
+
+      Returns (has_regulatory_constraint, regulatory_drivers).
+
+      Sources checked in order:
+          1. Structured regulatory fields in emergent_activity
+             (technical_specification_reference, nrc_commitment_number, lco_number).
+          2. Pattern matching against expanded description using
+             _REGULATORY_PATTERNS (TS, LCO, NRC, ALARA, CAP, surveillance,
+             operability determination, hold point).
+          3. Supplementary patterns from config.regulatory_keywords_path, unioned
+             with the built-in set at detection time.
+
+      Every driver includes: driver_id, driver_type, matched_text,
+      defer_prohibited, source.
+
+
+
+   .. py:method:: _compute_data_quality(emergent_activity, entities, abbr_rate)
+
+      Compute a composite [0, 1] data quality score for this intake record.
+
+      Composite formula (weights sum to 1.0):
+          0.35 × field_completeness   — description length, timestamps,
+                                        component_id, source fields
+          0.25 × ner_yield            — entity count relative to description tokens
+          0.25 × abbreviation_clarity — 1.0 − abbr_rate
+          0.15 × source_confidence    — source system reliability tier
+
+      All sub-scores are clamped to [0, 1] before weighting.
+
+
+
+.. py:function:: _make_entity(*, text, entity_type, start, end, source, confidence)
+
+   Construct a standardised entity dict for the extracted_entities array.
+
+

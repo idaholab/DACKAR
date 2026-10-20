@@ -1,0 +1,838 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.validators.outage_artifact_validator &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.validators.outage_artifact_validator</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.validators.outage_artifact_validator</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">OutageArtifactValidator — JSON Schema + semantic validation for the outage pipeline.</span>
+
+<span class="sd">Two-layer validation for each of the 8 outage artifacts:</span>
+<span class="sd">    1. Per-artifact Draft-7 JSON Schema validation (schema files loaded from</span>
+<span class="sd">       outage/schemas/).</span>
+<span class="sd">    2. Per-artifact semantic checks for domain constraints that JSON Schema</span>
+<span class="sd">       cannot express: score range consistency, temporal ordering, referential</span>
+<span class="sd">       integrity between fields, outage-domain invariants.</span>
+
+<span class="sd">Cross-artifact consistency is validated in validate_run_bundle():</span>
+<span class="sd">    - activity_id identical across all present artifacts.</span>
+<span class="sd">    - run_id identical across all present artifacts.</span>
+<span class="sd">    - Logical chain: e.g. INCONCLUSIVE recommendation must match no feasible</span>
+<span class="sd">      option in insertion_options.</span>
+
+<span class="sd">Designed to be a drop-in replacement for NoOpSchemaValidator.  The</span>
+<span class="sd">orchestrator calls:</span>
+<span class="sd">    validator.validate_artifact(artifact_name, payload) → ValidationReport</span>
+<span class="sd">    validator.validate_run_bundle(**artifact_kwargs)    → ValidationReport</span>
+
+<span class="sd">Reuses ValidationReport / ValidationIssue from RCA validation module to</span>
+<span class="sd">avoid duplication of the report dataclasses.</span>
+
+<span class="sd">Source of truth</span>
+<span class="sd">---------------</span>
+<span class="sd">The pipeline stage code is authoritative for artifact shape; the JSON Schemas</span>
+<span class="sd">in ``outage/schemas/`` are maintained to accept what the stages actually emit.</span>
+<span class="sd">When stage output and a schema disagree, the schema is corrected to match the</span>
+<span class="sd">code (not the reverse).  This is a deliberate, documented stance (review</span>
+<span class="sd">thread A2); a follow-up may generate the schemas from the stage dataclasses so</span>
+<span class="sd">the two cannot drift again.  Until then, the A→G round-trip test in the tests</span>
+<span class="sd">MR validates real stage output against these schemas to keep them locked.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">jsonschema</span><span class="w"> </span><span class="kn">import</span> <span class="n">Draft7Validator</span><span class="p">,</span> <span class="n">FormatChecker</span><span class="p">,</span> <span class="n">ValidationError</span>
+
+<span class="c1"># Reuse the structured report types from the RCA validation module</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.RCA.validation.schema_validator</span><span class="w"> </span><span class="kn">import</span> <span class="n">ValidationReport</span><span class="p">,</span> <span class="n">ValidationIssue</span>
+
+<div class="viewcode-block" id="LOGGER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.LOGGER">[docs]</a>
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="Severity">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.Severity">[docs]</a>
+<span class="n">Severity</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"error"</span><span class="p">,</span> <span class="s2">"warning"</span><span class="p">]</span></div>
+
+
+<span class="c1"># Canonical artifact names — must match the keys used by the orchestrator</span>
+<span class="c1"># and the filenames in outage/schemas/ (without .json extension)</span>
+<div class="viewcode-block" id="OUTAGE_ARTIFACTS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OUTAGE_ARTIFACTS">[docs]</a>
+<span class="n">OUTAGE_ARTIFACTS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"emergent_activity"</span><span class="p">,</span>
+    <span class="s2">"intake_result"</span><span class="p">,</span>
+    <span class="s2">"component_event_timeline"</span><span class="p">,</span>
+    <span class="s2">"temporal_event_chain"</span><span class="p">,</span>
+    <span class="s2">"historical_analogs"</span><span class="p">,</span>
+    <span class="s2">"schedule_impact_assessment"</span><span class="p">,</span>
+    <span class="s2">"insertion_options"</span><span class="p">,</span>
+    <span class="s2">"outage_activity_recommendation"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># Map orchestrator artifact_name → schema filename stem</span>
+<div class="viewcode-block" id="_SCHEMA_FILE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator._SCHEMA_FILE">[docs]</a>
+<span class="n">_SCHEMA_FILE</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"emergent_activity"</span><span class="p">:</span>           <span class="s2">"emergent_activity"</span><span class="p">,</span>
+    <span class="s2">"intake_result"</span><span class="p">:</span>               <span class="s2">"activity_intake_result"</span><span class="p">,</span>
+    <span class="s2">"component_event_timeline"</span><span class="p">:</span>    <span class="s2">"component_event_timeline"</span><span class="p">,</span>
+    <span class="s2">"temporal_event_chain"</span><span class="p">:</span>        <span class="s2">"temporal_event_chain"</span><span class="p">,</span>
+    <span class="s2">"historical_analogs"</span><span class="p">:</span>          <span class="s2">"historical_analogs"</span><span class="p">,</span>
+    <span class="s2">"schedule_impact_assessment"</span><span class="p">:</span>  <span class="s2">"schedule_impact_assessment"</span><span class="p">,</span>
+    <span class="s2">"insertion_options"</span><span class="p">:</span>           <span class="s2">"insertion_options"</span><span class="p">,</span>
+    <span class="s2">"outage_activity_recommendation"</span><span class="p">:</span> <span class="s2">"outage_activity_recommendation"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="_DEFAULT_SCHEMA_DIR">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator._DEFAULT_SCHEMA_DIR">[docs]</a>
+<span class="n">_DEFAULT_SCHEMA_DIR</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"schemas"</span></div>
+
+
+
+<div class="viewcode-block" id="OutageArtifactValidator">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">OutageArtifactValidator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Two-layer validator for the outage unexpected-activity pipeline.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        schema_dir: Directory containing the outage JSON Schema files.</span>
+<span class="sd">                    Defaults to outage/schemas/ relative to this file.</span>
+<span class="sd">        mode:       Validation strictness.</span>
+<span class="sd">                    'strict'    — schema mismatches are errors; no aliases.</span>
+<span class="sd">                    'compat'    — same checks, but lenient about extra fields</span>
+<span class="sd">                                  not covered by additionalProperties.</span>
+<span class="sd">                    'warn_only' — all issues downgraded to warnings (useful</span>
+<span class="sd">                                  during iterative stage development).</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">schema_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">_DEFAULT_SCHEMA_DIR</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">mode</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"strict"</span><span class="p">,</span> <span class="s2">"compat"</span><span class="p">,</span> <span class="s2">"warn_only"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"compat"</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="OutageArtifactValidator.schema_dir">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator.schema_dir">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">schema_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">schema_dir</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="OutageArtifactValidator.mode">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator.mode">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">=</span> <span class="n">mode</span></div>
+
+<div class="viewcode-block" id="OutageArtifactValidator.schemas">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator.schemas">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">schemas</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+<div class="viewcode-block" id="OutageArtifactValidator.validators">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator.validators">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">validators</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Draft7Validator</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load_schemas</span><span class="p">()</span>
+
+    <span class="c1"># ── Public API ────────────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="OutageArtifactValidator.validate_artifact">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator.validate_artifact">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_artifact</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">artifact_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">payload</span><span class="p">:</span> <span class="n">JsonDict</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ValidationReport</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Validate one artifact against its JSON Schema + semantic rules.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            artifact_name: Orchestrator artifact key (e.g. 'intake_result').</span>
+<span class="sd">            payload:        The artifact dict to validate.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ValidationReport with ok=True iff no error-severity issues found.</span>
+<span class="sd">        """</span>
+        <span class="n">report</span> <span class="o">=</span> <span class="n">ValidationReport</span><span class="p">(</span><span class="n">ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">artifact_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">validators</span><span class="p">:</span>
+            <span class="n">report</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span>
+                <span class="n">artifact</span><span class="o">=</span><span class="n">artifact_name</span><span class="p">,</span>
+                <span class="n">severity</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span>
+                <span class="n">code</span><span class="o">=</span><span class="s2">"schema_missing"</span><span class="p">,</span>
+                <span class="n">message</span><span class="o">=</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"No schema registered for artifact '</span><span class="si">{</span><span class="n">artifact_name</span><span class="si">}</span><span class="s2">'. "</span>
+                    <span class="sa">f</span><span class="s2">"Known artifacts: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">validators</span><span class="p">)</span><span class="si">}</span><span class="s2">."</span>
+                <span class="p">),</span>
+            <span class="p">))</span>
+            <span class="n">report</span><span class="o">.</span><span class="n">recompute_ok</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">report</span>
+
+        <span class="c1"># Layer 1: JSON Schema</span>
+        <span class="n">validator</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">validators</span><span class="p">[</span><span class="n">artifact_name</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">err</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span>
+            <span class="n">validator</span><span class="o">.</span><span class="n">iter_errors</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">e</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="n">report</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span>
+                <span class="n">artifact</span><span class="o">=</span><span class="n">artifact_name</span><span class="p">,</span>
+                <span class="n">severity</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span>
+                <span class="n">code</span><span class="o">=</span><span class="s2">"schema_error"</span><span class="p">,</span>
+                <span class="n">message</span><span class="o">=</span><span class="n">err</span><span class="o">.</span><span class="n">message</span><span class="p">,</span>
+                <span class="n">path</span><span class="o">=</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">err</span><span class="o">.</span><span class="n">path</span><span class="p">],</span>
+            <span class="p">))</span>
+
+        <span class="c1"># Layer 2: semantic checks</span>
+        <span class="n">report</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_semantic_checks</span><span class="p">(</span><span class="n">artifact_name</span><span class="p">,</span> <span class="n">payload</span><span class="p">))</span>
+        <span class="n">report</span><span class="o">.</span><span class="n">recompute_ok</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">report</span></div>
+
+
+<div class="viewcode-block" id="OutageArtifactValidator.validate_run_bundle">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator.validate_run_bundle">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_run_bundle</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">component_event_timeline</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">temporal_event_chain</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">schedule_impact_assessment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">insertion_options</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">outage_activity_recommendation</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ValidationReport</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Validate the complete set of artifacts for one pipeline run.</span>
+
+<span class="sd">        Runs per-artifact validation for every non-None artifact, then</span>
+<span class="sd">        applies cross-artifact consistency checks.</span>
+<span class="sd">        """</span>
+        <span class="n">report</span> <span class="o">=</span> <span class="n">ValidationReport</span><span class="p">(</span><span class="n">ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">bundle</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"emergent_activity"</span><span class="p">:</span>           <span class="n">emergent_activity</span><span class="p">,</span>
+            <span class="s2">"intake_result"</span><span class="p">:</span>               <span class="n">intake_result</span><span class="p">,</span>
+            <span class="s2">"component_event_timeline"</span><span class="p">:</span>    <span class="n">component_event_timeline</span><span class="p">,</span>
+            <span class="s2">"temporal_event_chain"</span><span class="p">:</span>        <span class="n">temporal_event_chain</span><span class="p">,</span>
+            <span class="s2">"historical_analogs"</span><span class="p">:</span>          <span class="n">historical_analogs</span><span class="p">,</span>
+            <span class="s2">"schedule_impact_assessment"</span><span class="p">:</span>  <span class="n">schedule_impact_assessment</span><span class="p">,</span>
+            <span class="s2">"insertion_options"</span><span class="p">:</span>           <span class="n">insertion_options</span><span class="p">,</span>
+            <span class="s2">"outage_activity_recommendation"</span><span class="p">:</span> <span class="n">outage_activity_recommendation</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">present</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">bundle</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">v</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">}</span>
+
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">payload</span> <span class="ow">in</span> <span class="n">present</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">report</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">validate_artifact</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">payload</span><span class="p">)</span><span class="o">.</span><span class="n">issues</span><span class="p">)</span>
+
+        <span class="n">report</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cross_artifact_checks</span><span class="p">(</span><span class="n">present</span><span class="p">))</span>
+        <span class="n">report</span><span class="o">.</span><span class="n">recompute_ok</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">report</span></div>
+
+
+    <span class="c1"># ── Schema loading ────────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="OutageArtifactValidator._load_schemas">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator._load_schemas">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_load_schemas</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">artifact_name</span><span class="p">,</span> <span class="n">stem</span> <span class="ow">in</span> <span class="n">_SCHEMA_FILE</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">stem</span><span class="si">}</span><span class="s2">.json"</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">"Schema file not found for artifact '</span><span class="si">%s</span><span class="s2">': </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                    <span class="n">artifact_name</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">schema</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">schemas</span><span class="p">[</span><span class="n">artifact_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">schema</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">validators</span><span class="p">[</span><span class="n">artifact_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">Draft7Validator</span><span class="p">(</span>
+                <span class="n">schema</span><span class="p">,</span> <span class="n">format_checker</span><span class="o">=</span><span class="n">FormatChecker</span><span class="p">()</span>
+            <span class="p">)</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">"OutageArtifactValidator loaded </span><span class="si">%d</span><span class="s2"> schemas from </span><span class="si">%s</span><span class="s2">."</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">validators</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema_dir</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># ── Semantic checks (per artifact) ────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="OutageArtifactValidator._semantic_checks">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator._semantic_checks">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_semantic_checks</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">artifact_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">payload</span><span class="p">:</span> <span class="n">JsonDict</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]:</span>
+        <span class="n">fn</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"emergent_activity"</span><span class="p">:</span>           <span class="bp">self</span><span class="o">.</span><span class="n">_check_emergent_activity</span><span class="p">,</span>
+            <span class="s2">"intake_result"</span><span class="p">:</span>               <span class="bp">self</span><span class="o">.</span><span class="n">_check_intake_result</span><span class="p">,</span>
+            <span class="s2">"component_event_timeline"</span><span class="p">:</span>    <span class="bp">self</span><span class="o">.</span><span class="n">_check_component_event_timeline</span><span class="p">,</span>
+            <span class="s2">"temporal_event_chain"</span><span class="p">:</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_check_temporal_event_chain</span><span class="p">,</span>
+            <span class="s2">"historical_analogs"</span><span class="p">:</span>          <span class="bp">self</span><span class="o">.</span><span class="n">_check_historical_analogs</span><span class="p">,</span>
+            <span class="s2">"schedule_impact_assessment"</span><span class="p">:</span>  <span class="bp">self</span><span class="o">.</span><span class="n">_check_schedule_impact</span><span class="p">,</span>
+            <span class="s2">"insertion_options"</span><span class="p">:</span>           <span class="bp">self</span><span class="o">.</span><span class="n">_check_insertion_options</span><span class="p">,</span>
+            <span class="s2">"outage_activity_recommendation"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_recommendation</span><span class="p">,</span>
+        <span class="p">}</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">artifact_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">fn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">fn</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># never let a semantic check crash the pipeline</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span>
+                <span class="s2">"Unexpected error in semantic check for '</span><span class="si">%s</span><span class="s2">': </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">artifact_name</span><span class="p">,</span> <span class="n">exc</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="p">[]</span></div>
+
+
+<div class="viewcode-block" id="OutageArtifactValidator._check_emergent_activity">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator._check_emergent_activity">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_emergent_activity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]:</span>
+        <span class="n">issues</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">art</span> <span class="o">=</span> <span class="s2">"emergent_activity"</span>
+
+        <span class="n">dur</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"planned_duration_hours"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">dur</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">dur</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span> <span class="s2">"duration_nonpositive"</span><span class="p">,</span>
+                <span class="s2">"planned_duration_hours must be &gt; 0 when present."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"planned_duration_hours"</span><span class="p">]))</span>
+
+        <span class="n">conf</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"data_source_confidence"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">conf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">conf</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">):</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span> <span class="s2">"confidence_out_of_range"</span><span class="p">,</span>
+                <span class="s2">"data_source_confidence must be in [0, 1]."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"data_source_confidence"</span><span class="p">]))</span>
+
+        <span class="k">return</span> <span class="n">issues</span></div>
+
+
+<div class="viewcode-block" id="OutageArtifactValidator._check_intake_result">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator._check_intake_result">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_intake_result</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]:</span>
+        <span class="n">issues</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">art</span> <span class="o">=</span> <span class="s2">"intake_result"</span>
+
+        <span class="n">dq</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"data_quality_score"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">dq</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">dq</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">):</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span> <span class="s2">"data_quality_out_of_range"</span><span class="p">,</span>
+                <span class="s2">"data_quality_score must be in [0, 1]."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"data_quality_score"</span><span class="p">]))</span>
+
+        <span class="n">abbr</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"unknown_abbreviation_rate"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">abbr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">abbr</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">):</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span> <span class="s2">"abbr_rate_out_of_range"</span><span class="p">,</span>
+                <span class="s2">"unknown_abbreviation_rate must be in [0, 1]."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"unknown_abbreviation_rate"</span><span class="p">]))</span>
+
+        <span class="c1"># Regulatory constraint with no drivers is a data-quality warning</span>
+        <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_regulatory_constraint"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">drivers</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_drivers"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">drivers</span><span class="p">:</span>
+                <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"warning"</span><span class="p">),</span>
+                    <span class="s2">"regulatory_constraint_no_drivers"</span><span class="p">,</span>
+                    <span class="s2">"has_regulatory_constraint=True but regulatory_drivers is empty."</span><span class="p">,</span>
+                    <span class="p">[</span><span class="s2">"regulatory_drivers"</span><span class="p">]))</span>
+
+        <span class="k">return</span> <span class="n">issues</span></div>
+
+
+<div class="viewcode-block" id="OutageArtifactValidator._check_component_event_timeline">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator._check_component_event_timeline">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_component_event_timeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]:</span>
+        <span class="n">issues</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">art</span> <span class="o">=</span> <span class="s2">"component_event_timeline"</span>
+
+        <span class="n">events</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"events"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">events</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"warning"</span><span class="p">),</span> <span class="s2">"no_events"</span><span class="p">,</span>
+                <span class="s2">"events list is empty; temporal chain scoring will produce no links."</span><span class="p">))</span>
+
+        <span class="c1"># Check data_quality_score on each event</span>
+        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">ev</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">events</span><span class="p">):</span>
+            <span class="n">dq</span> <span class="o">=</span> <span class="n">ev</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"data_quality_score"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">dq</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">dq</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">):</span>
+                <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span>
+                    <span class="s2">"event_data_quality_out_of_range"</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s2">"events[</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">].data_quality_score must be in [0, 1]."</span><span class="p">,</span>
+                    <span class="p">[</span><span class="s2">"events"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">idx</span><span class="p">),</span> <span class="s2">"data_quality_score"</span><span class="p">]))</span>
+
+        <span class="c1"># Events should be in chronological order (warning only)</span>
+        <span class="n">timestamps</span> <span class="o">=</span> <span class="p">[</span><span class="n">ev</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">)</span> <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">events</span> <span class="k">if</span> <span class="n">ev</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">timestamps</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">timestamps</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">timestamps</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">timestamps</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]:</span>
+                    <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"warning"</span><span class="p">),</span>
+                        <span class="s2">"events_not_chronological"</span><span class="p">,</span>
+                        <span class="sa">f</span><span class="s2">"events[</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">].timestamp &gt; events[</span><span class="si">{</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s2">].timestamp — "</span>
+                        <span class="s2">"events are not in chronological order."</span><span class="p">,</span>
+                        <span class="p">[</span><span class="s2">"events"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">),</span> <span class="s2">"timestamp"</span><span class="p">]))</span>
+                    <span class="k">break</span>  <span class="c1"># one warning is enough</span>
+
+        <span class="k">return</span> <span class="n">issues</span></div>
+
+
+<div class="viewcode-block" id="OutageArtifactValidator._check_temporal_event_chain">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator._check_temporal_event_chain">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_temporal_event_chain</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]:</span>
+        <span class="n">issues</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">art</span> <span class="o">=</span> <span class="s2">"temporal_event_chain"</span>
+
+        <span class="n">links</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"chain_links"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">lnk</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">links</span><span class="p">):</span>
+            <span class="n">rs</span> <span class="o">=</span> <span class="n">lnk</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation_score"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">rs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">rs</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">):</span>
+                <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span>
+                    <span class="s2">"relation_score_out_of_range"</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s2">"chain_links[</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">].relation_score must be in [0, 1]."</span><span class="p">,</span>
+                    <span class="p">[</span><span class="s2">"chain_links"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">idx</span><span class="p">),</span> <span class="s2">"relation_score"</span><span class="p">]))</span>
+
+            <span class="n">conf</span> <span class="o">=</span> <span class="n">lnk</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">conf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">conf</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">):</span>
+                <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span>
+                    <span class="s2">"confidence_out_of_range"</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s2">"chain_links[</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">].confidence must be in [0, 1]."</span><span class="p">,</span>
+                    <span class="p">[</span><span class="s2">"chain_links"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">idx</span><span class="p">),</span> <span class="s2">"confidence"</span><span class="p">]))</span>
+
+        <span class="c1"># Verify summary.has_temporal_contradiction is consistent with links</span>
+        <span class="n">summary</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">declared_contradiction</span> <span class="o">=</span> <span class="n">summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_temporal_contradiction"</span><span class="p">)</span>
+        <span class="n">actual_contradiction</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
+            <span class="n">lnk</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causal_strength"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"temporal_contradiction"</span> <span class="k">for</span> <span class="n">lnk</span> <span class="ow">in</span> <span class="n">links</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">declared_contradiction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">declared_contradiction</span> <span class="o">!=</span> <span class="n">actual_contradiction</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span>
+                <span class="s2">"contradiction_flag_mismatch"</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">"summary.has_temporal_contradiction=</span><span class="si">{</span><span class="n">declared_contradiction</span><span class="si">}</span><span class="s2"> but "</span>
+                <span class="sa">f</span><span class="s2">"chain_links contain temporal_contradiction=</span><span class="si">{</span><span class="n">actual_contradiction</span><span class="si">}</span><span class="s2">."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"summary"</span><span class="p">,</span> <span class="s2">"has_temporal_contradiction"</span><span class="p">]))</span>
+
+        <span class="k">return</span> <span class="n">issues</span></div>
+
+
+<div class="viewcode-block" id="OutageArtifactValidator._check_historical_analogs">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator._check_historical_analogs">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_historical_analogs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]:</span>
+        <span class="n">issues</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">art</span> <span class="o">=</span> <span class="s2">"historical_analogs"</span>
+
+        <span class="n">dist</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"duration_distribution"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">p50</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"p50_hours"</span><span class="p">)</span>
+        <span class="n">p80</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"p80_hours"</span><span class="p">)</span>
+        <span class="n">p90</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"p90_hours"</span><span class="p">)</span>
+
+        <span class="c1"># Percentile ordering: p50 ≤ p80 ≤ p90</span>
+        <span class="k">if</span> <span class="n">p50</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">p80</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">p50</span> <span class="o">&gt;</span> <span class="n">p80</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span> <span class="s2">"percentile_order_p50_p80"</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">"duration_distribution.p50_hours (</span><span class="si">{</span><span class="n">p50</span><span class="si">}</span><span class="s2">) &gt; p80_hours (</span><span class="si">{</span><span class="n">p80</span><span class="si">}</span><span class="s2">)."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"duration_distribution"</span><span class="p">,</span> <span class="s2">"p50_hours"</span><span class="p">]))</span>
+        <span class="k">if</span> <span class="n">p80</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">p90</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">p80</span> <span class="o">&gt;</span> <span class="n">p90</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span> <span class="s2">"percentile_order_p80_p90"</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">"duration_distribution.p80_hours (</span><span class="si">{</span><span class="n">p80</span><span class="si">}</span><span class="s2">) &gt; p90_hours (</span><span class="si">{</span><span class="n">p90</span><span class="si">}</span><span class="s2">)."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"duration_distribution"</span><span class="p">,</span> <span class="s2">"p80_hours"</span><span class="p">]))</span>
+
+        <span class="n">sample_size</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sample_size"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">sample_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">sample_size</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span> <span class="s2">"sample_size_negative"</span><span class="p">,</span>
+                <span class="s2">"duration_distribution.sample_size must be &gt;= 0."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"duration_distribution"</span><span class="p">,</span> <span class="s2">"sample_size"</span><span class="p">]))</span>
+
+        <span class="c1"># Per-analog similarity scores</span>
+        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">analog</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analogs"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]):</span>
+            <span class="n">score</span> <span class="o">=</span> <span class="n">analog</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"similarity_score"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">score</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">score</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">):</span>
+                <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span>
+                    <span class="s2">"similarity_score_out_of_range"</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s2">"analogs[</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">].similarity_score must be in [0, 1]."</span><span class="p">,</span>
+                    <span class="p">[</span><span class="s2">"analogs"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">idx</span><span class="p">),</span> <span class="s2">"similarity_score"</span><span class="p">]))</span>
+
+        <span class="c1"># Fallback flag must be consistent with retrieval_summary</span>
+        <span class="n">retrieval</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"retrieval_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">fallback_used</span> <span class="o">=</span> <span class="n">retrieval</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fallback_used"</span><span class="p">)</span>
+        <span class="n">confidence_tier</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_tier"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">fallback_used</span> <span class="ow">is</span> <span class="kc">True</span> <span class="ow">and</span> <span class="n">confidence_tier</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">"low_confidence"</span><span class="p">):</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"warning"</span><span class="p">),</span>
+                <span class="s2">"fallback_with_high_confidence"</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">"retrieval_summary.fallback_used=True but confidence_tier='</span><span class="si">{</span><span class="n">confidence_tier</span><span class="si">}</span><span class="s2">'. "</span>
+                <span class="s2">"Fallback distributions should use 'low_confidence'."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"duration_distribution"</span><span class="p">,</span> <span class="s2">"confidence_tier"</span><span class="p">]))</span>
+
+        <span class="k">return</span> <span class="n">issues</span></div>
+
+
+<div class="viewcode-block" id="OutageArtifactValidator._check_schedule_impact">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator._check_schedule_impact">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_schedule_impact</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]:</span>
+        <span class="n">issues</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">art</span> <span class="o">=</span> <span class="s2">"schedule_impact_assessment"</span>
+
+        <span class="n">float_a</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_analysis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">consumed</span> <span class="o">=</span> <span class="n">float_a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_consumed_hours"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">consumed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">consumed</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span> <span class="s2">"float_consumed_negative"</span><span class="p">,</span>
+                <span class="s2">"float_analysis.float_consumed_hours must be &gt;= 0."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"float_analysis"</span><span class="p">,</span> <span class="s2">"float_consumed_hours"</span><span class="p">]))</span>
+
+        <span class="n">remaining</span> <span class="o">=</span> <span class="n">float_a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"remaining_float_after"</span><span class="p">)</span>
+        <span class="n">label</span> <span class="o">=</span> <span class="n">float_a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">remaining</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">label</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">remaining</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">label</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"critical"</span><span class="p">,):</span>
+                <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"warning"</span><span class="p">),</span>
+                    <span class="s2">"criticality_label_inconsistent"</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s2">"remaining_float_after=</span><span class="si">{</span><span class="n">remaining</span><span class="si">}</span><span class="s2"> ≤ 0 but criticality_label='</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">' "</span>
+                    <span class="s2">"(expected 'critical')."</span><span class="p">,</span>
+                    <span class="p">[</span><span class="s2">"float_analysis"</span><span class="p">,</span> <span class="s2">"criticality_label"</span><span class="p">]))</span>
+
+        <span class="n">cp</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">drag</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_drag_hours"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">drag</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">drag</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span> <span class="s2">"cp_drag_negative"</span><span class="p">,</span>
+                <span class="s2">"cp_impact.cp_drag_hours must be &gt;= 0."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"cp_impact"</span><span class="p">,</span> <span class="s2">"cp_drag_hours"</span><span class="p">]))</span>
+
+        <span class="n">sensitivity</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_sensitivity_score"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">sensitivity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">sensitivity</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">):</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span> <span class="s2">"sensitivity_out_of_range"</span><span class="p">,</span>
+                <span class="s2">"cp_impact.cp_sensitivity_score must be in [0, 1]."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"cp_impact"</span><span class="p">,</span> <span class="s2">"cp_sensitivity_score"</span><span class="p">]))</span>
+
+        <span class="c1"># MC percentile ordering on cp_impact</span>
+        <span class="n">p50_cp</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"estimated_new_cp_hours"</span><span class="p">)</span>
+        <span class="n">p80_cp</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"p80_cp_hours"</span><span class="p">)</span>
+        <span class="n">p90_cp</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"p90_cp_hours"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">p50_cp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">p80_cp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">p50_cp</span> <span class="o">&gt;</span> <span class="n">p80_cp</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"warning"</span><span class="p">),</span>
+                <span class="s2">"cp_percentile_order_p50_p80"</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">"cp_impact.estimated_new_cp_hours (</span><span class="si">{</span><span class="n">p50_cp</span><span class="si">}</span><span class="s2">) &gt; p80_cp_hours (</span><span class="si">{</span><span class="n">p80_cp</span><span class="si">}</span><span class="s2">)."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"cp_impact"</span><span class="p">,</span> <span class="s2">"estimated_new_cp_hours"</span><span class="p">]))</span>
+        <span class="k">if</span> <span class="n">p80_cp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">p90_cp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">p80_cp</span> <span class="o">&gt;</span> <span class="n">p90_cp</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"warning"</span><span class="p">),</span>
+                <span class="s2">"cp_percentile_order_p80_p90"</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">"cp_impact.p80_cp_hours (</span><span class="si">{</span><span class="n">p80_cp</span><span class="si">}</span><span class="s2">) &gt; p90_cp_hours (</span><span class="si">{</span><span class="n">p90_cp</span><span class="si">}</span><span class="s2">)."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"cp_impact"</span><span class="p">,</span> <span class="s2">"p80_cp_hours"</span><span class="p">]))</span>
+
+        <span class="n">conf</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">conf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">conf</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">):</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span> <span class="s2">"confidence_out_of_range"</span><span class="p">,</span>
+                <span class="s2">"confidence must be in [0, 1]."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"confidence"</span><span class="p">]))</span>
+
+        <span class="k">return</span> <span class="n">issues</span></div>
+
+
+<div class="viewcode-block" id="OutageArtifactValidator._check_insertion_options">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator._check_insertion_options">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_insertion_options</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]:</span>
+        <span class="n">issues</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">art</span> <span class="o">=</span> <span class="s2">"insertion_options"</span>
+
+        <span class="n">options</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"options"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">option_ids</span> <span class="o">=</span> <span class="p">{</span><span class="n">opt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_id"</span><span class="p">)</span> <span class="k">for</span> <span class="n">opt</span> <span class="ow">in</span> <span class="n">options</span><span class="p">}</span>
+
+        <span class="c1"># recommended_option_id must reference an existing option</span>
+        <span class="n">rec_id</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"recommended_option_id"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">rec_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">rec_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">option_ids</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span>
+                <span class="s2">"recommended_id_not_in_options"</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">"recommended_option_id='</span><span class="si">{</span><span class="n">rec_id</span><span class="si">}</span><span class="s2">' does not match any option_id in options."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"recommended_option_id"</span><span class="p">]))</span>
+
+        <span class="c1"># No feasible + regulatory-cleared option is a pipeline health warning</span>
+        <span class="n">feasible_and_cleared</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">o</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">options</span>
+            <span class="k">if</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span> <span class="ow">and</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span>
+        <span class="p">]</span>
+        <span class="k">if</span> <span class="n">options</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">feasible_and_cleared</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"warning"</span><span class="p">),</span>
+                <span class="s2">"no_feasible_cleared_option"</span><span class="p">,</span>
+                <span class="s2">"No option is both feasible=True and regulatory_cleared=True. "</span>
+                <span class="s2">"Decision status should be INCONCLUSIVE."</span><span class="p">))</span>
+
+        <span class="c1"># Risk scores must be in [0, 1]</span>
+        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">opt</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">options</span><span class="p">):</span>
+            <span class="n">rs</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"risk_score"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">rs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">rs</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">):</span>
+                <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span>
+                    <span class="s2">"risk_score_out_of_range"</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s2">"options[</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">].risk_score must be in [0, 1]."</span><span class="p">,</span>
+                    <span class="p">[</span><span class="s2">"options"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">idx</span><span class="p">),</span> <span class="s2">"risk_score"</span><span class="p">]))</span>
+
+        <span class="k">return</span> <span class="n">issues</span></div>
+
+
+<div class="viewcode-block" id="OutageArtifactValidator._check_recommendation">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator._check_recommendation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_recommendation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]:</span>
+        <span class="n">issues</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">art</span> <span class="o">=</span> <span class="s2">"outage_activity_recommendation"</span>
+
+        <span class="n">status</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"decision_status"</span><span class="p">)</span>
+        <span class="n">primary</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"primary_recommendation"</span><span class="p">)</span>
+        <span class="n">analyst</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_review"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+
+        <span class="c1"># INCONCLUSIVE ↔ no primary_recommendation</span>
+        <span class="k">if</span> <span class="n">status</span> <span class="o">==</span> <span class="s2">"INCONCLUSIVE"</span> <span class="ow">and</span> <span class="n">primary</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"warning"</span><span class="p">),</span>
+                <span class="s2">"inconclusive_with_primary_rec"</span><span class="p">,</span>
+                <span class="s2">"decision_status=INCONCLUSIVE but primary_recommendation is not null."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"primary_recommendation"</span><span class="p">]))</span>
+        <span class="k">if</span> <span class="n">status</span> <span class="o">!=</span> <span class="s2">"INCONCLUSIVE"</span> <span class="ow">and</span> <span class="n">primary</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"warning"</span><span class="p">),</span>
+                <span class="s2">"non_inconclusive_without_primary_rec"</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">"decision_status='</span><span class="si">{</span><span class="n">status</span><span class="si">}</span><span class="s2">' but primary_recommendation is null."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"primary_recommendation"</span><span class="p">]))</span>
+
+        <span class="c1"># Analyst review required when INCONCLUSIVE</span>
+        <span class="k">if</span> <span class="n">status</span> <span class="o">==</span> <span class="s2">"INCONCLUSIVE"</span> <span class="ow">and</span> <span class="n">analyst</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"required"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"error"</span><span class="p">),</span>
+                <span class="s2">"analyst_review_not_required_for_inconclusive"</span><span class="p">,</span>
+                <span class="s2">"decision_status=INCONCLUSIVE requires analyst_review.required=True."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"analyst_review"</span><span class="p">,</span> <span class="s2">"required"</span><span class="p">]))</span>
+
+        <span class="c1"># Evidence chain: at least one supporting entry for actionable decisions</span>
+        <span class="n">evidence</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_chain"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">status</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"INCONCLUSIVE"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">and</span> <span class="n">evidence</span><span class="p">:</span>
+            <span class="n">has_supporting</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"supports"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">evidence</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">has_supporting</span><span class="p">:</span>
+                <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"warning"</span><span class="p">),</span>
+                    <span class="s2">"no_supporting_evidence"</span><span class="p">,</span>
+                    <span class="s2">"evidence_chain has no entry with supports=True for an actionable "</span>
+                    <span class="sa">f</span><span class="s2">"decision_status='</span><span class="si">{</span><span class="n">status</span><span class="si">}</span><span class="s2">'."</span><span class="p">,</span>
+                    <span class="p">[</span><span class="s2">"evidence_chain"</span><span class="p">]))</span>
+
+        <span class="c1"># Validation status block</span>
+        <span class="n">vs</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"validation_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">vs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"minimum_evidence_met"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">False</span> <span class="ow">and</span> <span class="n">status</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"INCONCLUSIVE"</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sev</span><span class="p">(</span><span class="s2">"warning"</span><span class="p">),</span>
+                <span class="s2">"min_evidence_not_met"</span><span class="p">,</span>
+                <span class="s2">"validation_status.minimum_evidence_met=False for an actionable decision."</span><span class="p">,</span>
+                <span class="p">[</span><span class="s2">"validation_status"</span><span class="p">,</span> <span class="s2">"minimum_evidence_met"</span><span class="p">]))</span>
+
+        <span class="k">return</span> <span class="n">issues</span></div>
+
+
+    <span class="c1"># ── Cross-artifact consistency ─────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="OutageArtifactValidator._cross_artifact_checks">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator._cross_artifact_checks">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_cross_artifact_checks</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">bundle</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">JsonDict</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Validate consistency across the full set of present artifacts."""</span>
+        <span class="n">issues</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationIssue</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># activity_id must be identical across all artifacts that carry it</span>
+        <span class="n">activity_ids</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">name</span><span class="p">:</span> <span class="n">payload</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"activity_id"</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">payload</span> <span class="ow">in</span> <span class="n">bundle</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">payload</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"activity_id"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="p">}</span>
+        <span class="n">unique_ids</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">activity_ids</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">unique_ids</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span>
+                <span class="n">artifact</span><span class="o">=</span><span class="s2">"run_bundle"</span><span class="p">,</span>
+                <span class="n">severity</span><span class="o">=</span><span class="s2">"error"</span><span class="p">,</span>
+                <span class="n">code</span><span class="o">=</span><span class="s2">"activity_id_mismatch"</span><span class="p">,</span>
+                <span class="n">message</span><span class="o">=</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"activity_id is inconsistent across artifacts: </span><span class="si">{</span><span class="n">activity_ids</span><span class="si">}</span><span class="s2">. "</span>
+                    <span class="s2">"All artifacts in a run must share the same activity_id."</span>
+                <span class="p">),</span>
+            <span class="p">))</span>
+
+        <span class="c1"># run_id must be identical across all artifacts that carry it</span>
+        <span class="n">run_ids</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">name</span><span class="p">:</span> <span class="n">payload</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_id"</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">payload</span> <span class="ow">in</span> <span class="n">bundle</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">payload</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_id"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="p">}</span>
+        <span class="n">unique_run_ids</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">run_ids</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">unique_run_ids</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span>
+                <span class="n">artifact</span><span class="o">=</span><span class="s2">"run_bundle"</span><span class="p">,</span>
+                <span class="n">severity</span><span class="o">=</span><span class="s2">"error"</span><span class="p">,</span>
+                <span class="n">code</span><span class="o">=</span><span class="s2">"run_id_mismatch"</span><span class="p">,</span>
+                <span class="n">message</span><span class="o">=</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"run_id is inconsistent across artifacts: </span><span class="si">{</span><span class="n">run_ids</span><span class="si">}</span><span class="s2">. "</span>
+                    <span class="s2">"All artifacts in a run must share the same run_id."</span>
+                <span class="p">),</span>
+            <span class="p">))</span>
+
+        <span class="c1"># INCONCLUSIVE decision ↔ no feasible+cleared option in insertion_options</span>
+        <span class="n">rec</span> <span class="o">=</span> <span class="n">bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"outage_activity_recommendation"</span><span class="p">)</span>
+        <span class="n">opts</span> <span class="o">=</span> <span class="n">bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"insertion_options"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">rec</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">opts</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">status</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"decision_status"</span><span class="p">)</span>
+            <span class="n">feasible_cleared</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">o</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="p">(</span><span class="n">opts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"options"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+                <span class="k">if</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span> <span class="ow">and</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span>
+            <span class="p">]</span>
+            <span class="k">if</span> <span class="n">status</span> <span class="o">==</span> <span class="s2">"INCONCLUSIVE"</span> <span class="ow">and</span> <span class="n">feasible_cleared</span><span class="p">:</span>
+                <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span>
+                    <span class="n">artifact</span><span class="o">=</span><span class="s2">"run_bundle"</span><span class="p">,</span>
+                    <span class="n">severity</span><span class="o">=</span><span class="s2">"warning"</span><span class="p">,</span>
+                    <span class="n">code</span><span class="o">=</span><span class="s2">"inconclusive_but_feasible_options_exist"</span><span class="p">,</span>
+                    <span class="n">message</span><span class="o">=</span><span class="p">(</span>
+                        <span class="s2">"decision_status=INCONCLUSIVE but insertion_options contains "</span>
+                        <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">feasible_cleared</span><span class="p">)</span><span class="si">}</span><span class="s2"> feasible+cleared option(s). "</span>
+                        <span class="s2">"Review recommendation logic."</span>
+                    <span class="p">),</span>
+                <span class="p">))</span>
+
+        <span class="c1"># has_regulatory_constraint from intake → regulatory_flags in recommendation</span>
+        <span class="n">intake</span> <span class="o">=</span> <span class="n">bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"intake_result"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">rec</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">intake</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">intake</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_regulatory_constraint"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+                <span class="n">reg_flags</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_flags"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">reg_flags</span><span class="p">:</span>
+                    <span class="n">issues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_issue</span><span class="p">(</span>
+                        <span class="n">artifact</span><span class="o">=</span><span class="s2">"run_bundle"</span><span class="p">,</span>
+                        <span class="n">severity</span><span class="o">=</span><span class="s2">"warning"</span><span class="p">,</span>
+                        <span class="n">code</span><span class="o">=</span><span class="s2">"regulatory_constraint_not_surfaced"</span><span class="p">,</span>
+                        <span class="n">message</span><span class="o">=</span><span class="p">(</span>
+                            <span class="s2">"intake_result.has_regulatory_constraint=True but "</span>
+                            <span class="s2">"outage_activity_recommendation.regulatory_flags is empty."</span>
+                        <span class="p">),</span>
+                    <span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">issues</span></div>
+
+
+    <span class="c1"># ── Helpers ───────────────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="OutageArtifactValidator._sev">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator._sev">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_sev</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base</span><span class="p">:</span> <span class="n">Severity</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Severity</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Downgrade all issues to warnings in warn_only mode."""</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">==</span> <span class="s2">"warn_only"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"warning"</span>
+        <span class="k">return</span> <span class="n">base</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Module-level factory helper</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_issue">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/validators/outage_artifact_validator/index.html#src.dackar.outage.validators.outage_artifact_validator._issue">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_issue</span><span class="p">(</span>
+    <span class="n">artifact</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">severity</span><span class="p">:</span> <span class="n">Severity</span><span class="p">,</span>
+    <span class="n">code</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">message</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ValidationIssue</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">ValidationIssue</span><span class="p">(</span>
+        <span class="n">artifact</span><span class="o">=</span><span class="n">artifact</span><span class="p">,</span>
+        <span class="n">severity</span><span class="o">=</span><span class="n">severity</span><span class="p">,</span>
+        <span class="n">code</span><span class="o">=</span><span class="n">code</span><span class="p">,</span>
+        <span class="n">message</span><span class="o">=</span><span class="n">message</span><span class="p">,</span>
+        <span class="n">path</span><span class="o">=</span><span class="n">path</span> <span class="ow">or</span> <span class="p">[],</span>
+    <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,202 @@
+src.dackar.outage.workflows.completion_feedback_workflow
+========================================================
+
+.. py:module:: src.dackar.outage.workflows.completion_feedback_workflow
+
+.. autoapi-nested-parse::
+
+   Post-Completion Feedback Ingestion Workflow — M5.
+
+   Closes the learning loop after an emergent activity completes in the field.
+   Accepts a Stage G recommendation artifact plus field-measured completion data
+   and writes the result back into the historical analog index via the
+   orchestrator's ``record_completion()`` method.
+
+   Why a workflow layer?
+   ---------------------
+   ``OutageActivityOrchestrator.record_completion()`` accepts loose keyword
+   arguments.  The Stage G artifact already carries ``activity_id``, ``run_id``,
+   and the analyst's verdict (``analyst_review.reviewer_decision``), so callers
+   should not have to re-extract those fields manually.  This workflow:
+
+   1. Extracts the relevant fields from the recommendation artifact.
+   2. Routes based on ``reviewer_decision`` — accepted, rejected, modified,
+      pending, or absent.
+   3. Prefixes ``outcome_notes`` with a rejection marker when the analyst
+      rejected the recommendation, so the data is still stored for negative
+      learning without silently polluting the index.
+   4. Delegates to ``orchestrator.record_completion()`` and wraps the result
+      in an :class:`IngestionReceipt`.
+
+   Rejection storage rationale
+   ----------------------------
+   When an analyst rejects a recommendation, the actual field duration is still
+   valid historical data.  The rejection reflects recommendation quality, not
+   activity outcome.  We therefore write the record with an
+   ``RECOMMENDATION_REJECTED: <reviewer_notes>`` prefix in ``outcome_notes`` so
+   future Stage D retrievals can identify and optionally down-weight it.  Skipping
+   write-back on rejection would starve the index of real-world data from the very
+   activities that were hard to predict.
+
+   Usage::
+
+       from dackar.outage.workflows.completion_feedback_workflow import CompletionFeedbackWorkflow
+
+       workflow = CompletionFeedbackWorkflow(orchestrator=orchestrator)
+       receipt = workflow.ingest(
+           recommendation=stage_g_artifact,
+           actual_duration_hours=16.2,
+           actual_start="2026-04-12T08:00:00Z",
+           actual_finish="2026-04-13T00:12:00Z",
+           outcome_notes="Packing replaced; no scope expansion.",
+       )
+       # receipt.skipped          → False
+       # receipt.completion_record.index_updated → True
+       # receipt.completion_record.persisted     → True
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.workflows.completion_feedback_workflow.LOGGER
+   src.dackar.outage.workflows.completion_feedback_workflow.JsonDict
+   src.dackar.outage.workflows.completion_feedback_workflow._REJECTION_PREFIX
+   src.dackar.outage.workflows.completion_feedback_workflow._WRITE_DECISIONS
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.workflows.completion_feedback_workflow.IngestionReceipt
+   src.dackar.outage.workflows.completion_feedback_workflow.CompletionFeedbackWorkflow
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:data:: JsonDict
+
+.. py:data:: _REJECTION_PREFIX
+   :value: 'RECOMMENDATION_REJECTED'
+
+
+.. py:data:: _WRITE_DECISIONS
+
+.. py:class:: IngestionReceipt
+
+   Immutable receipt for one post-completion ingestion operation.
+
+   .. attribute:: activity_id
+
+      The emergent activity that completed.
+
+   .. attribute:: run_id
+
+      The pipeline run that produced the original recommendation.
+
+   .. attribute:: reviewer_decision
+
+      The analyst's verdict extracted from the recommendation artifact.
+      ``None`` when no analyst review was performed (review not required).
+
+   .. attribute:: actual_duration_hours
+
+      Field-measured duration passed to the workflow.
+
+   .. attribute:: completion_record
+
+      The :class:`~stages.completion_feedback.CompletionRecord` returned
+      by the orchestrator.  ``None`` when the ingestion was skipped.
+
+   .. attribute:: skipped
+
+      ``True`` when the workflow decided not to call ``record_completion()``
+      (e.g., review still pending, or ``activity_id`` is missing).
+
+   .. attribute:: skip_reason
+
+      Human-readable explanation for why ingestion was skipped.
+      ``None`` when ``skipped=False``.
+
+
+   .. py:attribute:: activity_id
+      :type:  str
+
+
+   .. py:attribute:: run_id
+      :type:  str
+
+
+   .. py:attribute:: reviewer_decision
+      :type:  Optional[str]
+
+
+   .. py:attribute:: actual_duration_hours
+      :type:  float
+
+
+   .. py:attribute:: completion_record
+      :type:  Optional[Any]
+
+
+   .. py:attribute:: skipped
+      :type:  bool
+
+
+   .. py:attribute:: skip_reason
+      :type:  Optional[str]
+
+
+.. py:class:: CompletionFeedbackWorkflow(orchestrator)
+
+   Bridge between a Stage G recommendation artifact and the feedback loop.
+
+   :param orchestrator: An ``OutageActivityOrchestrator`` instance (or any object
+                        with a ``record_completion(**kwargs)`` method).  The
+                        orchestrator must have a ``feedback_writer`` injected to
+                        actually update the index and persist to CSV; without it
+                        the orchestrator logs a WARNING and returns a no-op
+                        ``CompletionRecord``.
+
+
+   .. py:attribute:: _orchestrator
+
+
+   .. py:method:: ingest(recommendation, actual_duration_hours, *, actual_start = None, actual_finish = None, outcome_notes = '')
+
+      Ingest a completed Stage G recommendation into the analog index.
+
+      :param recommendation: The full Stage G artifact dict
+                             (``outage_activity_recommendation.json`` shape).
+      :param actual_duration_hours: Field-measured execution duration.  Must be
+                                    > 0; otherwise ``CompletionFeedbackWriter``
+                                    will skip the write and record a validation
+                                    warning.
+      :param actual_start: ISO-8601 field start timestamp (optional).
+      :param actual_finish: ISO-8601 field finish timestamp (optional).
+      :param outcome_notes: Caller-supplied free-text notes (optional).
+                            When ``reviewer_decision == "rejected"`` these are
+                            appended after the rejection prefix.
+
+      :returns: :class:`IngestionReceipt` with the outcome of the ingestion.
+
+
+
+   .. py:method:: _build_outcome_notes(reviewer_decision, reviewer_notes, caller_notes)
+      :staticmethod:
+
+
+      Compose the final outcome_notes string.
+
+      - ``rejected`` → ``"RECOMMENDATION_REJECTED: {reviewer_notes}\n{caller_notes}"``
+      - all other decisions → ``"{caller_notes}\n{reviewer_notes}"`` (blank lines stripped)
+
+
+

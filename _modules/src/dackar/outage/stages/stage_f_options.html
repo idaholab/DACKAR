@@ -1,0 +1,1500 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.stages.stage_f_options &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.stages.stage_f_options</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.stages.stage_f_options</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Stage F — Insertion Option Generator.</span>
+
+<span class="sd">Responsibilities:</span>
+<span class="sd">    1. Generate a candidate set of options for handling the emergent activity</span>
+<span class="sd">       (insert_now, defer_to_post_outage, pre_outage_staging,</span>
+<span class="sd">       add_contingency_buffer, parallel_execution, scope_reduction,</span>
+<span class="sd">       escalate_to_management).</span>
+<span class="sd">    2. Assess feasibility of each option (resource availability, dependency</span>
+<span class="sd">       constraints, technical limitations).</span>
+<span class="sd">    3. Check regulatory clearance for each option against the regulatory_drivers</span>
+<span class="sd">       identified in Stage A.  Options that would violate a TS surveillance,</span>
+<span class="sd">       NRC commitment, or CAP commitment are marked regulatory_cleared=False</span>
+<span class="sd">       and retained with a block reason (never silently dropped).</span>
+<span class="sd">    4. Score each option with a composite risk score.</span>
+<span class="sd">    5. Rank and select the recommended option (top feasible + regulatory-cleared</span>
+<span class="sd">       by risk score).</span>
+
+<span class="sd">Output schema: outage/schemas/insertion_options.json</span>
+
+<span class="sd">This is the only pipeline stage with no direct reuse target from RCA —</span>
+<span class="sd">the option generation and ranking logic is unique to outage decision support.</span>
+<span class="sd">The scoring pattern is adapted from RuleBasedCausalityEngineV31 but the</span>
+<span class="sd">dimensions are entirely different.</span>
+
+<span class="sd">Scoring dimensions for each option (lower total = lower risk = better):</span>
+<span class="sd">    cp_impact       (0.35) — normalised CP drag hours; 0.0 for defer/escalate</span>
+<span class="sd">    confidence      (0.15) — 1 − option_confidence; high confidence → low risk</span>
+<span class="sd">    resource_ready  (0.20) — 0.0 if no resource conflicts, 1.0 if conflicts present</span>
+<span class="sd">    causal_urgency  (0.20) — action options: 1 − urgency (urgency to act lowers</span>
+<span class="sd">                              risk of acting); non-action options: urgency</span>
+<span class="sd">                              (urgency to act increases risk of not acting)</span>
+<span class="sd">    cost            (0.10) — normalised total_cost_usd (labour + schedule extension</span>
+<span class="sd">                              + crash premium) across all candidate options</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<div class="viewcode-block" id="LOGGER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.LOGGER">[docs]</a>
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<span class="c1"># Option type constants</span>
+<div class="viewcode-block" id="_INSERT_NOW">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._INSERT_NOW">[docs]</a>
+<span class="n">_INSERT_NOW</span> <span class="o">=</span> <span class="s2">"insert_now"</span></div>
+
+<div class="viewcode-block" id="_DEFER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._DEFER">[docs]</a>
+<span class="n">_DEFER</span> <span class="o">=</span> <span class="s2">"defer_to_post_outage"</span></div>
+
+<div class="viewcode-block" id="_PRE_STAGE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._PRE_STAGE">[docs]</a>
+<span class="n">_PRE_STAGE</span> <span class="o">=</span> <span class="s2">"pre_outage_staging"</span></div>
+
+<div class="viewcode-block" id="_CONTINGENCY">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._CONTINGENCY">[docs]</a>
+<span class="n">_CONTINGENCY</span> <span class="o">=</span> <span class="s2">"add_contingency_buffer"</span></div>
+
+<div class="viewcode-block" id="_PARALLEL">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._PARALLEL">[docs]</a>
+<span class="n">_PARALLEL</span> <span class="o">=</span> <span class="s2">"parallel_execution"</span></div>
+
+<div class="viewcode-block" id="_SCOPE_REDUCTION">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._SCOPE_REDUCTION">[docs]</a>
+<span class="n">_SCOPE_REDUCTION</span> <span class="o">=</span> <span class="s2">"scope_reduction"</span></div>
+
+<div class="viewcode-block" id="_ESCALATE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._ESCALATE">[docs]</a>
+<span class="n">_ESCALATE</span> <span class="o">=</span> <span class="s2">"escalate_to_management"</span></div>
+
+
+<span class="c1"># Scoring weights</span>
+<div class="viewcode-block" id="_W_CP_IMPACT">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._W_CP_IMPACT">[docs]</a>
+<span class="n">_W_CP_IMPACT</span> <span class="o">=</span> <span class="mf">0.35</span></div>
+
+<div class="viewcode-block" id="_W_CONFIDENCE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._W_CONFIDENCE">[docs]</a>
+<span class="n">_W_CONFIDENCE</span> <span class="o">=</span> <span class="mf">0.15</span></div>
+
+<div class="viewcode-block" id="_W_RESOURCE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._W_RESOURCE">[docs]</a>
+<span class="n">_W_RESOURCE</span> <span class="o">=</span> <span class="mf">0.20</span></div>
+
+<div class="viewcode-block" id="_W_URGENCY">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._W_URGENCY">[docs]</a>
+<span class="n">_W_URGENCY</span> <span class="o">=</span> <span class="mf">0.20</span></div>
+
+<div class="viewcode-block" id="_W_COST">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._W_COST">[docs]</a>
+<span class="n">_W_COST</span> <span class="o">=</span> <span class="mf">0.10</span></div>
+
+
+<span class="c1"># Non-action option types — for these, high causal urgency increases risk</span>
+<div class="viewcode-block" id="_NON_ACTION_TYPES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._NON_ACTION_TYPES">[docs]</a>
+<span class="n">_NON_ACTION_TYPES</span> <span class="o">=</span> <span class="p">{</span><span class="n">_DEFER</span><span class="p">,</span> <span class="n">_ESCALATE</span><span class="p">}</span></div>
+
+
+<span class="c1"># Regulatory driver types that prohibit deferral.</span>
+<span class="c1"># Must match the driver_type enum in activity_intake_result.json.</span>
+<span class="c1"># Note: defer_to_post_outage is also blocked when any driver has defer_prohibited=True;</span>
+<span class="c1"># this set provides a secondary driver_type-based check for consistency.</span>
+<div class="viewcode-block" id="_DEFER_PROHIBITED_TYPES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._DEFER_PROHIBITED_TYPES">[docs]</a>
+<span class="n">_DEFER_PROHIBITED_TYPES</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"ts_surveillance"</span><span class="p">,</span>
+    <span class="s2">"nrc_commitment"</span><span class="p">,</span>
+    <span class="s2">"license_basis_inspection"</span><span class="p">,</span>
+    <span class="s2">"hold_point"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># Regulatory driver types that prohibit scope reduction.</span>
+<span class="c1"># Scope reduction check does not have a defer_prohibited analogue, so this set</span>
+<span class="c1"># is the sole gate. Must stay in sync with the driver_type enum.</span>
+<div class="viewcode-block" id="_SCOPE_REDUCTION_PROHIBITED_TYPES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._SCOPE_REDUCTION_PROHIBITED_TYPES">[docs]</a>
+<span class="n">_SCOPE_REDUCTION_PROHIBITED_TYPES</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"ts_surveillance"</span><span class="p">,</span>
+    <span class="s2">"license_basis_inspection"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># Duration distribution confidence tier → confidence float</span>
+<div class="viewcode-block" id="_TIER_TO_CONFIDENCE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._TIER_TO_CONFIDENCE">[docs]</a>
+<span class="n">_TIER_TO_CONFIDENCE</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"data_supported"</span><span class="p">:</span> <span class="mf">0.85</span><span class="p">,</span>
+    <span class="s2">"sme_informed"</span><span class="p">:</span>   <span class="mf">0.65</span><span class="p">,</span>
+    <span class="s2">"low_confidence"</span><span class="p">:</span> <span class="mf">0.40</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># Causal posture → urgency score used in the causal_urgency dimension</span>
+<div class="viewcode-block" id="_POSTURE_TO_URGENCY">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._POSTURE_TO_URGENCY">[docs]</a>
+<span class="n">_POSTURE_TO_URGENCY</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"supported"</span><span class="p">:</span>                <span class="mf">0.80</span><span class="p">,</span>   <span class="c1"># strong causal history — urgency is high</span>
+    <span class="s2">"contradicted_with_support"</span><span class="p">:</span> <span class="mf">0.75</span><span class="p">,</span>  <span class="c1"># positive evidence present but contradictions</span>
+                                        <span class="c1"># require analyst review; treat as near-urgent</span>
+    <span class="s2">"contradicted"</span><span class="p">:</span>             <span class="mf">0.70</span><span class="p">,</span>   <span class="c1"># contradictions only, no strong support</span>
+    <span class="s2">"partial"</span><span class="p">:</span>                  <span class="mf">0.50</span><span class="p">,</span>   <span class="c1"># moderate evidence</span>
+    <span class="s2">"weak"</span><span class="p">:</span>                     <span class="mf">0.20</span><span class="p">,</span>
+    <span class="s2">"insufficient_data"</span><span class="p">:</span>        <span class="mf">0.40</span><span class="p">,</span>   <span class="c1"># neutral</span>
+<span class="p">}</span></div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="InsertionOptionConfig">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionConfig">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">InsertionOptionConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Configuration for Stage F."""</span>
+
+<div class="viewcode-block" id="InsertionOptionConfig.max_options">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionConfig.max_options">[docs]</a>
+    <span class="n">max_options</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">6</span></div>
+
+<span class="w">    </span><span class="sd">"""Maximum options to generate."""</span>
+
+<div class="viewcode-block" id="InsertionOptionConfig.include_infeasible_options">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionConfig.include_infeasible_options">[docs]</a>
+    <span class="n">include_infeasible_options</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<span class="w">    </span><span class="sd">"""Retain infeasible options with feasible=False and an infeasibility_reason</span>
+<span class="sd">    so the outage manager can see why they were ruled out."""</span>
+
+<div class="viewcode-block" id="InsertionOptionConfig.include_regulatory_blocked_options">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionConfig.include_regulatory_blocked_options">[docs]</a>
+    <span class="n">include_regulatory_blocked_options</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<span class="w">    </span><span class="sd">"""Retain regulatory-blocked options with regulatory_cleared=False and a</span>
+<span class="sd">    block reason.  Hiding them would mask the constraint from the user."""</span>
+
+<div class="viewcode-block" id="InsertionOptionConfig.escalate_if_cp_drag_exceeds_hours">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionConfig.escalate_if_cp_drag_exceeds_hours">[docs]</a>
+    <span class="n">escalate_if_cp_drag_exceeds_hours</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">24.0</span></div>
+
+<span class="w">    </span><span class="sd">"""Automatically generate an escalate_to_management option if the</span>
+<span class="sd">    insert_now CP drag exceeds this threshold."""</span>
+
+<div class="viewcode-block" id="InsertionOptionConfig.escalate_decision_delay_hours">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionConfig.escalate_decision_delay_hours">[docs]</a>
+    <span class="n">escalate_decision_delay_hours</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">4.0</span></div>
+
+<span class="w">    </span><span class="sd">"""Expected hours from escalation trigger to management decision.</span>
+<span class="sd">    Added as a separate ``decision_latency_cost_usd`` line item in the</span>
+<span class="sd">    escalate option cost estimate (and included in ``total_cost_usd``) to</span>
+<span class="sd">    reflect the outage time consumed while waiting for approval.</span>
+<span class="sd">    Override per-plant based on typical escalation turnaround time."""</span>
+
+<div class="viewcode-block" id="InsertionOptionConfig.near_critical_float_threshold_hours">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionConfig.near_critical_float_threshold_hours">[docs]</a>
+    <span class="n">near_critical_float_threshold_hours</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">8.0</span></div>
+
+<span class="w">    </span><span class="sd">"""Passed down from orchestrator config for option feasibility checks."""</span>
+
+<div class="viewcode-block" id="InsertionOptionConfig.contingency_buffer_p_level">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionConfig.contingency_buffer_p_level">[docs]</a>
+    <span class="n">contingency_buffer_p_level</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.80</span></div>
+
+<span class="w">    </span><span class="sd">"""Percentile to use for contingency buffer sizing.  p80 − p50 of the</span>
+<span class="sd">    duration distribution sets the buffer width."""</span>
+
+<div class="viewcode-block" id="InsertionOptionConfig.scope_reduction_fraction">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionConfig.scope_reduction_fraction">[docs]</a>
+    <span class="n">scope_reduction_fraction</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.60</span></div>
+
+<span class="w">    </span><span class="sd">"""Fraction of the p50 duration estimate used for the scope-reduction option.</span>
+<span class="sd">    Represents executing minimum required scope only (e.g. 60% of full scope)."""</span>
+
+    <span class="c1"># ── Cost model parameters ─────────────────────────────────────────────────</span>
+<div class="viewcode-block" id="InsertionOptionConfig.labor_rate_per_crew_hour">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionConfig.labor_rate_per_crew_hour">[docs]</a>
+    <span class="n">labor_rate_per_crew_hour</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">150.0</span></div>
+
+<span class="w">    </span><span class="sd">"""Fully-loaded labour cost per crew-hour (USD).  Default 150 $/crew-hr is a</span>
+<span class="sd">    reasonable US nuclear outage approximation; override per-plant."""</span>
+
+<div class="viewcode-block" id="InsertionOptionConfig.outage_day_cost_per_hour">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionConfig.outage_day_cost_per_hour">[docs]</a>
+    <span class="n">outage_day_cost_per_hour</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">50_000.0</span></div>
+
+<span class="w">    </span><span class="sd">"""Opportunity cost of one hour of additional outage duration (USD/hr).</span>
+<span class="sd">    Typical range for PWR/BWR: $40k–$80k/hr depending on energy market and</span>
+<span class="sd">    fuel-cycle position.  Used to price CP drag across all options."""</span>
+
+<div class="viewcode-block" id="InsertionOptionConfig.crash_premium_multiplier">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionConfig.crash_premium_multiplier">[docs]</a>
+    <span class="n">crash_premium_multiplier</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.50</span></div>
+
+<span class="w">    </span><span class="sd">"""Overtime / expedite premium applied to the labour cost of the</span>
+<span class="sd">    ``parallel_execution`` option.  1.5 = 50% premium above standard rate."""</span>
+
+<div class="viewcode-block" id="InsertionOptionConfig.default_crew_count">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionConfig.default_crew_count">[docs]</a>
+    <span class="n">default_crew_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span></div>
+
+<span class="w">    </span><span class="sd">"""Crew head-count used when Stage E crew_continuity data is unavailable.</span>
+<span class="sd">    Applied to all options uniformly in that fall-back case."""</span>
+
+<div class="viewcode-block" id="InsertionOptionConfig.scoring_weights">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionConfig.scoring_weights">[docs]</a>
+    <span class="n">scoring_weights</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">"cp_impact"</span><span class="p">:</span>      <span class="n">_W_CP_IMPACT</span><span class="p">,</span>
+        <span class="s2">"confidence"</span><span class="p">:</span>     <span class="n">_W_CONFIDENCE</span><span class="p">,</span>
+        <span class="s2">"resource_ready"</span><span class="p">:</span> <span class="n">_W_RESOURCE</span><span class="p">,</span>
+        <span class="s2">"causal_urgency"</span><span class="p">:</span> <span class="n">_W_URGENCY</span><span class="p">,</span>
+        <span class="s2">"cost"</span><span class="p">:</span>           <span class="n">_W_COST</span><span class="p">,</span>
+    <span class="p">})</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="InsertionOptionGenerator">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">InsertionOptionGenerator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Concrete Stage F implementation.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        config: Stage configuration.</span>
+<span class="sd">        extra_option_generators: Optional list of domain-specific option generator</span>
+<span class="sd">            callables to supplement the built-in seven option types.  Each callable</span>
+<span class="sd">            receives the same keyword arguments as ``generate()`` and must return</span>
+<span class="sd">            one of: a single ``JsonDict`` option, a ``List[JsonDict]`` of options</span>
+<span class="sd">            (including an empty list to produce zero options), or ``None`` to opt</span>
+<span class="sd">            out.  Results are appended to the candidate list before regulatory</span>
+<span class="sd">            clearance, cost estimation, and scoring.</span>
+
+<span class="sd">            Example::</span>
+
+<span class="sd">                def partial_completion_option(</span>
+<span class="sd">                    emergent_activity, intake_result, temporal_event_chain,</span>
+<span class="sd">                    schedule_impact_assessment, historical_analogs, run_context,</span>
+<span class="sd">                ) -&gt; JsonDict:</span>
+<span class="sd">                    ...</span>
+
+<span class="sd">                generator = InsertionOptionGenerator(</span>
+<span class="sd">                    extra_option_generators=[partial_completion_option]</span>
+<span class="sd">                )</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">InsertionOptionConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">extra_option_generators</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="InsertionOptionGenerator.config">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator.config">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">InsertionOptionConfig</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="InsertionOptionGenerator.extra_option_generators">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator.extra_option_generators">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">extra_option_generators</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">extra_option_generators</span> <span class="ow">or</span> <span class="p">[])</span></div>
+
+
+<div class="viewcode-block" id="InsertionOptionGenerator.register_option_generator">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator.register_option_generator">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_option_generator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Register an additional option generator callable.</span>
+
+<span class="sd">        Appended to ``extra_option_generators``; called on every ``generate()``</span>
+<span class="sd">        invocation after the built-in option generators.</span>
+<span class="sd">        """</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">extra_option_generators</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">fn</span><span class="p">)</span></div>
+
+
+    <span class="c1"># ── Protocol method ───────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="InsertionOptionGenerator.generate">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator.generate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">temporal_event_chain</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact_assessment</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Execute Stage F for one emergent activity.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            InsertionOptions artifact conforming to</span>
+<span class="sd">            outage/schemas/insertion_options.json.</span>
+<span class="sd">        """</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">run_context</span><span class="p">[</span><span class="s2">"run_id"</span><span class="p">]</span>
+        <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">emergent_activity</span><span class="p">[</span><span class="s2">"activity_id"</span><span class="p">]</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">"Stage F option generation for </span><span class="si">%s</span><span class="s2"> (run=</span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">,</span> <span class="n">run_id</span>
+        <span class="p">)</span>
+
+        <span class="n">regulatory_drivers</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_drivers"</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">causal_posture</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">temporal_event_chain</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"summary"</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causal_posture"</span><span class="p">,</span> <span class="s2">"insufficient_data"</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Generate all candidate options</span>
+        <span class="n">candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">candidates</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_generate_insert_now</span><span class="p">(</span>
+                <span class="n">emergent_activity</span><span class="p">,</span> <span class="n">intake_result</span><span class="p">,</span> <span class="n">schedule_impact_assessment</span><span class="p">,</span> <span class="n">historical_analogs</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">candidates</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_generate_defer</span><span class="p">(</span>
+                <span class="n">emergent_activity</span><span class="p">,</span> <span class="n">intake_result</span><span class="p">,</span> <span class="n">schedule_impact_assessment</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">candidates</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_generate_contingency_buffer</span><span class="p">(</span>
+                <span class="n">emergent_activity</span><span class="p">,</span> <span class="n">schedule_impact_assessment</span><span class="p">,</span> <span class="n">historical_analogs</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">candidates</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>  <span class="c1"># _generate_parallel_option returns [] or [option]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_generate_parallel_option</span><span class="p">(</span>
+                <span class="n">emergent_activity</span><span class="p">,</span> <span class="n">schedule_impact_assessment</span><span class="p">,</span> <span class="n">historical_analogs</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">candidates</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_generate_scope_reduction</span><span class="p">(</span>
+                <span class="n">emergent_activity</span><span class="p">,</span> <span class="n">schedule_impact_assessment</span><span class="p">,</span> <span class="n">historical_analogs</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">cp_drag</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">schedule_impact_assessment</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_drag_hours"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">cp_drag</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">escalate_if_cp_drag_exceeds_hours</span><span class="p">:</span>
+            <span class="n">candidates</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_generate_escalate</span><span class="p">(</span>
+                <span class="n">emergent_activity</span><span class="p">,</span> <span class="n">schedule_impact_assessment</span><span class="p">,</span> <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span>
+            <span class="p">))</span>
+
+        <span class="c1"># Invoke any registered domain-specific option generators.</span>
+        <span class="c1"># Each callable receives the full generate() keyword arguments and may</span>
+        <span class="c1"># return a JsonDict, a List[JsonDict], or None.</span>
+        <span class="k">for</span> <span class="n">extra_fn</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">extra_option_generators</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="n">extra_fn</span><span class="p">(</span>
+                    <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+                    <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+                    <span class="n">temporal_event_chain</span><span class="o">=</span><span class="n">temporal_event_chain</span><span class="p">,</span>
+                    <span class="n">schedule_impact_assessment</span><span class="o">=</span><span class="n">schedule_impact_assessment</span><span class="p">,</span>
+                    <span class="n">historical_analogs</span><span class="o">=</span><span class="n">historical_analogs</span><span class="p">,</span>
+                    <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">pass</span>
+                <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                    <span class="n">candidates</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">candidates</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">"Stage F: extra_option_generator </span><span class="si">%r</span><span class="s2"> raised an exception — skipping"</span><span class="p">,</span>
+                    <span class="nb">getattr</span><span class="p">(</span><span class="n">extra_fn</span><span class="p">,</span> <span class="s2">"__name__"</span><span class="p">,</span> <span class="nb">repr</span><span class="p">(</span><span class="n">extra_fn</span><span class="p">)),</span>
+                    <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="p">)</span>
+
+        <span class="c1"># Check regulatory clearance for each option</span>
+        <span class="k">for</span> <span class="n">option</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+            <span class="n">cleared</span><span class="p">,</span> <span class="n">block_reason</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_regulatory_clearance</span><span class="p">(</span>
+                <span class="n">option</span><span class="p">,</span> <span class="n">regulatory_drivers</span>
+            <span class="p">)</span>
+            <span class="n">option</span><span class="p">[</span><span class="s2">"regulatory_cleared"</span><span class="p">]</span> <span class="o">=</span> <span class="n">cleared</span>
+            <span class="n">option</span><span class="p">[</span><span class="s2">"regulatory_block_reason"</span><span class="p">]</span> <span class="o">=</span> <span class="n">block_reason</span>
+
+        <span class="c1"># Compute cost estimates (parametric, pre-scoring)</span>
+        <span class="n">dist</span> <span class="o">=</span> <span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"duration_distribution"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">p50</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"p50_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">p80</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"p80_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">p50</span><span class="p">)</span>
+        <span class="n">crew_count</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_crew_count</span><span class="p">(</span><span class="n">schedule_impact_assessment</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">option</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+            <span class="n">option</span><span class="p">[</span><span class="s2">"cost_estimate"</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_option_cost</span><span class="p">(</span>
+                <span class="n">option</span><span class="p">,</span> <span class="n">p50</span><span class="o">=</span><span class="n">p50</span><span class="p">,</span> <span class="n">p80</span><span class="o">=</span><span class="n">p80</span><span class="p">,</span> <span class="n">crew_count</span><span class="o">=</span><span class="n">crew_count</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Score and rank (cost normalisation uses all candidates)</span>
+        <span class="n">max_cost</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">o</span><span class="p">[</span><span class="s2">"cost_estimate"</span><span class="p">][</span><span class="s2">"total_cost_usd"</span><span class="p">]</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">candidates</span>
+             <span class="k">if</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cost_estimate"</span><span class="p">)),</span>
+            <span class="n">default</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+        <span class="p">)</span> <span class="ow">or</span> <span class="mf">1.0</span>
+        <span class="k">for</span> <span class="n">option</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+            <span class="n">option</span><span class="p">[</span><span class="s2">"risk_score"</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_option</span><span class="p">(</span>
+                <span class="n">option</span><span class="p">,</span> <span class="n">schedule_impact_assessment</span><span class="p">,</span> <span class="n">historical_analogs</span><span class="p">,</span> <span class="n">causal_posture</span><span class="p">,</span>
+                <span class="n">max_cost</span><span class="o">=</span><span class="n">max_cost</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="n">options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rank_options</span><span class="p">(</span><span class="n">candidates</span><span class="p">)</span>
+
+        <span class="c1"># Select recommended option: top feasible + regulatory-cleared</span>
+        <span class="n">recommended_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_select_recommended</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
+
+        <span class="n">summary</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_ranking_summary</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"activity_id"</span><span class="p">:</span> <span class="n">activity_id</span><span class="p">,</span>
+            <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+            <span class="s2">"generated_at"</span><span class="p">:</span> <span class="n">run_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"started_at"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+            <span class="s2">"options"</span><span class="p">:</span> <span class="n">options</span><span class="p">,</span>
+            <span class="s2">"recommended_option_id"</span><span class="p">:</span> <span class="n">recommended_id</span><span class="p">,</span>
+            <span class="s2">"recommendation_confidence"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_recommendation_confidence</span><span class="p">(</span>
+                <span class="n">options</span><span class="p">,</span> <span class="n">recommended_id</span><span class="p">,</span> <span class="n">historical_analogs</span>
+            <span class="p">),</span>
+            <span class="s2">"min_cost_option_id"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_min_cost_option_id</span><span class="p">(</span><span class="n">options</span><span class="p">),</span>
+            <span class="s2">"ranking_summary"</span><span class="p">:</span> <span class="n">summary</span><span class="p">,</span>
+            <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"generated_by"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+                <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+                <span class="s2">"schedule_impact_assessment_id"</span><span class="p">:</span> <span class="n">schedule_impact_assessment</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_id"</span><span class="p">),</span>
+            <span class="p">},</span>
+        <span class="p">}</span></div>
+
+
+    <span class="c1"># ── Option generators ─────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="InsertionOptionGenerator._generate_insert_now">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._generate_insert_now">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_generate_insert_now</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Generate the insert_now option.</span>
+
+<span class="sd">        Uses the schedule_impact_assessment insertion_point and float_analysis</span>
+<span class="sd">        to set cp_impact_hours and criticality_label.</span>
+
+<span class="sd">        feasible=True unless resource_conflicts are present and cannot be resolved.</span>
+<span class="sd">        Resource conflicts make the option infeasible only when the conflict type</span>
+<span class="sd">        is 'crew_unavailable' — tool/scaffold conflicts are usually resolvable</span>
+<span class="sd">        within the window and are noted in the rationale rather than blocking.</span>
+<span class="sd">        """</span>
+        <span class="n">float_analysis</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_analysis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">cp_impact</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">insertion_point</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"insertion_point"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">resource_conflicts</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"resource_conflicts"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+
+        <span class="n">cp_drag_hours</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">cp_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_drag_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">criticality_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">,</span> <span class="s2">"non_critical"</span><span class="p">)</span>
+        <span class="n">float_consumed</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_consumed_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+
+        <span class="c1"># Duration confidence from analog distribution</span>
+        <span class="n">dist</span> <span class="o">=</span> <span class="n">analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"duration_distribution"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">confidence</span> <span class="o">=</span> <span class="n">_tier_confidence</span><span class="p">(</span><span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_tier"</span><span class="p">))</span>
+
+        <span class="c1"># Feasibility: hard crew conflicts make insertion infeasible</span>
+        <span class="n">hard_conflicts</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">resource_conflicts</span>
+            <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"conflict_type"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"crew_unavailable"</span>
+        <span class="p">]</span>
+        <span class="n">feasible</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">hard_conflicts</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+        <span class="n">infeasibility_reason</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">feasible</span><span class="p">:</span>
+            <span class="n">skills</span> <span class="o">=</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"skill_required"</span><span class="p">,</span> <span class="s2">"?"</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">hard_conflicts</span><span class="p">)</span>
+            <span class="n">infeasibility_reason</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Crew unavailable for required skill(s): </span><span class="si">{</span><span class="n">skills</span><span class="si">}</span><span class="s2">. "</span>
+                <span class="s2">"Resolve crew conflict before inserting."</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Rationale</span>
+        <span class="k">if</span> <span class="n">criticality_label</span> <span class="o">==</span> <span class="s2">"critical"</span><span class="p">:</span>
+            <span class="n">rationale</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Insert immediately on critical path; </span><span class="si">{</span><span class="n">cp_drag_hours</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h CP drag expected. "</span>
+                <span class="sa">f</span><span class="s2">"Insertion point: </span><span class="si">{</span><span class="n">insertion_point</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'task_id'</span><span class="p">,</span><span class="w"> </span><span class="s1">'TBD'</span><span class="p">)</span><span class="si">}</span><span class="s2">."</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">criticality_label</span> <span class="o">==</span> <span class="s2">"near_critical"</span><span class="p">:</span>
+            <span class="n">rationale</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Insert now — near-critical path; </span><span class="si">{</span><span class="n">float_consumed</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h float consumed. "</span>
+                <span class="s2">"Monitor closely."</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">rationale</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Insert now — non-critical path; </span><span class="si">{</span><span class="n">float_consumed</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h float consumed, "</span>
+                <span class="s2">"no CP drag anticipated."</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">resource_conflicts</span> <span class="ow">and</span> <span class="n">feasible</span><span class="p">:</span>
+            <span class="n">rationale</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">" Note: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">resource_conflicts</span><span class="p">)</span><span class="si">}</span><span class="s2"> non-blocking resource conflict(s) to coordinate."</span>
+
+        <span class="k">return</span> <span class="n">_make_option</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">[</span><span class="s2">"activity_id"</span><span class="p">],</span>
+            <span class="n">option_type</span><span class="o">=</span><span class="n">_INSERT_NOW</span><span class="p">,</span>
+            <span class="n">rationale</span><span class="o">=</span><span class="n">rationale</span><span class="p">,</span>
+            <span class="n">feasible</span><span class="o">=</span><span class="n">feasible</span><span class="p">,</span>
+            <span class="n">infeasibility_reason</span><span class="o">=</span><span class="n">infeasibility_reason</span><span class="p">,</span>
+            <span class="n">cp_impact_hours</span><span class="o">=</span><span class="n">cp_drag_hours</span><span class="p">,</span>
+            <span class="n">criticality_label</span><span class="o">=</span><span class="n">criticality_label</span><span class="p">,</span>
+            <span class="n">confidence</span><span class="o">=</span><span class="n">confidence</span><span class="p">,</span>
+            <span class="n">resource_conflicts</span><span class="o">=</span><span class="n">resource_conflicts</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="InsertionOptionGenerator._generate_defer">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._generate_defer">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_generate_defer</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Generate the defer_to_post_outage option.</span>
+
+<span class="sd">        feasible=True for non-safety-related items; infeasible when the activity</span>
+<span class="sd">        is safety-critical or in an active LCO window (regulatory clearance is</span>
+<span class="sd">        checked separately by _check_regulatory_clearance).</span>
+
+<span class="sd">        cp_impact_hours=0.0 — deferral avoids all in-outage schedule impact.</span>
+<span class="sd">        Confidence is inherently high (0.85) because the scheduling outcome is</span>
+<span class="sd">        certain; the residual risk lies in the plant state during the deferral</span>
+<span class="sd">        period, which is captured in causal_urgency during scoring.</span>
+<span class="sd">        """</span>
+        <span class="n">is_safety_related</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span>
+            <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"safety_related"</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"safety_classification"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"safety_related"</span>
+        <span class="p">)</span>
+        <span class="n">active_lco</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"active_lco"</span><span class="p">))</span>
+
+        <span class="n">feasible</span> <span class="o">=</span> <span class="ow">not</span> <span class="p">(</span><span class="n">is_safety_related</span> <span class="ow">or</span> <span class="n">active_lco</span><span class="p">)</span>
+        <span class="n">infeasibility_reason</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">is_safety_related</span><span class="p">:</span>
+            <span class="n">infeasibility_reason</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="s2">"Activity is safety-related — deferral to post-outage is not permitted "</span>
+                <span class="s2">"without engineering disposition."</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">active_lco</span><span class="p">:</span>
+            <span class="n">infeasibility_reason</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="s2">"Active LCO entry is in effect — deferral cannot proceed until "</span>
+                <span class="s2">"the LCO condition is resolved."</span>
+            <span class="p">)</span>
+
+        <span class="n">rationale</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s2">"Defer all work to the next planned maintenance window. "</span>
+            <span class="s2">"No in-outage schedule impact. Residual plant risk must be evaluated "</span>
+            <span class="s2">"before approving deferral."</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">_make_option</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">[</span><span class="s2">"activity_id"</span><span class="p">],</span>
+            <span class="n">option_type</span><span class="o">=</span><span class="n">_DEFER</span><span class="p">,</span>
+            <span class="n">rationale</span><span class="o">=</span><span class="n">rationale</span><span class="p">,</span>
+            <span class="n">feasible</span><span class="o">=</span><span class="n">feasible</span><span class="p">,</span>
+            <span class="n">infeasibility_reason</span><span class="o">=</span><span class="n">infeasibility_reason</span><span class="p">,</span>
+            <span class="n">cp_impact_hours</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+            <span class="n">criticality_label</span><span class="o">=</span><span class="s2">"non_critical"</span><span class="p">,</span>
+            <span class="n">confidence</span><span class="o">=</span><span class="mf">0.85</span><span class="p">,</span>
+            <span class="n">resource_conflicts</span><span class="o">=</span><span class="p">[],</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="InsertionOptionGenerator._generate_contingency_buffer">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._generate_contingency_buffer">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_generate_contingency_buffer</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Generate the add_contingency_buffer option.</span>
+
+<span class="sd">        Proposes reserving a float buffer sized at p80 − p50 duration hours</span>
+<span class="sd">        (from the historical analog distribution) rather than scheduling the full</span>
+<span class="sd">        scope immediately.  Suitable when scope is uncertain and the activity may</span>
+<span class="sd">        be shorter than estimated.</span>
+
+<span class="sd">        If the activity has not yet started and there is adequate lead time before</span>
+<span class="sd">        the outage window, the option type is upgraded to pre_outage_staging.</span>
+<span class="sd">        feasible=True when the buffer fits within the available float.</span>
+<span class="sd">        """</span>
+        <span class="n">dist</span> <span class="o">=</span> <span class="n">analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"duration_distribution"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">p50</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"p50_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">p80</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"p80_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">buffer_hours</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">p80</span> <span class="o">-</span> <span class="n">p50</span><span class="p">)</span>
+
+        <span class="n">float_analysis</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_analysis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">float_consumed</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_consumed_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">criticality_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">,</span> <span class="s2">"non_critical"</span><span class="p">)</span>
+
+        <span class="c1"># Pre-outage staging upgrade: activity not yet started AND detection</span>
+        <span class="c1"># occurred before the outage window opened (so staging lead time exists).</span>
+        <span class="n">actual_start</span> <span class="o">=</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"actual_start"</span><span class="p">)</span>
+        <span class="n">detection_ts</span> <span class="o">=</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection_timestamp"</span><span class="p">)</span>
+        <span class="n">outage_start</span> <span class="o">=</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"outage_start"</span><span class="p">)</span>
+        <span class="n">option_type</span> <span class="o">=</span> <span class="n">_CONTINGENCY</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">actual_start</span> <span class="ow">and</span> <span class="n">outage_start</span> <span class="ow">and</span> <span class="n">detection_ts</span><span class="p">:</span>
+            <span class="n">dt_detect</span> <span class="o">=</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">detection_ts</span><span class="p">)</span>
+            <span class="n">dt_outage</span> <span class="o">=</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">outage_start</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">dt_detect</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">dt_outage</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">dt_detect</span> <span class="o">&lt;</span> <span class="n">dt_outage</span><span class="p">:</span>
+                <span class="n">option_type</span> <span class="o">=</span> <span class="n">_PRE_STAGE</span>
+
+        <span class="c1"># Buffer absorbs network float: use available_float_before (actual network</span>
+        <span class="c1"># float at insertion point) if populated by Stage E; fall back to</span>
+        <span class="c1"># remaining_float_hours if present.  When neither field is populated</span>
+        <span class="c1"># default to inf so the option is never marked infeasible due to absent</span>
+        <span class="c1"># float data (float_consumed_hours records already-consumed float, not</span>
+        <span class="c1"># available float, and must not be used as a proxy here).</span>
+        <span class="c1">#</span>
+        <span class="c1"># IMPORTANT: use explicit `is not None` checks rather than truthiness.</span>
+        <span class="c1"># available_float_before == 0.0 is falsy in Python — a zero-float schedule</span>
+        <span class="c1"># (activity already on the critical path) would otherwise fall through to</span>
+        <span class="c1"># the remaining_float_hours fallback and then to inf, erroneously marking</span>
+        <span class="c1"># the buffer feasible when there is no float to absorb it.</span>
+        <span class="n">_fb_before</span> <span class="o">=</span> <span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"available_float_before"</span><span class="p">)</span>
+        <span class="n">_fb_remaining</span> <span class="o">=</span> <span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"remaining_float_hours"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">_fb_before</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">available_float</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">_fb_before</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">_fb_remaining</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">available_float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">_fb_remaining</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">available_float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">"inf"</span><span class="p">)</span>  <span class="c1"># unknown → permissive</span>
+        <span class="n">remaining_float</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">available_float</span> <span class="o">-</span> <span class="n">p50</span><span class="p">)</span>
+        <span class="n">feasible</span> <span class="o">=</span> <span class="n">buffer_hours</span> <span class="o">&lt;=</span> <span class="n">remaining_float</span> <span class="ow">or</span> <span class="n">criticality_label</span> <span class="o">==</span> <span class="s2">"non_critical"</span>
+        <span class="n">infeasibility_reason</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">feasible</span><span class="p">:</span>
+            <span class="n">infeasibility_reason</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Required contingency buffer (</span><span class="si">{</span><span class="n">buffer_hours</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h) exceeds "</span>
+                <span class="sa">f</span><span class="s2">"available remaining float after base scope (</span><span class="si">{</span><span class="n">remaining_float</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h)."</span>
+            <span class="p">)</span>
+
+        <span class="n">confidence</span> <span class="o">=</span> <span class="n">_tier_confidence</span><span class="p">(</span><span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_tier"</span><span class="p">))</span> <span class="o">*</span> <span class="mf">0.80</span>  <span class="c1"># slightly lower</span>
+
+        <span class="k">if</span> <span class="n">option_type</span> <span class="o">==</span> <span class="n">_PRE_STAGE</span><span class="p">:</span>
+            <span class="n">rationale</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Stage work before outage start. Reserve </span><span class="si">{</span><span class="n">buffer_hours</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h buffer "</span>
+                <span class="sa">f</span><span class="s2">"(p80 − p50 from </span><span class="si">{</span><span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'sample_size'</span><span class="p">,</span><span class="w"> </span><span class="s1">'?'</span><span class="p">)</span><span class="si">}</span><span class="s2"> analogues). "</span>
+                <span class="s2">"Reduces in-outage schedule pressure."</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">rationale</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Reserve a </span><span class="si">{</span><span class="n">buffer_hours</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h contingency buffer "</span>
+                <span class="sa">f</span><span class="s2">"(p80 − p50 from </span><span class="si">{</span><span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'sample_size'</span><span class="p">,</span><span class="w"> </span><span class="s1">'?'</span><span class="p">)</span><span class="si">}</span><span class="s2"> analogues) "</span>
+                <span class="s2">"rather than committing full scope now. Reassess after initial work."</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">_make_option</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">[</span><span class="s2">"activity_id"</span><span class="p">],</span>
+            <span class="n">option_type</span><span class="o">=</span><span class="n">option_type</span><span class="p">,</span>
+            <span class="n">rationale</span><span class="o">=</span><span class="n">rationale</span><span class="p">,</span>
+            <span class="n">feasible</span><span class="o">=</span><span class="n">feasible</span><span class="p">,</span>
+            <span class="n">infeasibility_reason</span><span class="o">=</span><span class="n">infeasibility_reason</span><span class="p">,</span>
+            <span class="n">cp_impact_hours</span><span class="o">=</span><span class="n">buffer_hours</span><span class="p">,</span>
+            <span class="n">criticality_label</span><span class="o">=</span><span class="n">criticality_label</span><span class="p">,</span>
+            <span class="n">confidence</span><span class="o">=</span><span class="nb">round</span><span class="p">(</span><span class="n">confidence</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="n">resource_conflicts</span><span class="o">=</span><span class="p">[],</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="InsertionOptionGenerator._generate_parallel_option">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._generate_parallel_option">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_generate_parallel_option</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Generate parallel_execution option(s) if a non-conflicting window exists.</span>
+
+<span class="sd">        Returns a **list** (not a single JsonDict like all other generators)</span>
+<span class="sd">        because this option is conditionally generated: the list is empty when</span>
+<span class="sd">        no viable parallel window exists, and contains exactly one option</span>
+<span class="sd">        otherwise.  The caller uses ``candidates.extend(...)`` for this method</span>
+<span class="sd">        and ``candidates.append(...)`` for all others.  This asymmetry is</span>
+<span class="sd">        intentional and documented here to prevent future callers from wrapping</span>
+<span class="sd">        the return value in an extra list.</span>
+
+<span class="sd">        A parallel window is viable when:</span>
+<span class="sd">            - criticality_label is non_critical (activity has float to work in parallel)</span>
+<span class="sd">            - OR displaced_tasks contains non-critical tasks whose float absorbs</span>
+<span class="sd">              the new activity without driving the critical path.</span>
+
+<span class="sd">        Discipline conflict check: the emergent activity discipline is compared</span>
+<span class="sd">        against displaced task disciplines — same discipline with same crew means</span>
+<span class="sd">        parallel execution would create a crew conflict.</span>
+<span class="sd">        """</span>
+        <span class="n">float_analysis</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_analysis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">criticality_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">,</span> <span class="s2">"non_critical"</span><span class="p">)</span>
+        <span class="n">displaced_tasks</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"displaced_tasks"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">resource_conflicts</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"resource_conflicts"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+
+        <span class="n">emergent_discipline</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"discipline"</span><span class="p">)</span>
+
+        <span class="c1"># Identify non-critical displaced tasks with different discipline</span>
+        <span class="n">parallel_candidates</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">displaced_tasks</span>
+            <span class="k">if</span> <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">,</span> <span class="s2">"non_critical"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"non_critical"</span>
+            <span class="ow">and</span> <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"discipline"</span><span class="p">)</span> <span class="o">!=</span> <span class="n">emergent_discipline</span>
+            <span class="ow">and</span> <span class="ow">not</span> <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_regulatory_constraint"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="p">]</span>
+
+        <span class="c1"># Only viable when non-critical (has float) or parallel candidates exist</span>
+        <span class="k">if</span> <span class="n">criticality_label</span> <span class="o">==</span> <span class="s2">"critical"</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">parallel_candidates</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="c1"># Crew conflict check: if all resource conflicts are hard crew conflicts,</span>
+        <span class="c1"># parallel execution is not feasible.</span>
+        <span class="n">hard_crew_conflicts</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">resource_conflicts</span>
+            <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"conflict_type"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"crew_unavailable"</span>
+        <span class="p">]</span>
+        <span class="n">feasible</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">hard_crew_conflicts</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+        <span class="n">infeasibility_reason</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">feasible</span><span class="p">:</span>
+            <span class="n">skills</span> <span class="o">=</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"skill_required"</span><span class="p">,</span> <span class="s2">"?"</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">hard_crew_conflicts</span><span class="p">)</span>
+            <span class="n">infeasibility_reason</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Crew conflict on required skill(s): </span><span class="si">{</span><span class="n">skills</span><span class="si">}</span><span class="s2"> prevents parallel execution."</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">parallel_candidates</span><span class="p">:</span>
+            <span class="n">task_names</span> <span class="o">=</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"task_name"</span><span class="p">,</span> <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"task_id"</span><span class="p">,</span> <span class="s2">"?"</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">parallel_candidates</span><span class="p">[:</span><span class="mi">3</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="n">rationale</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Execute in parallel with non-critical task(s): </span><span class="si">{</span><span class="n">task_names</span><span class="si">}</span><span class="s2">. "</span>
+                <span class="s2">"Different discipline avoids crew conflict."</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">rationale</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="s2">"Execute in parallel during available float window. "</span>
+                <span class="sa">f</span><span class="s2">"Activity is </span><span class="si">{</span><span class="n">criticality_label</span><span class="si">}</span><span class="s2"> — float absorbs concurrent execution."</span>
+            <span class="p">)</span>
+
+        <span class="n">cp_impact</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">cp_drag</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">cp_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_drag_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.5</span>  <span class="c1"># parallel halves effective drag</span>
+
+        <span class="c1"># Derive confidence from the analog distribution tier so parallel_execution</span>
+        <span class="c1"># is scored consistently with all other options instead of using a flat 0.65.</span>
+        <span class="n">dist</span> <span class="o">=</span> <span class="p">(</span><span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"duration_distribution"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+        <span class="n">confidence</span> <span class="o">=</span> <span class="n">_tier_confidence</span><span class="p">(</span><span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_tier"</span><span class="p">))</span> <span class="k">if</span> <span class="n">dist</span> <span class="k">else</span> <span class="mf">0.65</span>
+
+        <span class="n">option</span> <span class="o">=</span> <span class="n">_make_option</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">[</span><span class="s2">"activity_id"</span><span class="p">],</span>
+            <span class="n">option_type</span><span class="o">=</span><span class="n">_PARALLEL</span><span class="p">,</span>
+            <span class="n">rationale</span><span class="o">=</span><span class="n">rationale</span><span class="p">,</span>
+            <span class="n">feasible</span><span class="o">=</span><span class="n">feasible</span><span class="p">,</span>
+            <span class="n">infeasibility_reason</span><span class="o">=</span><span class="n">infeasibility_reason</span><span class="p">,</span>
+            <span class="n">cp_impact_hours</span><span class="o">=</span><span class="nb">round</span><span class="p">(</span><span class="n">cp_drag</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+            <span class="n">criticality_label</span><span class="o">=</span><span class="n">criticality_label</span><span class="p">,</span>
+            <span class="n">confidence</span><span class="o">=</span><span class="n">confidence</span><span class="p">,</span>
+            <span class="n">resource_conflicts</span><span class="o">=</span><span class="n">resource_conflicts</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">option</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="InsertionOptionGenerator._generate_scope_reduction">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._generate_scope_reduction">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_generate_scope_reduction</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Generate the scope_reduction option.</span>
+
+<span class="sd">        Proposes performing only the minimum required scope to address the</span>
+<span class="sd">        immediate safety or operability concern, deferring full corrective action</span>
+<span class="sd">        to the next planned window.</span>
+
+<span class="sd">        Duration estimate = p50 × config.scope_reduction_fraction (default 60%).</span>
+<span class="sd">        feasible=True by default (scope reduction is always technically possible</span>
+<span class="sd">        even if not always preferred operationally).  Regulatory clearance for</span>
+<span class="sd">        TS/surveillance items is checked separately in _check_regulatory_clearance.</span>
+<span class="sd">        """</span>
+        <span class="n">dist</span> <span class="o">=</span> <span class="n">analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"duration_distribution"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">p50</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"p50_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">reduced_hours</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">p50</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">scope_reduction_fraction</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+
+        <span class="n">float_analysis</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_analysis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">criticality_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">,</span> <span class="s2">"non_critical"</span><span class="p">)</span>
+        <span class="n">cp_impact</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">cp_drag_full</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">cp_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_drag_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="c1"># Scope reduction proportionally reduces CP drag</span>
+        <span class="n">cp_drag_reduced</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">cp_drag_full</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">scope_reduction_fraction</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+
+        <span class="n">confidence</span> <span class="o">=</span> <span class="n">_tier_confidence</span><span class="p">(</span><span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_tier"</span><span class="p">))</span> <span class="o">*</span> <span class="mf">0.70</span>  <span class="c1"># scope estimate uncertain</span>
+
+        <span class="n">rationale</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"Execute minimum required scope only (est. </span><span class="si">{</span><span class="n">reduced_hours</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h, "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">scope_reduction_fraction</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">100</span><span class="p">)</span><span class="si">}</span><span class="s2">% of full p50 estimate). "</span>
+            <span class="s2">"Defer full corrective action to next planned outage. "</span>
+            <span class="s2">"Requires engineering disposition of minimum-scope adequacy."</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">_make_option</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">[</span><span class="s2">"activity_id"</span><span class="p">],</span>
+            <span class="n">option_type</span><span class="o">=</span><span class="n">_SCOPE_REDUCTION</span><span class="p">,</span>
+            <span class="n">rationale</span><span class="o">=</span><span class="n">rationale</span><span class="p">,</span>
+            <span class="n">feasible</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>  <span class="c1"># always technically possible; regulatory clearance checked separately</span>
+            <span class="n">infeasibility_reason</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">cp_impact_hours</span><span class="o">=</span><span class="n">cp_drag_reduced</span><span class="p">,</span>
+            <span class="n">criticality_label</span><span class="o">=</span><span class="n">criticality_label</span><span class="p">,</span>
+            <span class="n">confidence</span><span class="o">=</span><span class="nb">round</span><span class="p">(</span><span class="n">confidence</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="n">resource_conflicts</span><span class="o">=</span><span class="p">[],</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="InsertionOptionGenerator._generate_escalate">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._generate_escalate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_generate_escalate</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Generate the escalate_to_management option.</span>
+
+<span class="sd">        Always feasible and regulatory-cleared — escalation is always a valid</span>
+<span class="sd">        path.  Generated automatically when CP drag exceeds</span>
+<span class="sd">        config.escalate_if_cp_drag_exceeds_hours.</span>
+
+<span class="sd">        cp_impact_hours reflects the full insert_now impact (same work, higher</span>
+<span class="sd">        authority required to approve it).</span>
+
+<span class="sd">        N3 fix: when ``intake_result.has_regulatory_constraint`` is True, the</span>
+<span class="sd">        rationale is extended with an explicit TS/LCO deadline note so the</span>
+<span class="sd">        outage manager escalating to management can immediately surface the</span>
+<span class="sd">        action-level time constraint.  If ``active_lco`` is set on the</span>
+<span class="sd">        emergent_activity the note includes the LCO number.</span>
+<span class="sd">        """</span>
+        <span class="n">cp_impact</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">cp_drag_hours</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">cp_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_drag_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">float_analysis</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_analysis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">criticality_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">,</span> <span class="s2">"critical"</span><span class="p">)</span>
+
+        <span class="n">decision_delay_hours</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">escalate_decision_delay_hours</span>
+        <span class="n">rationale</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"CP drag (</span><span class="si">{</span><span class="n">cp_drag_hours</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h) exceeds the "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">escalate_if_cp_drag_exceeds_hours</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> h threshold — "</span>
+            <span class="s2">"escalate to outage management for schedule re-baseline decision. "</span>
+            <span class="s2">"This option does not resolve the underlying activity; it initiates "</span>
+            <span class="sa">f</span><span class="s2">"the management review process. A decision latency of "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">decision_delay_hours</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h is included in the cost estimate to "</span>
+            <span class="s2">"reflect outage time consumed while awaiting approval."</span>
+        <span class="p">)</span>
+
+        <span class="c1"># N3: append TS/LCO deadline note to rationale when regulatory constraint</span>
+        <span class="c1"># is present — the manager briefing must lead with the action-level clock.</span>
+        <span class="n">has_reg</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">((</span><span class="n">intake_result</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_regulatory_constraint"</span><span class="p">))</span>
+        <span class="n">active_lco</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"active_lco"</span><span class="p">))</span>
+        <span class="n">lco_number</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"lco_number"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">has_reg</span> <span class="ow">or</span> <span class="n">active_lco</span><span class="p">:</span>
+            <span class="n">lco_clause</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">" (LCO </span><span class="si">{</span><span class="n">lco_number</span><span class="si">}</span><span class="s2">)"</span> <span class="k">if</span> <span class="n">lco_number</span> <span class="k">else</span> <span class="s2">""</span>
+            <span class="p">)</span>
+            <span class="n">rationale</span> <span class="o">+=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">" </span><span class="se">\u26a0</span><span class="s2"> REGULATORY / LCO CONSTRAINT</span><span class="si">{</span><span class="n">lco_clause</span><span class="si">}</span><span class="s2">: "</span>
+                <span class="s2">"this activity has an active regulatory constraint. "</span>
+                <span class="s2">"Confirm TS action level clock and hours-to-deadline "</span>
+                <span class="s2">"with licensing before presenting options to management."</span>
+            <span class="p">)</span>
+
+        <span class="n">option</span> <span class="o">=</span> <span class="n">_make_option</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">[</span><span class="s2">"activity_id"</span><span class="p">],</span>
+            <span class="n">option_type</span><span class="o">=</span><span class="n">_ESCALATE</span><span class="p">,</span>
+            <span class="n">rationale</span><span class="o">=</span><span class="n">rationale</span><span class="p">,</span>
+            <span class="n">feasible</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">infeasibility_reason</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">cp_impact_hours</span><span class="o">=</span><span class="n">cp_drag_hours</span><span class="p">,</span>
+            <span class="n">criticality_label</span><span class="o">=</span><span class="n">criticality_label</span><span class="p">,</span>
+            <span class="n">confidence</span><span class="o">=</span><span class="mf">0.90</span><span class="p">,</span>  <span class="c1"># high confidence that escalation is available</span>
+            <span class="n">resource_conflicts</span><span class="o">=</span><span class="p">[],</span>
+        <span class="p">)</span>
+        <span class="n">option</span><span class="p">[</span><span class="s2">"decision_delay_hours"</span><span class="p">]</span> <span class="o">=</span> <span class="n">decision_delay_hours</span>
+        <span class="k">return</span> <span class="n">option</span></div>
+
+
+    <span class="c1"># ── Scoring and ranking ───────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="InsertionOptionGenerator._check_regulatory_clearance">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._check_regulatory_clearance">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_regulatory_clearance</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">option</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">regulatory_drivers</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Check whether an option is compatible with all regulatory constraints.</span>
+
+<span class="sd">        Returns (regulatory_cleared, block_reason).</span>
+
+<span class="sd">        Rules:</span>
+<span class="sd">            defer_to_post_outage — blocked when any driver has defer_prohibited=True</span>
+<span class="sd">            scope_reduction      — blocked when any driver type is in</span>
+<span class="sd">                                   _SCOPE_REDUCTION_PROHIBITED_TYPES (cannot reduce</span>
+<span class="sd">                                   scope below a TS minimum or surveillance requirement)</span>
+<span class="sd">            insert_now / contingency / pre_outage_staging / parallel / escalate</span>
+<span class="sd">                                 — always cleared (these options perform the work)</span>
+<span class="sd">        """</span>
+        <span class="n">option_type</span> <span class="o">=</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_type"</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">option_type</span> <span class="o">==</span> <span class="n">_DEFER</span><span class="p">:</span>
+            <span class="n">blocking</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">d</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">regulatory_drivers</span>
+                <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"defer_prohibited"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"driver_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">_DEFER_PROHIBITED_TYPES</span>
+            <span class="p">]</span>
+            <span class="k">if</span> <span class="n">blocking</span><span class="p">:</span>
+                <span class="c1"># Deduplicate driver_type strings so duplicate entries (e.g. two</span>
+                <span class="c1"># ts_surveillance records) don't produce a repeated message.</span>
+                <span class="n">driver_types</span> <span class="o">=</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                    <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
+                        <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"driver_type"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">blocking</span>
+                    <span class="p">))[:</span><span class="mi">3</span><span class="p">]</span>
+                <span class="p">)</span>
+                <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"Deferral prohibited by regulatory constraint(s): </span><span class="si">{</span><span class="n">driver_types</span><span class="si">}</span><span class="s2">. "</span>
+                    <span class="s2">"Work must be completed during this outage."</span>
+                <span class="p">)</span>
+
+        <span class="k">elif</span> <span class="n">option_type</span> <span class="o">==</span> <span class="n">_SCOPE_REDUCTION</span><span class="p">:</span>
+            <span class="n">blocking</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">d</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">regulatory_drivers</span>
+                <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"driver_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">_SCOPE_REDUCTION_PROHIBITED_TYPES</span>
+            <span class="p">]</span>
+            <span class="k">if</span> <span class="n">blocking</span><span class="p">:</span>
+                <span class="n">driver_types</span> <span class="o">=</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                    <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
+                        <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"driver_type"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">blocking</span>
+                    <span class="p">))[:</span><span class="mi">3</span><span class="p">]</span>
+                <span class="p">)</span>
+                <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"Scope reduction not permitted: </span><span class="si">{</span><span class="n">driver_types</span><span class="si">}</span><span class="s2"> requires full scope execution. "</span>
+                    <span class="s2">"Engineering disposition needed to accept reduced scope."</span>
+                <span class="p">)</span>
+
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="InsertionOptionGenerator._resolve_crew_count">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._resolve_crew_count">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_crew_count</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">schedule_impact</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Extract crew head-count from Stage E crew_continuity, or fall back to config.</span>
+
+<span class="sd">        Stage E crew_continuity.utilization_at_window maps skill_type → {committed, ...}.</span>
+<span class="sd">        We take the maximum committed count across skill types as a proxy for the</span>
+<span class="sd">        activity crew size.  Falls back to ``config.default_crew_count`` when the</span>
+<span class="sd">        key is absent (e.g. schedule_impact assessor stub, no LOGOS connection).</span>
+<span class="sd">        """</span>
+        <span class="n">cc</span> <span class="o">=</span> <span class="p">(</span><span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"crew_continuity"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"utilization_at_window"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">cc</span><span class="p">:</span>
+            <span class="n">committed</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"committed"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">cc</span><span class="o">.</span><span class="n">values</span><span class="p">()</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)),</span>
+                <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">committed</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">committed</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">default_crew_count</span></div>
+
+
+<div class="viewcode-block" id="InsertionOptionGenerator._compute_option_cost">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._compute_option_cost">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compute_option_cost</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">option</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">p50</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">p80</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">crew_count</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Derive the effective duration for this option type and call _compute_cost_estimate.</span>
+
+<span class="sd">        Duration mapping:</span>
+<span class="sd">            insert_now / escalate_to_management   → p50  (full scope, standard pacing)</span>
+<span class="sd">            defer_to_post_outage                  → in-outage: 0 h; deferred: p50</span>
+<span class="sd">                                                    (work moves to next cycle, not eliminated)</span>
+<span class="sd">            add_contingency_buffer / pre_outage_staging → max(0, p80 − p50)</span>
+<span class="sd">            scope_reduction                       → p50 × scope_reduction_fraction</span>
+<span class="sd">            parallel_execution                    → p50  (crash premium applied separately)</span>
+<span class="sd">        """</span>
+        <span class="n">option_type</span> <span class="o">=</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_type"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">cp_drag</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+
+        <span class="n">deferred_duration</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">decision_delay</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">if</span> <span class="n">option_type</span> <span class="ow">in</span> <span class="p">(</span><span class="n">_INSERT_NOW</span><span class="p">,</span> <span class="n">_ESCALATE</span><span class="p">):</span>
+            <span class="n">duration</span> <span class="o">=</span> <span class="n">p50</span>
+            <span class="k">if</span> <span class="n">option_type</span> <span class="o">==</span> <span class="n">_ESCALATE</span><span class="p">:</span>
+                <span class="n">decision_delay</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"decision_delay_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">option_type</span> <span class="o">==</span> <span class="n">_DEFER</span><span class="p">:</span>
+            <span class="n">duration</span> <span class="o">=</span> <span class="mf">0.0</span>
+            <span class="n">deferred_duration</span> <span class="o">=</span> <span class="n">p50</span>   <span class="c1"># same work performed in next maintenance cycle</span>
+        <span class="k">elif</span> <span class="n">option_type</span> <span class="ow">in</span> <span class="p">(</span><span class="n">_CONTINGENCY</span><span class="p">,</span> <span class="n">_PRE_STAGE</span><span class="p">):</span>
+            <span class="n">duration</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">p80</span> <span class="o">-</span> <span class="n">p50</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">option_type</span> <span class="o">==</span> <span class="n">_SCOPE_REDUCTION</span><span class="p">:</span>
+            <span class="n">duration</span> <span class="o">=</span> <span class="n">p50</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">scope_reduction_fraction</span>
+        <span class="k">elif</span> <span class="n">option_type</span> <span class="o">==</span> <span class="n">_PARALLEL</span><span class="p">:</span>
+            <span class="n">duration</span> <span class="o">=</span> <span class="n">p50</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">duration</span> <span class="o">=</span> <span class="n">p50</span>
+
+        <span class="k">return</span> <span class="n">_compute_cost_estimate</span><span class="p">(</span>
+            <span class="n">option_type</span><span class="p">,</span>
+            <span class="n">duration</span><span class="p">,</span>
+            <span class="n">crew_count</span><span class="p">,</span>
+            <span class="n">cp_drag</span><span class="p">,</span>
+            <span class="n">labor_rate</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">labor_rate_per_crew_hour</span><span class="p">,</span>
+            <span class="n">outage_day_cost</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">outage_day_cost_per_hour</span><span class="p">,</span>
+            <span class="n">crash_premium_multiplier</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">crash_premium_multiplier</span><span class="p">,</span>
+            <span class="n">deferred_duration_hours</span><span class="o">=</span><span class="n">deferred_duration</span><span class="p">,</span>
+            <span class="n">decision_delay_hours</span><span class="o">=</span><span class="n">decision_delay</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="InsertionOptionGenerator._min_cost_option_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._min_cost_option_id">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_min_cost_option_id</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Return the option_id of the feasible + cleared option with lowest total_cost_usd.</span>
+
+<span class="sd">        Returns None when no feasible options carry a cost_estimate.</span>
+<span class="sd">        """</span>
+        <span class="n">eligible</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">o</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">options</span>
+            <span class="k">if</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cost_estimate"</span><span class="p">),</span> <span class="nb">dict</span><span class="p">)</span>
+        <span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">eligible</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="nb">min</span><span class="p">(</span>
+            <span class="n">eligible</span><span class="p">,</span>
+            <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">o</span><span class="p">:</span> <span class="n">o</span><span class="p">[</span><span class="s2">"cost_estimate"</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"total_cost_usd"</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s2">"inf"</span><span class="p">)),</span>
+        <span class="p">)[</span><span class="s2">"option_id"</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="InsertionOptionGenerator._score_option">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._score_option">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score_option</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">option</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">causal_posture</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">max_cost</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Compute a composite risk score in [0, 1] for this option.</span>
+
+<span class="sd">        Lower score = lower risk = better option.</span>
+
+<span class="sd">        Dimensions:</span>
+<span class="sd">            cp_impact (W=0.35):</span>
+<span class="sd">                Normalise cp_impact_hours against baseline_cp_hours.</span>
+<span class="sd">                0.0 drag → 0.0; drag ≥ baseline → 1.0; clamped to [0, 1].</span>
+
+<span class="sd">            confidence (W=0.15):</span>
+<span class="sd">                1 − option_confidence.  High confidence → low risk contribution.</span>
+
+<span class="sd">            resource_ready (W=0.20):</span>
+<span class="sd">                0.0 = no resource conflicts; 1.0 = conflicts present.</span>
+
+<span class="sd">            causal_urgency (W=0.20):</span>
+<span class="sd">                Action options  (insert_now, contingency, parallel, scope_reduction):</span>
+<span class="sd">                    1 − urgency (high urgency to act lowers risk of taking action)</span>
+<span class="sd">                Non-action options (defer, escalate):</span>
+<span class="sd">                    urgency (high urgency to act increases risk of not acting)</span>
+<span class="sd">                Weight raised from 0.10 to 0.20 (N4 fix) so high-urgency signals</span>
+<span class="sd">                dominate cp_impact for sub-48h drag non-TS activities.</span>
+
+<span class="sd">            cost (W=0.10):</span>
+<span class="sd">                total_cost_usd / max_cost across all candidates.</span>
+<span class="sd">                Normalised to [0, 1]; 0.0 when cost_estimate absent.</span>
+<span class="sd">        """</span>
+        <span class="n">weights</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">scoring_weights</span>
+        <span class="c1"># baseline_cp_hours is nested under cp_impact in the Stage E artifact;</span>
+        <span class="c1"># fall back to a top-level key for test-helper compatibility.</span>
+        <span class="n">baseline_cp</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"baseline_cp_hours"</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"baseline_cp_hours"</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="mf">1.0</span>
+        <span class="p">)</span>
+        <span class="n">cp_drag</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">cp_impact_score</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">cp_drag</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="n">baseline_cp</span><span class="p">,</span> <span class="mf">0.001</span><span class="p">))</span>
+
+        <span class="n">confidence</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.5</span><span class="p">)</span>
+        <span class="n">confidence_score</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">confidence</span>
+
+        <span class="n">resource_conflicts</span> <span class="o">=</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"resource_conflicts"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">resource_score</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="n">resource_conflicts</span> <span class="k">else</span> <span class="mf">0.0</span>
+
+        <span class="n">urgency</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">_POSTURE_TO_URGENCY</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">causal_posture</span><span class="p">,</span> <span class="mf">0.40</span><span class="p">)</span>
+        <span class="n">option_type</span> <span class="o">=</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_type"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">option_type</span> <span class="ow">in</span> <span class="n">_NON_ACTION_TYPES</span><span class="p">:</span>
+            <span class="n">urgency_score</span> <span class="o">=</span> <span class="n">urgency</span>           <span class="c1"># high urgency → higher risk for non-action</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">urgency_score</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">urgency</span>    <span class="c1"># high urgency → lower risk for taking action</span>
+
+        <span class="n">cost_estimate</span> <span class="o">=</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cost_estimate"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cost_estimate</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">total_cost</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">cost_estimate</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"total_cost_usd"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="n">cost_score</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">total_cost</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="n">max_cost</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cost_score</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="n">risk</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">,</span>      <span class="n">_W_CP_IMPACT</span><span class="p">)</span>      <span class="o">*</span> <span class="n">cp_impact_score</span>
+            <span class="o">+</span> <span class="n">weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">,</span>   <span class="n">_W_CONFIDENCE</span><span class="p">)</span>     <span class="o">*</span> <span class="n">confidence_score</span>
+            <span class="o">+</span> <span class="n">weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"resource_ready"</span><span class="p">,</span> <span class="n">_W_RESOURCE</span><span class="p">)</span>     <span class="o">*</span> <span class="n">resource_score</span>
+            <span class="o">+</span> <span class="n">weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causal_urgency"</span><span class="p">,</span> <span class="n">_W_URGENCY</span><span class="p">)</span>      <span class="o">*</span> <span class="n">urgency_score</span>
+            <span class="o">+</span> <span class="n">weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cost"</span><span class="p">,</span>          <span class="n">_W_COST</span><span class="p">)</span>          <span class="o">*</span> <span class="n">cost_score</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="nb">round</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">risk</span><span class="p">)),</span> <span class="mi">4</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="InsertionOptionGenerator._rank_options">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._rank_options">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_rank_options</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Sort options by risk_score ascending.</span>
+
+<span class="sd">        Sort key: (infeasible, regulatory_blocked, risk_score).</span>
+<span class="sd">        Feasible + cleared options appear first, ordered by risk_score.</span>
+<span class="sd">        Infeasible options are pushed after regulatory-blocked ones.</span>
+<span class="sd">        """</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">_sort_key</span><span class="p">(</span><span class="n">opt</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">:</span>
+            <span class="n">infeasible</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">opt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span> <span class="k">else</span> <span class="mi">2</span>
+            <span class="n">blocked</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">opt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span> <span class="k">else</span> <span class="mi">1</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">infeasible</span> <span class="o">+</span> <span class="n">blocked</span><span class="p">,</span> <span class="n">opt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"risk_score"</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
+
+        <span class="n">sorted_options</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">candidates</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">_sort_key</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">include_infeasible_options</span><span class="p">:</span>
+            <span class="n">sorted_options</span> <span class="o">=</span> <span class="p">[</span><span class="n">o</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">sorted_options</span> <span class="k">if</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">include_regulatory_blocked_options</span><span class="p">:</span>
+            <span class="n">sorted_options</span> <span class="o">=</span> <span class="p">[</span><span class="n">o</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">sorted_options</span> <span class="k">if</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)]</span>
+
+        <span class="k">return</span> <span class="n">sorted_options</span><span class="p">[:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_options</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="InsertionOptionGenerator._select_recommended">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._select_recommended">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_select_recommended</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Return the option_id of the top-ranked feasible + regulatory-cleared option.</span>
+
+<span class="sd">        Returns None if no such option exists (maps to INCONCLUSIVE in Stage G).</span>
+<span class="sd">        """</span>
+        <span class="k">for</span> <span class="n">option</span> <span class="ow">in</span> <span class="n">options</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span> <span class="ow">and</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">option</span><span class="p">[</span><span class="s2">"option_id"</span><span class="p">]</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="InsertionOptionGenerator._recommendation_confidence">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._recommendation_confidence">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_recommendation_confidence</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">options</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">recommended_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Map to data_supported / sme_informed / low_confidence.</span>
+
+<span class="sd">        Derived from the duration distribution confidence_tier of Stage D.</span>
+<span class="sd">        Degrades to low_confidence when no feasible option is available.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">recommended_id</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"low_confidence"</span>
+        <span class="n">dist</span> <span class="o">=</span> <span class="n">analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"duration_distribution"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">return</span> <span class="n">dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_tier"</span><span class="p">,</span> <span class="s2">"low_confidence"</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="InsertionOptionGenerator._build_ranking_summary">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._build_ranking_summary">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_ranking_summary</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Compute options_generated, feasible_count, cleared_count, blocked_count."""</span>
+        <span class="n">feasible_count</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">options</span> <span class="k">if</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">,</span> <span class="kc">True</span><span class="p">))</span>
+        <span class="n">cleared_count</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
+            <span class="mi">1</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">options</span>
+            <span class="k">if</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span> <span class="ow">and</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">blocked_count</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">options</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">,</span> <span class="kc">True</span><span class="p">))</span>
+        <span class="n">infeasible_count</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">options</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">,</span> <span class="kc">True</span><span class="p">))</span>
+        <span class="n">best_score</span> <span class="o">=</span> <span class="nb">min</span><span class="p">((</span><span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"risk_score"</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">options</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"options_generated"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">options</span><span class="p">),</span>
+            <span class="s2">"feasible_count"</span><span class="p">:</span> <span class="n">feasible_count</span><span class="p">,</span>
+            <span class="s2">"regulatory_cleared_count"</span><span class="p">:</span> <span class="n">cleared_count</span><span class="p">,</span>
+            <span class="s2">"regulatory_blocked_count"</span><span class="p">:</span> <span class="n">blocked_count</span><span class="p">,</span>
+            <span class="s2">"infeasible_count"</span><span class="p">:</span> <span class="n">infeasible_count</span><span class="p">,</span>
+            <span class="s2">"best_risk_score"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">best_score</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span> <span class="k">if</span> <span class="n">best_score</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="p">}</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Module-level helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_parse_dt">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._parse_dt">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_dt</span><span class="p">(</span><span class="n">iso_str</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Parse an ISO-8601 string to a timezone-aware datetime.</span>
+
+<span class="sd">    Naive datetimes are assumed UTC.  Returns None on invalid or absent input.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">iso_str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">dt</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="n">iso_str</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">dt</span><span class="o">.</span><span class="n">tzinfo</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">dt</span> <span class="o">=</span> <span class="n">dt</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">dt</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_compute_cost_estimate">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._compute_cost_estimate">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_compute_cost_estimate</span><span class="p">(</span>
+    <span class="n">option_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">duration_hours</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">crew_count</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">cp_drag_hours</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">labor_rate</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">outage_day_cost</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">crash_premium_multiplier</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">deferred_duration_hours</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">decision_delay_hours</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Compute a parametric cost estimate for one option mode.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        option_type:              The option type constant (e.g. ``_INSERT_NOW``).</span>
+<span class="sd">        duration_hours:           In-outage execution hours (0 for defer).</span>
+<span class="sd">        crew_count:               Number of crew members assigned to the activity.</span>
+<span class="sd">        cp_drag_hours:            CP drag from the option (``cp_impact_hours``).</span>
+<span class="sd">        labor_rate:               Fully-loaded labour rate (USD / crew-hour).</span>
+<span class="sd">        outage_day_cost:          Opportunity cost of outage extension (USD / hr).</span>
+<span class="sd">        crash_premium_multiplier: Overtime multiplier applied to parallel_execution.</span>
+<span class="sd">        deferred_duration_hours:  Duration of the work when performed in the next</span>
+<span class="sd">                                  maintenance cycle.  Non-zero only for</span>
+<span class="sd">                                  ``defer_to_post_outage``.  Kept as an informational</span>
+<span class="sd">                                  field (``deferred_labor_cost_usd``) but intentionally</span>
+<span class="sd">                                  excluded from ``total_cost_usd`` so that deferred</span>
+<span class="sd">                                  future-cycle costs do not inflate the cost denominator</span>
+<span class="sd">                                  used for normalised scoring across all options.</span>
+<span class="sd">                                  Including it would unfairly raise the cost score of</span>
+<span class="sd">                                  every non-defer option relative to deferral.</span>
+<span class="sd">        decision_delay_hours:     Hours of outage time consumed waiting for a</span>
+<span class="sd">                                  management decision before work can begin.</span>
+<span class="sd">                                  Non-zero only for ``escalate_to_management``.</span>
+<span class="sd">                                  Priced at ``outage_day_cost`` and included in</span>
+<span class="sd">                                  ``total_cost_usd`` since the outage clock runs</span>
+<span class="sd">                                  during the decision window.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Dict with keys:</span>
+<span class="sd">            labor_cost_usd              – in-outage: duration × crew × rate</span>
+<span class="sd">            schedule_extension_cost_usd – cp_drag × outage_day_cost</span>
+<span class="sd">            crash_premium_usd           – additional cost for expedite modes</span>
+<span class="sd">            deferred_labor_cost_usd     – future-cycle labor cost (informational only;</span>
+<span class="sd">                                          not included in total_cost_usd)</span>
+<span class="sd">            decision_latency_cost_usd   – decision_delay × outage_day_cost;</span>
+<span class="sd">                                          non-zero only for escalate_to_management</span>
+<span class="sd">            total_cost_usd              – labor + schedule_extension + crash_premium</span>
+<span class="sd">                                          + decision_latency (comparable across all</span>
+<span class="sd">                                          option types)</span>
+<span class="sd">            cost_basis                  – always ``"parametric"``</span>
+<span class="sd">    """</span>
+    <span class="n">labor_cost</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">duration_hours</span> <span class="o">*</span> <span class="n">crew_count</span> <span class="o">*</span> <span class="n">labor_rate</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="c1"># Crash premium: parallel_execution carries overtime / coordination overhead.</span>
+    <span class="n">crash_premium</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="k">if</span> <span class="n">option_type</span> <span class="o">==</span> <span class="n">_PARALLEL</span><span class="p">:</span>
+        <span class="n">crash_premium</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">labor_cost</span> <span class="o">*</span> <span class="p">(</span><span class="n">crash_premium_multiplier</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="n">schedule_extension_cost</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">cp_drag_hours</span> <span class="o">*</span> <span class="n">outage_day_cost</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="n">deferred_labor_cost</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">deferred_duration_hours</span> <span class="o">*</span> <span class="n">crew_count</span> <span class="o">*</span> <span class="n">labor_rate</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="c1"># Decision latency: outage time consumed awaiting management approval.</span>
+    <span class="c1"># Included in total_cost_usd since the outage clock runs during this window.</span>
+    <span class="n">decision_latency_cost</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">decision_delay_hours</span> <span class="o">*</span> <span class="n">outage_day_cost</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="c1"># deferred_labor_cost is excluded from total_cost_usd so it does not inflate</span>
+    <span class="c1"># the max_cost denominator used in normalised scoring across all options.</span>
+    <span class="c1"># It is returned as a separate informational field for the outage manager.</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">labor_cost</span> <span class="o">+</span> <span class="n">schedule_extension_cost</span> <span class="o">+</span> <span class="n">crash_premium</span> <span class="o">+</span> <span class="n">decision_latency_cost</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"labor_cost_usd"</span><span class="p">:</span> <span class="n">labor_cost</span><span class="p">,</span>
+        <span class="s2">"schedule_extension_cost_usd"</span><span class="p">:</span> <span class="n">schedule_extension_cost</span><span class="p">,</span>
+        <span class="s2">"crash_premium_usd"</span><span class="p">:</span> <span class="n">crash_premium</span><span class="p">,</span>
+        <span class="s2">"deferred_labor_cost_usd"</span><span class="p">:</span> <span class="n">deferred_labor_cost</span><span class="p">,</span>
+        <span class="s2">"decision_latency_cost_usd"</span><span class="p">:</span> <span class="n">decision_latency_cost</span><span class="p">,</span>
+        <span class="s2">"total_cost_usd"</span><span class="p">:</span> <span class="n">total</span><span class="p">,</span>
+        <span class="s2">"cost_basis"</span><span class="p">:</span> <span class="s2">"parametric"</span><span class="p">,</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_make_option">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._make_option">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_option</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">option_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">rationale</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">feasible</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">infeasibility_reason</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">cp_impact_hours</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">criticality_label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">confidence</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">resource_conflicts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Build a canonical option dict (pre-scoring, pre-clearance)."""</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"option_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"OPT::</span><span class="si">{</span><span class="n">activity_id</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">option_type</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">hex</span><span class="p">[:</span><span class="mi">6</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+        <span class="s2">"option_type"</span><span class="p">:</span> <span class="n">option_type</span><span class="p">,</span>
+        <span class="s2">"rationale"</span><span class="p">:</span> <span class="n">rationale</span><span class="p">,</span>
+        <span class="s2">"feasible"</span><span class="p">:</span> <span class="n">feasible</span><span class="p">,</span>
+        <span class="s2">"infeasibility_reason"</span><span class="p">:</span> <span class="n">infeasibility_reason</span><span class="p">,</span>
+        <span class="s2">"regulatory_cleared"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>       <span class="c1"># populated centrally after generation</span>
+        <span class="s2">"regulatory_block_reason"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># populated centrally after generation</span>
+        <span class="s2">"cp_impact_hours"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">cp_impact_hours</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+        <span class="s2">"criticality_label"</span><span class="p">:</span> <span class="n">criticality_label</span><span class="p">,</span>
+        <span class="s2">"confidence"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">confidence</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+        <span class="s2">"resource_conflicts"</span><span class="p">:</span> <span class="n">resource_conflicts</span><span class="p">,</span>
+        <span class="s2">"cost_estimate"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>            <span class="c1"># populated centrally after generation</span>
+        <span class="s2">"risk_score"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>               <span class="c1"># populated centrally after scoring</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_tier_confidence">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._tier_confidence">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_tier_confidence</span><span class="p">(</span><span class="n">tier</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Map a duration distribution confidence_tier string to a float."""</span>
+    <span class="k">return</span> <span class="n">_TIER_TO_CONFIDENCE</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tier</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">,</span> <span class="mf">0.50</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

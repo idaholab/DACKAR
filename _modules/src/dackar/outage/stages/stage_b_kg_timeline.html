@@ -1,0 +1,1103 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.stages.stage_b_kg_timeline &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.stages.stage_b_kg_timeline</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.stages.stage_b_kg_timeline</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Stage B — KG Timeline Builder.</span>
+
+<span class="sd">Responsibilities:</span>
+<span class="sd">    1. Query the knowledge graph for all events linked to the component(s)</span>
+<span class="sd">       resolved in Stage A within the configured time window.</span>
+<span class="sd">    2. Assemble events from four source types: condition reports (CRs),</span>
+<span class="sd">       work orders (WOs), preventive/corrective maintenance records,</span>
+<span class="sd">       and prior emergent activities.</span>
+<span class="sd">    3. Sort events chronologically and assign data quality scores.</span>
+<span class="sd">    4. Compute recurrence indicators (repeat failure count, inter-event</span>
+<span class="sd">       period, PM compliance status).</span>
+<span class="sd">    5. Summarise data coverage (event count, outages represented, window</span>
+<span class="sd">       span, any known gaps).</span>
+
+<span class="sd">Output schema: outage/schemas/component_event_timeline.json</span>
+
+<span class="sd">Reuse targets:</span>
+<span class="sd">    dackar.knowledge_graph.py2neo.Py2Neo              → all KG queries (read-only import)</span>
+<span class="sd">    RCA.storage.processed_record_store         → CR / WO text retrieval (injected)</span>
+
+<span class="sd">KG node labels (defaults match RCA kg_schema_builder_workflow labels):</span>
+<span class="sd">    mbse_entity       — components, systems, assets</span>
+<span class="sd">    condition_report  — CR nodes</span>
+<span class="sd">    work_order        — WO, PM, CM nodes (distinguished by work_type property)</span>
+<span class="sd">    abnormal_event    — prior emergent activities</span>
+<span class="sd">    inspection        — standalone inspection records</span>
+
+<span class="sd">KG relationship types:</span>
+<span class="sd">    LINKED_TO   — ConditionReport → Component</span>
+<span class="sd">    PERFORMED_ON — WorkOrder → Component</span>
+<span class="sd">    PART_OF     — Component → System → Asset</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timedelta</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<div class="viewcode-block" id="LOGGER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.LOGGER">[docs]</a>
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Module-level helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_parse_dt">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline._parse_dt">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_dt</span><span class="p">(</span><span class="n">iso_str</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Parse ISO-8601 string to timezone-aware datetime; returns None on failure."""</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">iso_str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">dt</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">iso_str</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">dt</span><span class="o">.</span><span class="n">tzinfo</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">dt</span> <span class="o">=</span> <span class="n">dt</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">dt</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_iso">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline._iso">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_iso</span><span class="p">(</span><span class="n">dt</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Convert datetime to ISO string, or None."""</span>
+    <span class="k">return</span> <span class="n">dt</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span> <span class="k">if</span> <span class="n">dt</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_window_start_iso">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline._window_start_iso">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_window_start_iso</span><span class="p">(</span><span class="n">before_ts</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">window_days</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Compute the ISO start of the timeline window.</span>
+
+<span class="sd">    When *before_ts* is absent or cannot be parsed, falls back to</span>
+<span class="sd">    ``datetime.now(UTC)`` so that Cypher always receives a concrete timestamp</span>
+<span class="sd">    for ``$window_start`` instead of ``NULL``.  Passing ``NULL`` to py2neo has</span>
+<span class="sd">    undefined behaviour — the Cypher ``IS NULL`` guard fires, but the driver may</span>
+<span class="sd">    serialise Python ``None`` differently across versions.</span>
+
+<span class="sd">    Callers that stored the return value in ``window_end`` or used it for</span>
+<span class="sd">    reporting should check ``before_ts`` directly if they need to distinguish</span>
+<span class="sd">    "no upper bound" from "explicit timestamp".</span>
+<span class="sd">    """</span>
+    <span class="n">dt</span> <span class="o">=</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">before_ts</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">dt</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">dt</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>  <span class="c1"># fallback: treat detection as "now"</span>
+    <span class="k">return</span> <span class="n">_iso</span><span class="p">(</span><span class="n">dt</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="n">window_days</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="_score_event_dq">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline._score_event_dq">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_score_event_dq</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Compute a [0, 1] data quality score for a raw KG event record.</span>
+
+<span class="sd">    Based on field completeness:</span>
+<span class="sd">        timestamp present:      +0.35  (required for temporal chain)</span>
+<span class="sd">        description present:    +0.30</span>
+<span class="sd">        source_doc_id present:  +0.20</span>
+<span class="sd">        source_system present:  +0.15</span>
+<span class="sd">    """</span>
+    <span class="n">score</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">):</span>
+        <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.35</span>
+    <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"description"</span><span class="p">,</span> <span class="s2">""</span><span class="p">):</span>
+        <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.30</span>
+    <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_doc_id"</span><span class="p">):</span>
+        <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.20</span>
+    <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_system"</span><span class="p">):</span>
+        <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.15</span>
+    <span class="k">return</span> <span class="nb">round</span><span class="p">(</span><span class="n">score</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_record_to_dict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline._record_to_dict">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_record_to_dict</span><span class="p">(</span><span class="n">record</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Convert a Neo4j Record object to a plain Python dict."""</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+        <span class="k">return</span> <span class="p">{}</span></div>
+
+
+
+<div class="viewcode-block" id="_node_props">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline._node_props">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_node_props</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"n"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Extract properties from a Neo4j node within a record."""</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">node</span> <span class="o">=</span> <span class="n">record</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">node</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{}</span>
+        <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">KeyError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">{}</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Configuration</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="KGTimelineConfig">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">KGTimelineConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Configuration for Stage B."""</span>
+
+<div class="viewcode-block" id="KGTimelineConfig.timeline_window_days">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.timeline_window_days">[docs]</a>
+    <span class="n">timeline_window_days</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1825</span></div>
+
+<span class="w">    </span><span class="sd">"""How far back from the emergent activity detection timestamp to query</span>
+<span class="sd">    the KG (in days).  Default 5 years."""</span>
+
+<div class="viewcode-block" id="KGTimelineConfig.max_events">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.max_events">[docs]</a>
+    <span class="n">max_events</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span></div>
+
+<span class="w">    </span><span class="sd">"""Maximum events to include in the timeline. Oldest events are truncated</span>
+<span class="sd">    when this limit is reached."""</span>
+
+<div class="viewcode-block" id="KGTimelineConfig.include_work_orders">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.include_work_orders">[docs]</a>
+    <span class="n">include_work_orders</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="KGTimelineConfig.include_condition_reports">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.include_condition_reports">[docs]</a>
+    <span class="n">include_condition_reports</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="KGTimelineConfig.include_preventive_maintenance">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.include_preventive_maintenance">[docs]</a>
+    <span class="n">include_preventive_maintenance</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="KGTimelineConfig.include_corrective_maintenance">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.include_corrective_maintenance">[docs]</a>
+    <span class="n">include_corrective_maintenance</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="KGTimelineConfig.include_prior_emergent_activities">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.include_prior_emergent_activities">[docs]</a>
+    <span class="n">include_prior_emergent_activities</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="KGTimelineConfig.include_inspections">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.include_inspections">[docs]</a>
+    <span class="n">include_inspections</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="KGTimelineConfig.pm_overdue_threshold_days">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.pm_overdue_threshold_days">[docs]</a>
+    <span class="n">pm_overdue_threshold_days</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">30</span></div>
+
+<span class="w">    </span><span class="sd">"""Number of days past the scheduled PM due date before flagging as overdue."""</span>
+
+<div class="viewcode-block" id="KGTimelineConfig.default_pm_interval_days">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.default_pm_interval_days">[docs]</a>
+    <span class="n">default_pm_interval_days</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">180</span></div>
+
+<span class="w">    </span><span class="sd">"""Assumed PM interval when no interval is stored on the KG component node."""</span>
+
+    <span class="c1"># ── KG schema labels (override to match your deployment's schema) ─────────</span>
+<div class="viewcode-block" id="KGTimelineConfig.component_label">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.component_label">[docs]</a>
+    <span class="n">component_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"mbse_entity"</span></div>
+
+<span class="w">    </span><span class="sd">"""Neo4j label for component / system / asset nodes."""</span>
+
+<div class="viewcode-block" id="KGTimelineConfig.condition_report_label">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.condition_report_label">[docs]</a>
+    <span class="n">condition_report_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"condition_report"</span></div>
+
+<span class="w">    </span><span class="sd">"""Neo4j label for condition report nodes."""</span>
+
+<div class="viewcode-block" id="KGTimelineConfig.work_order_label">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.work_order_label">[docs]</a>
+    <span class="n">work_order_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"work_order"</span></div>
+
+<span class="w">    </span><span class="sd">"""Neo4j label for work order nodes (PM, CM, and general WOs are</span>
+<span class="sd">    distinguished by a work_type property on the node)."""</span>
+
+<div class="viewcode-block" id="KGTimelineConfig.abnormal_event_label">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.abnormal_event_label">[docs]</a>
+    <span class="n">abnormal_event_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"abnormal_event"</span></div>
+
+<span class="w">    </span><span class="sd">"""Neo4j label for prior emergent-activity / abnormal event nodes."""</span>
+
+<div class="viewcode-block" id="KGTimelineConfig.inspection_label">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.inspection_label">[docs]</a>
+    <span class="n">inspection_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"inspection"</span></div>
+
+<span class="w">    </span><span class="sd">"""Neo4j label for standalone inspection record nodes."""</span>
+
+    <span class="c1"># ── KG relationship types ─────────────────────────────────────────────────</span>
+<div class="viewcode-block" id="KGTimelineConfig.cr_component_rel">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.cr_component_rel">[docs]</a>
+    <span class="n">cr_component_rel</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"LINKED_TO"</span></div>
+
+<div class="viewcode-block" id="KGTimelineConfig.wo_component_rel">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.wo_component_rel">[docs]</a>
+    <span class="n">wo_component_rel</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"PERFORMED_ON"</span></div>
+
+<div class="viewcode-block" id="KGTimelineConfig.component_hierarchy_rel">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.component_hierarchy_rel">[docs]</a>
+    <span class="n">component_hierarchy_rel</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"PART_OF"</span></div>
+
+
+    <span class="c1"># ── Work-type codes used to filter work_order nodes ──────────────────────</span>
+<div class="viewcode-block" id="KGTimelineConfig.pm_work_type_code">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.pm_work_type_code">[docs]</a>
+    <span class="n">pm_work_type_code</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"PM"</span></div>
+
+<div class="viewcode-block" id="KGTimelineConfig.cm_work_type_code">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.cm_work_type_code">[docs]</a>
+    <span class="n">cm_work_type_code</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"CM"</span></div>
+
+
+    <span class="c1"># ── Neo4j database name (None = driver default) ───────────────────────────</span>
+<div class="viewcode-block" id="KGTimelineConfig.kg_database">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig.kg_database">[docs]</a>
+    <span class="n">kg_database</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Main builder</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="KGTimelineBuilder">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">KGTimelineBuilder</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Concrete Stage B implementation.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        config: Stage configuration.</span>
+<span class="sd">        kg_driver: Py2Neo instance (from dackar.knowledge_graph.py2neo).</span>
+<span class="sd">                   Provides all KG query methods.  When None, all KG queries</span>
+<span class="sd">                   are skipped and the returned timeline contains zero events.</span>
+<span class="sd">        record_store: ProcessedRecordStore instance (from RCA.storage).</span>
+<span class="sd">                      Used to retrieve text snippets for CR/WO events when the</span>
+<span class="sd">                      KG node itself carries only a source_doc_id.  Optional.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">KGTimelineConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">kg_driver</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">record_store</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="KGTimelineBuilder.config">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder.config">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">KGTimelineConfig</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="KGTimelineBuilder.kg_driver">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder.kg_driver">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kg_driver</span> <span class="o">=</span> <span class="n">kg_driver</span></div>
+
+<div class="viewcode-block" id="KGTimelineBuilder.record_store">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder.record_store">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">record_store</span> <span class="o">=</span> <span class="n">record_store</span></div>
+
+
+    <span class="c1"># ── Protocol method ───────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="KGTimelineBuilder.build">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder.build">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Execute Stage B for one emergent activity.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ComponentEventTimeline artifact conforming to</span>
+<span class="sd">            outage/schemas/component_event_timeline.json.</span>
+<span class="sd">        """</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">run_context</span><span class="p">[</span><span class="s2">"run_id"</span><span class="p">]</span>
+        <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">emergent_activity</span><span class="p">[</span><span class="s2">"activity_id"</span><span class="p">]</span>
+        <span class="n">component_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_select_primary_component</span><span class="p">(</span><span class="n">intake_result</span><span class="p">)</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">"Stage B building timeline for component </span><span class="si">%s</span><span class="s2"> (run=</span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span>
+            <span class="n">component_id</span><span class="p">,</span> <span class="n">run_id</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">detection_ts</span> <span class="o">=</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection_timestamp"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">detection_ts</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Stage B (run=</span><span class="si">%s</span><span class="s2">): detection_timestamp absent for activity </span><span class="si">%s</span><span class="s2"> — "</span>
+                <span class="s2">"KG window will be anchored to utcnow(); results may include "</span>
+                <span class="s2">"events after the actual detection time."</span><span class="p">,</span>
+                <span class="n">run_id</span><span class="p">,</span>
+                <span class="n">activity_id</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">kg_driver</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Stage B: kg_driver not injected — returning empty timeline for </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                <span class="n">component_id</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">include_condition_reports</span><span class="p">:</span>
+                <span class="n">events</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_query_condition_reports</span><span class="p">(</span><span class="n">component_id</span><span class="p">,</span> <span class="n">detection_ts</span><span class="p">))</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">include_work_orders</span><span class="p">:</span>
+                <span class="n">events</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_query_work_orders</span><span class="p">(</span><span class="n">component_id</span><span class="p">,</span> <span class="n">detection_ts</span><span class="p">))</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">include_preventive_maintenance</span><span class="p">:</span>
+                <span class="n">events</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_query_preventive_maintenance</span><span class="p">(</span><span class="n">component_id</span><span class="p">,</span> <span class="n">detection_ts</span><span class="p">))</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">include_corrective_maintenance</span><span class="p">:</span>
+                <span class="n">events</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_query_corrective_maintenance</span><span class="p">(</span><span class="n">component_id</span><span class="p">,</span> <span class="n">detection_ts</span><span class="p">))</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">include_prior_emergent_activities</span><span class="p">:</span>
+                <span class="n">events</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_query_prior_emergent_activities</span><span class="p">(</span><span class="n">component_id</span><span class="p">,</span> <span class="n">detection_ts</span><span class="p">)</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">include_inspections</span><span class="p">:</span>
+                <span class="n">events</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_query_inspections</span><span class="p">(</span><span class="n">component_id</span><span class="p">,</span> <span class="n">detection_ts</span><span class="p">))</span>
+
+        <span class="n">events</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_deduplicate_events</span><span class="p">(</span><span class="n">events</span><span class="p">)</span>
+        <span class="n">events</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sort_and_cap</span><span class="p">(</span><span class="n">events</span><span class="p">)</span>
+        <span class="n">recurrence</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_recurrence_indicators</span><span class="p">(</span><span class="n">events</span><span class="p">,</span> <span class="n">detection_ts</span><span class="p">)</span>
+        <span class="n">coverage</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_data_coverage</span><span class="p">(</span><span class="n">events</span><span class="p">,</span> <span class="n">detection_ts</span><span class="p">)</span>
+        <span class="n">component_meta</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fetch_component_metadata</span><span class="p">(</span><span class="n">component_id</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"activity_id"</span><span class="p">:</span> <span class="n">activity_id</span><span class="p">,</span>
+            <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+            <span class="s2">"generated_at"</span><span class="p">:</span> <span class="n">run_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"started_at"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+            <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">component_id</span><span class="p">,</span>
+            <span class="s2">"component_name"</span><span class="p">:</span> <span class="n">component_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">),</span>
+            <span class="s2">"system_id"</span><span class="p">:</span> <span class="n">component_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"system_id"</span><span class="p">),</span>
+            <span class="s2">"system_name"</span><span class="p">:</span> <span class="n">component_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"system_name"</span><span class="p">),</span>
+            <span class="s2">"asset_id"</span><span class="p">:</span> <span class="n">component_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">),</span>
+            <span class="s2">"kg_driver_available"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">kg_driver</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"events"</span><span class="p">:</span> <span class="n">events</span><span class="p">,</span>
+            <span class="s2">"recurrence_indicators"</span><span class="p">:</span> <span class="n">recurrence</span><span class="p">,</span>
+            <span class="s2">"data_coverage"</span><span class="p">:</span> <span class="n">coverage</span><span class="p">,</span>
+            <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"generated_by"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+                <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+                <span class="s2">"kg_query_timestamp"</span><span class="p">:</span> <span class="n">run_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"started_at"</span><span class="p">),</span>
+                <span class="s2">"timeline_window_days"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">timeline_window_days</span><span class="p">,</span>
+            <span class="p">},</span>
+        <span class="p">}</span></div>
+
+
+    <span class="c1"># ── Private step methods ──────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="KGTimelineBuilder._select_primary_component">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._select_primary_component">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_select_primary_component</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return the primary component_id to build the timeline for.</span>
+
+<span class="sd">        Uses the first entry in resolved_component_ids if available;</span>
+<span class="sd">        falls back to known_component_id from the original intake record.</span>
+
+<span class="sd">        Raises ValueError if no component can be resolved.</span>
+<span class="sd">        """</span>
+        <span class="n">resolved</span> <span class="o">=</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"resolved_component_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">resolved</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">resolved</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">fallback</span> <span class="o">=</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"known_component_id"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">fallback</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">fallback</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">"Stage B: cannot determine component_id — "</span>
+            <span class="s2">"resolved_component_ids is empty and known_component_id is not set"</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="KGTimelineBuilder._fetch_component_metadata">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._fetch_component_metadata">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fetch_component_metadata</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">component_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Fetch component name, system_id, system_name, asset_id from the KG.</span>
+
+<span class="sd">        Traverses the component → system → asset hierarchy using PART_OF edges.</span>
+<span class="sd">        Returns an empty dict (with None values) when the KG is unavailable or</span>
+<span class="sd">        the component node does not exist.</span>
+
+<span class="sd">        Reuse: Py2Neo.query() — read-only access, no modification to RCA KG code.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">kg_driver</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{</span><span class="s2">"name"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"system_id"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"system_name"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"asset_id"</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span>
+
+        <span class="n">cypher</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"MATCH (c:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">component_label</span><span class="si">}</span><span class="s2">` </span><span class="se">{{</span><span class="s2">id: $component_id</span><span class="se">}}</span><span class="s2">)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="sa">f</span><span class="s2">"OPTIONAL MATCH (c)-[:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">component_hierarchy_rel</span><span class="si">}</span><span class="s2">`]-&gt;(s:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">component_label</span><span class="si">}</span><span class="s2">`)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="sa">f</span><span class="s2">"OPTIONAL MATCH (s)-[:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">component_hierarchy_rel</span><span class="si">}</span><span class="s2">`]-&gt;(a:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">component_label</span><span class="si">}</span><span class="s2">`)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"RETURN c.name AS name, c.component_type AS component_type,</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"       s.id AS system_id, s.name AS system_name,</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"       a.id AS asset_id"</span>
+        <span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">kg_driver</span><span class="o">.</span><span class="n">query</span><span class="p">(</span>
+                <span class="n">cypher</span><span class="p">,</span>
+                <span class="n">parameters</span><span class="o">=</span><span class="p">{</span><span class="s2">"component_id"</span><span class="p">:</span> <span class="n">component_id</span><span class="p">},</span>
+                <span class="n">db</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">kg_database</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">rows</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">{</span><span class="s2">"name"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"system_id"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"system_name"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"asset_id"</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="n">_record_to_dict</span><span class="p">(</span><span class="n">rows</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="k">return</span> <span class="p">{</span>
+                <span class="s2">"name"</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">),</span>
+                <span class="s2">"system_id"</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"system_id"</span><span class="p">),</span>
+                <span class="s2">"system_name"</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"system_name"</span><span class="p">),</span>
+                <span class="s2">"asset_id"</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">),</span>
+            <span class="p">}</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Stage B: _fetch_component_metadata failed for </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">component_id</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">{</span><span class="s2">"name"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"system_id"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"system_name"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"asset_id"</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="KGTimelineBuilder._query_condition_reports">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._query_condition_reports">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_query_condition_reports</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">component_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">before_ts</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Fetch CRs linked to this component within the timeline window.</span>
+
+<span class="sd">        Cypher pattern:</span>
+<span class="sd">            MATCH (cr:condition_report)-[:LINKED_TO]-&gt;(c:mbse_entity {id: $component_id})</span>
+<span class="sd">            WHERE cr.initiated_date &gt;= $window_start</span>
+<span class="sd">              AND ($before_ts IS NULL OR cr.initiated_date &lt; $before_ts)</span>
+<span class="sd">            RETURN cr</span>
+
+<span class="sd">        Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo (read-only import).</span>
+<span class="sd">        """</span>
+        <span class="n">window_start</span> <span class="o">=</span> <span class="n">_window_start_iso</span><span class="p">(</span><span class="n">before_ts</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">timeline_window_days</span><span class="p">)</span>
+        <span class="n">cypher</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"MATCH (cr:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">condition_report_label</span><span class="si">}</span><span class="s2">`)"</span>
+            <span class="sa">f</span><span class="s2">"-[:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">cr_component_rel</span><span class="si">}</span><span class="s2">`]-&gt;"</span>
+            <span class="sa">f</span><span class="s2">"(c:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">component_label</span><span class="si">}</span><span class="s2">` </span><span class="se">{{</span><span class="s2">id: $component_id</span><span class="se">}}</span><span class="s2">)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"WHERE ($window_start IS NULL OR cr.initiated_date &gt;= $window_start)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"  AND ($before_ts IS NULL OR cr.initiated_date &lt; $before_ts)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"RETURN cr"</span>
+        <span class="p">)</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">cypher</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">component_id</span><span class="p">,</span>
+            <span class="s2">"window_start"</span><span class="p">:</span> <span class="n">window_start</span><span class="p">,</span>
+            <span class="s2">"before_ts"</span><span class="p">:</span> <span class="n">before_ts</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="n">events</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+            <span class="n">props</span> <span class="o">=</span> <span class="n">_node_props</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="s2">"cr"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">props</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">event</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalise_event</span><span class="p">(</span>
+                <span class="n">props</span><span class="p">,</span>
+                <span class="n">event_type</span><span class="o">=</span><span class="s2">"condition_report"</span><span class="p">,</span>
+                <span class="n">timestamp_field</span><span class="o">=</span><span class="s2">"initiated_date"</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">events</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">events</span></div>
+
+
+<div class="viewcode-block" id="KGTimelineBuilder._query_work_orders">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._query_work_orders">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_query_work_orders</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">component_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">before_ts</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Fetch general WOs (excluding PM/CM — those are queried separately).</span>
+
+<span class="sd">        Cypher pattern:</span>
+<span class="sd">            MATCH (wo:work_order)-[:PERFORMED_ON]-&gt;(c:mbse_entity {id: $component_id})</span>
+<span class="sd">            WHERE wo.initiated_date &gt;= $window_start</span>
+<span class="sd">              AND NOT wo.work_type IN ['PM', 'CM']</span>
+<span class="sd">            RETURN wo</span>
+
+<span class="sd">        Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.</span>
+<span class="sd">        """</span>
+        <span class="n">window_start</span> <span class="o">=</span> <span class="n">_window_start_iso</span><span class="p">(</span><span class="n">before_ts</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">timeline_window_days</span><span class="p">)</span>
+        <span class="n">cypher</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"MATCH (wo:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">work_order_label</span><span class="si">}</span><span class="s2">`)"</span>
+            <span class="sa">f</span><span class="s2">"-[:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">wo_component_rel</span><span class="si">}</span><span class="s2">`]-&gt;"</span>
+            <span class="sa">f</span><span class="s2">"(c:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">component_label</span><span class="si">}</span><span class="s2">` </span><span class="se">{{</span><span class="s2">id: $component_id</span><span class="se">}}</span><span class="s2">)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"WHERE ($window_start IS NULL OR wo.initiated_date &gt;= $window_start)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"  AND ($before_ts IS NULL OR wo.initiated_date &lt; $before_ts)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"  AND NOT wo.work_type IN [$pm_code, $cm_code]</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"RETURN wo"</span>
+        <span class="p">)</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">cypher</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">component_id</span><span class="p">,</span>
+            <span class="s2">"window_start"</span><span class="p">:</span> <span class="n">window_start</span><span class="p">,</span>
+            <span class="s2">"before_ts"</span><span class="p">:</span> <span class="n">before_ts</span><span class="p">,</span>
+            <span class="s2">"pm_code"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">pm_work_type_code</span><span class="p">,</span>
+            <span class="s2">"cm_code"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">cm_work_type_code</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="n">events</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+            <span class="n">props</span> <span class="o">=</span> <span class="n">_node_props</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="s2">"wo"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">props</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">event</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalise_event</span><span class="p">(</span>
+                <span class="n">props</span><span class="p">,</span>
+                <span class="n">event_type</span><span class="o">=</span><span class="s2">"work_order"</span><span class="p">,</span>
+                <span class="n">timestamp_field</span><span class="o">=</span><span class="s2">"initiated_date"</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">events</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">events</span></div>
+
+
+<div class="viewcode-block" id="KGTimelineBuilder._query_preventive_maintenance">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._query_preventive_maintenance">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_query_preventive_maintenance</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">component_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">before_ts</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Fetch scheduled PM records for this component.</span>
+
+<span class="sd">        Filters work_order nodes where work_type == config.pm_work_type_code.</span>
+<span class="sd">        The completion_date (or initiated_date) is stored as the event timestamp.</span>
+
+<span class="sd">        Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.</span>
+<span class="sd">        """</span>
+        <span class="n">window_start</span> <span class="o">=</span> <span class="n">_window_start_iso</span><span class="p">(</span><span class="n">before_ts</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">timeline_window_days</span><span class="p">)</span>
+        <span class="n">cypher</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"MATCH (wo:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">work_order_label</span><span class="si">}</span><span class="s2">`)"</span>
+            <span class="sa">f</span><span class="s2">"-[:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">wo_component_rel</span><span class="si">}</span><span class="s2">`]-&gt;"</span>
+            <span class="sa">f</span><span class="s2">"(c:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">component_label</span><span class="si">}</span><span class="s2">` </span><span class="se">{{</span><span class="s2">id: $component_id</span><span class="se">}}</span><span class="s2">)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"WHERE wo.work_type = $pm_code</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"  AND ($window_start IS NULL OR wo.initiated_date &gt;= $window_start)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"  AND ($before_ts IS NULL OR wo.initiated_date &lt; $before_ts)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"RETURN wo"</span>
+        <span class="p">)</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">cypher</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">component_id</span><span class="p">,</span>
+            <span class="s2">"window_start"</span><span class="p">:</span> <span class="n">window_start</span><span class="p">,</span>
+            <span class="s2">"before_ts"</span><span class="p">:</span> <span class="n">before_ts</span><span class="p">,</span>
+            <span class="s2">"pm_code"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">pm_work_type_code</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="n">events</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+            <span class="n">props</span> <span class="o">=</span> <span class="n">_node_props</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="s2">"wo"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">props</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="c1"># Prefer completion_date for PM events (actual execution timestamp)</span>
+            <span class="n">ts_field</span> <span class="o">=</span> <span class="s2">"completion_date"</span> <span class="k">if</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"completion_date"</span><span class="p">)</span> <span class="k">else</span> <span class="s2">"initiated_date"</span>
+            <span class="n">event</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalise_event</span><span class="p">(</span>
+                <span class="n">props</span><span class="p">,</span>
+                <span class="n">event_type</span><span class="o">=</span><span class="s2">"preventive_maintenance"</span><span class="p">,</span>
+                <span class="n">timestamp_field</span><span class="o">=</span><span class="n">ts_field</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">events</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">events</span></div>
+
+
+<div class="viewcode-block" id="KGTimelineBuilder._query_corrective_maintenance">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._query_corrective_maintenance">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_query_corrective_maintenance</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">component_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">before_ts</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Fetch corrective maintenance records for this component.</span>
+
+<span class="sd">        Filters work_order nodes where work_type == config.cm_work_type_code.</span>
+
+<span class="sd">        Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.</span>
+<span class="sd">        """</span>
+        <span class="n">window_start</span> <span class="o">=</span> <span class="n">_window_start_iso</span><span class="p">(</span><span class="n">before_ts</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">timeline_window_days</span><span class="p">)</span>
+        <span class="n">cypher</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"MATCH (wo:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">work_order_label</span><span class="si">}</span><span class="s2">`)"</span>
+            <span class="sa">f</span><span class="s2">"-[:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">wo_component_rel</span><span class="si">}</span><span class="s2">`]-&gt;"</span>
+            <span class="sa">f</span><span class="s2">"(c:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">component_label</span><span class="si">}</span><span class="s2">` </span><span class="se">{{</span><span class="s2">id: $component_id</span><span class="se">}}</span><span class="s2">)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"WHERE wo.work_type = $cm_code</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"  AND ($window_start IS NULL OR wo.initiated_date &gt;= $window_start)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"  AND ($before_ts IS NULL OR wo.initiated_date &lt; $before_ts)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"RETURN wo"</span>
+        <span class="p">)</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">cypher</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">component_id</span><span class="p">,</span>
+            <span class="s2">"window_start"</span><span class="p">:</span> <span class="n">window_start</span><span class="p">,</span>
+            <span class="s2">"before_ts"</span><span class="p">:</span> <span class="n">before_ts</span><span class="p">,</span>
+            <span class="s2">"cm_code"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">cm_work_type_code</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="n">events</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+            <span class="n">props</span> <span class="o">=</span> <span class="n">_node_props</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="s2">"wo"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">props</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">ts_field</span> <span class="o">=</span> <span class="s2">"completion_date"</span> <span class="k">if</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"completion_date"</span><span class="p">)</span> <span class="k">else</span> <span class="s2">"initiated_date"</span>
+            <span class="n">event</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalise_event</span><span class="p">(</span>
+                <span class="n">props</span><span class="p">,</span>
+                <span class="n">event_type</span><span class="o">=</span><span class="s2">"corrective_maintenance"</span><span class="p">,</span>
+                <span class="n">timestamp_field</span><span class="o">=</span><span class="n">ts_field</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">events</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">events</span></div>
+
+
+<div class="viewcode-block" id="KGTimelineBuilder._query_prior_emergent_activities">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._query_prior_emergent_activities">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_query_prior_emergent_activities</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">component_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">before_ts</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Fetch prior emergent activities involving this component.</span>
+
+<span class="sd">        Queries abnormal_event nodes linked to this component.  These represent</span>
+<span class="sd">        historical unexpected-activity records ingested from prior outage runs.</span>
+
+<span class="sd">        Cypher pattern:</span>
+<span class="sd">            MATCH (e:abnormal_event)-[:LINKED_TO]-&gt;(c:mbse_entity {id: $component_id})</span>
+<span class="sd">            WHERE e.timestamp_start &gt;= $window_start</span>
+<span class="sd">            RETURN e</span>
+
+<span class="sd">        Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.</span>
+<span class="sd">        """</span>
+        <span class="n">window_start</span> <span class="o">=</span> <span class="n">_window_start_iso</span><span class="p">(</span><span class="n">before_ts</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">timeline_window_days</span><span class="p">)</span>
+        <span class="n">cypher</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"MATCH (e:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">abnormal_event_label</span><span class="si">}</span><span class="s2">`)"</span>
+            <span class="sa">f</span><span class="s2">"-[:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">cr_component_rel</span><span class="si">}</span><span class="s2">`]-&gt;"</span>
+            <span class="sa">f</span><span class="s2">"(c:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">component_label</span><span class="si">}</span><span class="s2">` </span><span class="se">{{</span><span class="s2">id: $component_id</span><span class="se">}}</span><span class="s2">)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"WHERE ($window_start IS NULL OR e.timestamp_start &gt;= $window_start)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"  AND ($before_ts IS NULL OR e.timestamp_start &lt; $before_ts)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"RETURN e"</span>
+        <span class="p">)</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">cypher</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">component_id</span><span class="p">,</span>
+            <span class="s2">"window_start"</span><span class="p">:</span> <span class="n">window_start</span><span class="p">,</span>
+            <span class="s2">"before_ts"</span><span class="p">:</span> <span class="n">before_ts</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="n">events</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+            <span class="n">props</span> <span class="o">=</span> <span class="n">_node_props</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="s2">"e"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">props</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">event</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalise_event</span><span class="p">(</span>
+                <span class="n">props</span><span class="p">,</span>
+                <span class="n">event_type</span><span class="o">=</span><span class="s2">"prior_emergent_activity"</span><span class="p">,</span>
+                <span class="n">timestamp_field</span><span class="o">=</span><span class="s2">"timestamp_start"</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">events</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">events</span></div>
+
+
+<div class="viewcode-block" id="KGTimelineBuilder._query_inspections">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._query_inspections">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_query_inspections</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">component_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">before_ts</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Fetch standalone inspection records for this component.</span>
+
+<span class="sd">        Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.</span>
+<span class="sd">        """</span>
+        <span class="n">window_start</span> <span class="o">=</span> <span class="n">_window_start_iso</span><span class="p">(</span><span class="n">before_ts</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">timeline_window_days</span><span class="p">)</span>
+        <span class="n">cypher</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"MATCH (ins:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">inspection_label</span><span class="si">}</span><span class="s2">`)"</span>
+            <span class="sa">f</span><span class="s2">"-[:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">cr_component_rel</span><span class="si">}</span><span class="s2">`]-&gt;"</span>
+            <span class="sa">f</span><span class="s2">"(c:`</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">component_label</span><span class="si">}</span><span class="s2">` </span><span class="se">{{</span><span class="s2">id: $component_id</span><span class="se">}}</span><span class="s2">)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"WHERE ($window_start IS NULL OR ins.inspection_date &gt;= $window_start)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"  AND ($before_ts IS NULL OR ins.inspection_date &lt; $before_ts)</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="s2">"RETURN ins"</span>
+        <span class="p">)</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">cypher</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">component_id</span><span class="p">,</span>
+            <span class="s2">"window_start"</span><span class="p">:</span> <span class="n">window_start</span><span class="p">,</span>
+            <span class="s2">"before_ts"</span><span class="p">:</span> <span class="n">before_ts</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="n">events</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+            <span class="n">props</span> <span class="o">=</span> <span class="n">_node_props</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="s2">"ins"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">props</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">event</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalise_event</span><span class="p">(</span>
+                <span class="n">props</span><span class="p">,</span>
+                <span class="n">event_type</span><span class="o">=</span><span class="s2">"inspection"</span><span class="p">,</span>
+                <span class="n">timestamp_field</span><span class="o">=</span><span class="s2">"inspection_date"</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">events</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">events</span></div>
+
+
+<div class="viewcode-block" id="KGTimelineBuilder._deduplicate_events">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._deduplicate_events">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_deduplicate_events</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Remove duplicate events by source_doc_id, keeping the highest DQ score.</span>
+
+<span class="sd">        Events without a source_doc_id are retained as-is (they are treated as</span>
+<span class="sd">        distinct since we have no deduplication key for them).</span>
+<span class="sd">        """</span>
+        <span class="n">keyed</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">no_key</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">events</span><span class="p">:</span>
+            <span class="n">doc_id</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_doc_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">doc_id</span><span class="p">:</span>
+                <span class="n">no_key</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">existing</span> <span class="o">=</span> <span class="n">keyed</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">doc_id</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">existing</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"data_quality_score"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">existing</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"data_quality_score"</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
+                <span class="n">keyed</span><span class="p">[</span><span class="n">doc_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">event</span>
+
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">keyed</span><span class="o">.</span><span class="n">values</span><span class="p">())</span> <span class="o">+</span> <span class="n">no_key</span></div>
+
+
+<div class="viewcode-block" id="KGTimelineBuilder._sort_and_cap">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._sort_and_cap">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_sort_and_cap</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Sort events ascending by timestamp and cap at config.max_events.</span>
+
+<span class="sd">        Events with a null timestamp are placed at the end of the sorted list</span>
+<span class="sd">        (they cannot be used in Allen relation scoring but are retained for</span>
+<span class="sd">        recurrence counting).</span>
+<span class="sd">        """</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">_sort_key</span><span class="p">(</span><span class="n">e</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">):</span>
+            <span class="n">ts</span> <span class="o">=</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">ts</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">max</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">ts</span>
+
+        <span class="n">sorted_events</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">events</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">_sort_key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sorted_events</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_events</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">"Stage B: capping timeline at </span><span class="si">%d</span><span class="s2"> events (</span><span class="si">%d</span><span class="s2"> total retrieved)"</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_events</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">sorted_events</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="c1"># Keep the most recent max_events (most relevant to Stage C)</span>
+            <span class="n">sorted_events</span> <span class="o">=</span> <span class="n">sorted_events</span><span class="p">[</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_events</span><span class="p">:]</span>
+        <span class="k">return</span> <span class="n">sorted_events</span></div>
+
+
+<div class="viewcode-block" id="KGTimelineBuilder._compute_recurrence_indicators">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._compute_recurrence_indicators">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compute_recurrence_indicators</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="n">detection_ts</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Compute repeat failure count, mean inter-event days, trend, and PM status.</span>
+
+<span class="sd">        trend logic:</span>
+<span class="sd">            Split the timeline window into two halves by event count.</span>
+<span class="sd">            If second-half count &gt; first-half count × 1.5 → 'increasing'</span>
+<span class="sd">            If first-half count &gt; second-half count × 1.5 → 'decreasing'</span>
+<span class="sd">            Otherwise → 'stable'</span>
+<span class="sd">            If fewer than 3 events → 'insufficient_data'</span>
+
+<span class="sd">        PM compliance:</span>
+<span class="sd">            Locate the most recent preventive_maintenance event in the timeline.</span>
+<span class="sd">            Compare its timestamp against detection_ts using</span>
+<span class="sd">            config.default_pm_interval_days.</span>
+<span class="sd">            If elapsed &gt; interval + pm_overdue_threshold_days → 'overdue'</span>
+<span class="sd">            Else → 'current'</span>
+<span class="sd">        """</span>
+        <span class="c1"># ── Repeat failure count ──────────────────────────────────────────────</span>
+        <span class="c1"># Count events that represent a problem (CRs + corrective maintenance +</span>
+        <span class="c1"># prior emergent activities)</span>
+        <span class="n">failure_types</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"condition_report"</span><span class="p">,</span>
+            <span class="s2">"corrective_maintenance"</span><span class="p">,</span>
+            <span class="s2">"prior_emergent_activity"</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">failure_events</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">events</span> <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">failure_types</span><span class="p">]</span>
+        <span class="n">repeat_failure_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">failure_events</span><span class="p">)</span>
+
+        <span class="c1"># ── Inter-event periods ───────────────────────────────────────────────</span>
+        <span class="n">timed_events</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">events</span> <span class="k">if</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">))</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="p">]</span>
+        <span class="n">inter_event_days</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">timed_events</span><span class="p">)):</span>
+            <span class="n">t1</span> <span class="o">=</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">timed_events</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">][</span><span class="s2">"timestamp"</span><span class="p">])</span>
+            <span class="n">t2</span> <span class="o">=</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">timed_events</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="s2">"timestamp"</span><span class="p">])</span>
+            <span class="k">if</span> <span class="n">t1</span> <span class="ow">and</span> <span class="n">t2</span><span class="p">:</span>
+                <span class="n">delta</span> <span class="o">=</span> <span class="p">(</span><span class="n">t2</span> <span class="o">-</span> <span class="n">t1</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">/</span> <span class="mf">86400.0</span>
+                <span class="k">if</span> <span class="n">delta</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">inter_event_days</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">delta</span><span class="p">)</span>
+
+        <span class="n">mean_inter_event_days</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">min_inter_event_days</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">inter_event_days</span><span class="p">:</span>
+            <span class="n">mean_inter_event_days</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="nb">sum</span><span class="p">(</span><span class="n">inter_event_days</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">inter_event_days</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">min_inter_event_days</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">inter_event_days</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># ── Trend ─────────────────────────────────────────────────────────────</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">timed_events</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">trend</span> <span class="o">=</span> <span class="s2">"insufficient_data"</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">mid</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">timed_events</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+            <span class="n">first_half_count</span> <span class="o">=</span> <span class="n">mid</span>
+            <span class="n">second_half_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">timed_events</span><span class="p">)</span> <span class="o">-</span> <span class="n">mid</span>
+            <span class="k">if</span> <span class="n">second_half_count</span> <span class="o">&gt;</span> <span class="n">first_half_count</span> <span class="o">*</span> <span class="mf">1.5</span><span class="p">:</span>
+                <span class="n">trend</span> <span class="o">=</span> <span class="s2">"increasing"</span>
+            <span class="k">elif</span> <span class="n">first_half_count</span> <span class="o">&gt;</span> <span class="n">second_half_count</span> <span class="o">*</span> <span class="mf">1.5</span><span class="p">:</span>
+                <span class="n">trend</span> <span class="o">=</span> <span class="s2">"decreasing"</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">trend</span> <span class="o">=</span> <span class="s2">"stable"</span>
+
+        <span class="c1"># ── PM compliance ─────────────────────────────────────────────────────</span>
+        <span class="n">pm_events</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">timed_events</span> <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_type"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"preventive_maintenance"</span>
+        <span class="p">]</span>
+        <span class="n">last_pm_date</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">pm_compliance_status</span> <span class="o">=</span> <span class="s2">"unknown"</span>
+        <span class="n">pm_overdue_days</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="n">pm_events</span><span class="p">:</span>
+            <span class="n">last_pm_event</span> <span class="o">=</span> <span class="n">pm_events</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>  <span class="c1"># already sorted ascending</span>
+            <span class="n">last_pm_date</span> <span class="o">=</span> <span class="n">last_pm_event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">last_pm_date</span> <span class="ow">and</span> <span class="n">detection_ts</span><span class="p">:</span>
+                <span class="n">pm_dt</span> <span class="o">=</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">last_pm_date</span><span class="p">)</span>
+                <span class="n">detection_dt</span> <span class="o">=</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">detection_ts</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">pm_dt</span> <span class="ow">and</span> <span class="n">detection_dt</span><span class="p">:</span>
+                    <span class="n">elapsed_days</span> <span class="o">=</span> <span class="p">(</span><span class="n">detection_dt</span> <span class="o">-</span> <span class="n">pm_dt</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">/</span> <span class="mf">86400.0</span>
+                    <span class="n">interval</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">default_pm_interval_days</span>
+                    <span class="n">overdue_threshold</span> <span class="o">=</span> <span class="n">interval</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">pm_overdue_threshold_days</span>
+                    <span class="k">if</span> <span class="n">elapsed_days</span> <span class="o">&gt;</span> <span class="n">overdue_threshold</span><span class="p">:</span>
+                        <span class="n">pm_compliance_status</span> <span class="o">=</span> <span class="s2">"overdue"</span>
+                        <span class="n">pm_overdue_days</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">elapsed_days</span> <span class="o">-</span> <span class="n">interval</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">pm_compliance_status</span> <span class="o">=</span> <span class="s2">"compliant"</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"repeat_failure_count"</span><span class="p">:</span> <span class="n">repeat_failure_count</span><span class="p">,</span>
+            <span class="s2">"mean_inter_event_days"</span><span class="p">:</span> <span class="n">mean_inter_event_days</span><span class="p">,</span>
+            <span class="s2">"trend"</span><span class="p">:</span> <span class="n">trend</span><span class="p">,</span>
+            <span class="s2">"last_pm_date"</span><span class="p">:</span> <span class="n">last_pm_date</span><span class="p">,</span>
+            <span class="s2">"pm_compliance_status"</span><span class="p">:</span> <span class="n">pm_compliance_status</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="KGTimelineBuilder._compute_data_coverage">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._compute_data_coverage">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compute_data_coverage</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="n">detection_ts</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Summarise total_events, outages_represented, earliest/latest event.</span>
+
+<span class="sd">        outages_represented: count of distinct outage_id values across events</span>
+<span class="sd">        (events without an outage_id are excluded from this count).</span>
+<span class="sd">        """</span>
+        <span class="n">total_events</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">events</span><span class="p">)</span>
+
+        <span class="n">timed</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">events</span> <span class="k">if</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">))</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="n">earliest</span> <span class="o">=</span> <span class="n">_iso</span><span class="p">(</span><span class="n">_parse_dt</span><span class="p">(</span><span class="n">timed</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s2">"timestamp"</span><span class="p">]))</span> <span class="k">if</span> <span class="n">timed</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">latest</span> <span class="o">=</span> <span class="n">_iso</span><span class="p">(</span><span class="n">_parse_dt</span><span class="p">(</span><span class="n">timed</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="s2">"timestamp"</span><span class="p">]))</span> <span class="k">if</span> <span class="n">timed</span> <span class="k">else</span> <span class="kc">None</span>
+
+        <span class="n">outage_ids</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">e</span><span class="p">[</span><span class="s2">"outage_id"</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">events</span>
+            <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"outage_id"</span><span class="p">)</span>
+        <span class="p">}</span>
+        <span class="n">outages_represented</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">outage_ids</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"total_events"</span><span class="p">:</span> <span class="n">total_events</span><span class="p">,</span>
+            <span class="s2">"outages_represented"</span><span class="p">:</span> <span class="n">outages_represented</span><span class="p">,</span>
+            <span class="s2">"earliest_event"</span><span class="p">:</span> <span class="n">earliest</span><span class="p">,</span>
+            <span class="s2">"latest_event"</span><span class="p">:</span> <span class="n">latest</span><span class="p">,</span>
+            <span class="s2">"data_quality_summary"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+    <span class="c1"># ── Private utilities ─────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="KGTimelineBuilder._run_query">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._run_query">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_run_query</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">cypher</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">parameters</span><span class="p">:</span> <span class="n">JsonDict</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Execute a Cypher query via Py2Neo and return the raw record list.</span>
+
+<span class="sd">        Returns an empty list on any exception so that a KG connectivity</span>
+<span class="sd">        problem in one query does not abort the entire pipeline.</span>
+
+<span class="sd">        Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.</span>
+<span class="sd">        """</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">kg_driver</span><span class="o">.</span><span class="n">query</span><span class="p">(</span>
+                <span class="n">cypher</span><span class="p">,</span>
+                <span class="n">parameters</span><span class="o">=</span><span class="n">parameters</span><span class="p">,</span>
+                <span class="n">db</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">kg_database</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Stage B: KG query failed (first 120 chars of Cypher: </span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span>
+                <span class="n">cypher</span><span class="p">[:</span><span class="mi">120</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="s2">" "</span><span class="p">),</span>
+                <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="p">[]</span></div>
+
+
+<div class="viewcode-block" id="KGTimelineBuilder._normalise_event">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_b_kg_timeline/index.html#src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder._normalise_event">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_normalise_event</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">props</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">event_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">timestamp_field</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Convert raw KG node properties into a canonical timeline event dict.</span>
+
+<span class="sd">        Canonical fields:</span>
+<span class="sd">            event_id, event_type, timestamp, end_timestamp,</span>
+<span class="sd">            description, source_doc_id, source_system,</span>
+<span class="sd">            outage_id, data_quality_score.</span>
+
+<span class="sd">        Attempts to enrich description from record_store when the KG node</span>
+<span class="sd">        only carries a source_doc_id.</span>
+
+<span class="sd">        Reuse: record_store (from RCA.storage) — injected, no modification.</span>
+<span class="sd">        """</span>
+        <span class="n">event_id</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"id"</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cr_id"</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"wo_id"</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="sa">f</span><span class="s2">"EVT::</span><span class="si">{</span><span class="n">event_type</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">hex</span><span class="p">[:</span><span class="mi">8</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span>
+        <span class="p">)</span>
+
+        <span class="n">description</span> <span class="o">=</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"description"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"title"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">source_doc_id</span> <span class="o">=</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_doc_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"id"</span><span class="p">)</span>
+
+        <span class="c1"># Enrich description from record_store when available</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">description</span> <span class="ow">and</span> <span class="n">source_doc_id</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">record_store</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">record</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">record_store</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">source_doc_id</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">record</span><span class="p">:</span>
+                    <span class="n">description</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"summary"</span><span class="p">)</span>
+                        <span class="ow">or</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"text"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)[:</span><span class="mi">500</span><span class="p">]</span>
+                    <span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+                <span class="k">pass</span>
+
+        <span class="n">event</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"event_id"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">event_id</span><span class="p">),</span>
+            <span class="s2">"event_type"</span><span class="p">:</span> <span class="n">event_type</span><span class="p">,</span>
+            <span class="s2">"timestamp"</span><span class="p">:</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">timestamp_field</span><span class="p">),</span>
+            <span class="s2">"end_timestamp"</span><span class="p">:</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"completion_date"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_end"</span><span class="p">),</span>
+            <span class="s2">"description"</span><span class="p">:</span> <span class="n">description</span><span class="p">,</span>
+            <span class="s2">"source_doc_id"</span><span class="p">:</span> <span class="n">source_doc_id</span><span class="p">,</span>
+            <span class="s2">"source_system"</span><span class="p">:</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_system"</span><span class="p">),</span>
+            <span class="s2">"outage_id"</span><span class="p">:</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"outage_id"</span><span class="p">),</span>
+            <span class="s2">"work_type"</span><span class="p">:</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"work_type"</span><span class="p">),</span>
+        <span class="p">}</span>
+
+        <span class="c1"># Compute DQ score now that all fields are populated</span>
+        <span class="n">event</span><span class="p">[</span><span class="s2">"data_quality_score"</span><span class="p">]</span> <span class="o">=</span> <span class="n">_score_event_dq</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">event</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

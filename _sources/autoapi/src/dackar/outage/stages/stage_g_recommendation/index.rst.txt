@@ -1,0 +1,388 @@
+src.dackar.outage.stages.stage_g_recommendation
+===============================================
+
+.. py:module:: src.dackar.outage.stages.stage_g_recommendation
+
+.. autoapi-nested-parse::
+
+   Stage G — Recommendation Synthesizer.
+
+   Responsibilities:
+       1. Select the primary recommendation from InsertionOptions.
+       2. Determine the decision_status (PROCEED / DEFER / ESCALATE / MONITOR /
+          INCONCLUSIVE).
+       3. Build the executive_summary (plain-language conclusion, confidence tier,
+          analyst attention flags).
+       4. Assemble the evidence chain from upstream artifacts — every claim must
+          cite a source (WBS 11.2 traceability requirement).
+       5. Surface all regulatory flags from Stage A.
+       6. Build schedule and history summaries for the executive view.
+       7. Set analyst_review=True when required (regulatory constraints present,
+          low confidence, INCONCLUSIVE status, upstream fallback used, or
+          unknown abbreviation rate > threshold).
+       8. Compute the validation_status block.
+
+   Output schema: outage/schemas/outage_activity_recommendation.json
+
+   Design principle (from critical_analysis.md §8):
+       Every recommendation must surface:
+           (a) the specific historical outages it draws from
+           (b) the number of analogous events in the training data
+           (c) an explicit confidence tier
+           (d) a reject-with-reason path that feeds back into the learning loop
+
+   Reuse targets:
+       RCA.synthesis.rca_synthesizer_v31  → evidence selection pattern, confidence
+                                            tier logic, fallback detection
+       RCA.validation.schema_validator    → _compute_validation_status()
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_g_recommendation.LOGGER
+   src.dackar.outage.stages.stage_g_recommendation.JsonDict
+   src.dackar.outage.stages.stage_g_recommendation._PROCEED
+   src.dackar.outage.stages.stage_g_recommendation._DEFER
+   src.dackar.outage.stages.stage_g_recommendation._ESCALATE
+   src.dackar.outage.stages.stage_g_recommendation._MONITOR
+   src.dackar.outage.stages.stage_g_recommendation._INCONCLUSIVE
+   src.dackar.outage.stages.stage_g_recommendation._FLAG_REGULATORY
+   src.dackar.outage.stages.stage_g_recommendation._FLAG_LOW_CONFIDENCE
+   src.dackar.outage.stages.stage_g_recommendation._FLAG_LOW_ANALOGS
+   src.dackar.outage.stages.stage_g_recommendation._FLAG_TEMPORAL_CONTRADICTION
+   src.dackar.outage.stages.stage_g_recommendation._FLAG_CP_IMPACT
+   src.dackar.outage.stages.stage_g_recommendation._FLAG_HIGH_ABBR_RATE
+   src.dackar.outage.stages.stage_g_recommendation._FLAG_FALLBACK
+   src.dackar.outage.stages.stage_g_recommendation._FLAG_DISPLACED_REGULATORY
+   src.dackar.outage.stages.stage_g_recommendation._FLAG_LCO_EXPIRED
+   src.dackar.outage.stages.stage_g_recommendation._FLAG_LCO_CLOCK_CRITICAL
+   src.dackar.outage.stages.stage_g_recommendation._LCO_URGENT_STATUSES
+   src.dackar.outage.stages.stage_g_recommendation._PROCEED_OPTION_TYPES
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_g_recommendation.RecommendationConfig
+   src.dackar.outage.stages.stage_g_recommendation.RecommendationSynthesizer
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_g_recommendation._make_evidence
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:data:: JsonDict
+
+.. py:data:: _PROCEED
+   :value: 'PROCEED'
+
+
+.. py:data:: _DEFER
+   :value: 'DEFER'
+
+
+.. py:data:: _ESCALATE
+   :value: 'ESCALATE'
+
+
+.. py:data:: _MONITOR
+   :value: 'MONITOR'
+
+
+.. py:data:: _INCONCLUSIVE
+   :value: 'INCONCLUSIVE'
+
+
+.. py:data:: _FLAG_REGULATORY
+   :value: 'regulatory_constraint_present'
+
+
+.. py:data:: _FLAG_LOW_CONFIDENCE
+   :value: 'low_confidence_recommendation'
+
+
+.. py:data:: _FLAG_LOW_ANALOGS
+   :value: 'low_analog_count'
+
+
+.. py:data:: _FLAG_TEMPORAL_CONTRADICTION
+   :value: 'temporal_contradiction_detected'
+
+
+.. py:data:: _FLAG_CP_IMPACT
+   :value: 'critical_path_impact'
+
+
+.. py:data:: _FLAG_HIGH_ABBR_RATE
+   :value: 'high_unknown_abbreviation_rate'
+
+
+.. py:data:: _FLAG_FALLBACK
+   :value: 'fallback_distribution_used'
+
+
+.. py:data:: _FLAG_DISPLACED_REGULATORY
+   :value: 'displaced_regulatory_tasks'
+
+
+.. py:data:: _FLAG_LCO_EXPIRED
+   :value: 'lco_action_level_expired'
+
+
+.. py:data:: _FLAG_LCO_CLOCK_CRITICAL
+   :value: 'lco_action_level_critical'
+
+
+.. py:data:: _LCO_URGENT_STATUSES
+
+.. py:data:: _PROCEED_OPTION_TYPES
+
+.. py:class:: RecommendationConfig
+
+   Configuration for Stage G.
+
+
+   .. py:attribute:: min_analog_count_for_no_flag
+      :type:  int
+      :value: 5
+
+
+      Analog counts below this value trigger _FLAG_LOW_ANALOGS.
+
+
+   .. py:attribute:: unknown_abbreviation_rate_warning
+      :type:  float
+      :value: 0.25
+
+
+      Above this threshold _FLAG_HIGH_ABBR_RATE is raised.
+
+
+   .. py:attribute:: max_evidence_items
+      :type:  int
+      :value: 10
+
+
+      Maximum evidence chain entries to include in the artifact.
+
+
+   .. py:attribute:: pipeline_version
+      :type:  Optional[str]
+      :value: None
+
+
+      Human-readable pipeline version string written into every produced
+      artifact (e.g. ``"outage-pipeline-1.4.2"``).  Can also be supplied at
+      call time via ``run_context["pipeline_version"]``, which takes precedence.
+      Leave ``None`` to omit version tagging (acceptable during development, but
+      artifacts become indistinguishable across pipeline generations in storage).
+
+
+.. py:class:: RecommendationSynthesizer(config = None)
+
+   Concrete Stage G implementation.
+
+   :param config: Stage configuration.
+
+
+   .. py:attribute:: config
+
+
+   .. py:method:: synthesize(emergent_activity, intake_result, component_event_timeline, temporal_event_chain, historical_analogs, schedule_impact_assessment, insertion_options, run_context)
+
+      Execute Stage G for one emergent activity.
+
+      :returns: OutageActivityRecommendation artifact conforming to
+                outage/schemas/outage_activity_recommendation.json.
+
+
+
+   .. py:method:: _select_primary_option(insertion_options)
+
+      Retrieve the recommended option object from InsertionOptions.
+
+      Looks up insertion_options['recommended_option_id'] in the options list.
+      Returns None if recommended_option_id is None or not found.
+
+
+
+   .. py:method:: _determine_decision_status(primary_option, intake_result, historical_analogs, insertion_options, schedule_impact_assessment = None)
+
+      Map the primary option and context to a decision_status enum value.
+
+      Logic (evaluated in priority order):
+          INCONCLUSIVE — no feasible, regulatory-cleared option exists
+          ESCALATE     — primary option type is escalate_to_management
+          DEFER        — primary option type is defer_to_post_outage
+          MONITOR      — low confidence + no historical analogues + activity
+                         is non-critical path (watch, but no action yet warranted)
+          PROCEED      — primary option type is insert_now / contingency /
+                         parallel / scope_reduction / pre_outage_staging
+
+      ``schedule_impact_assessment`` (N5 fix): criticality_label is now read
+      from ``schedule_impact_assessment["float_analysis"]["criticality_label"]``
+      rather than the non-existent ``insertion_options["schedule_summary"]``
+      field that Stage F never produces.  The parameter is optional and defaults
+      to None so existing call sites that have not yet been updated continue to
+      work; absence is treated as non_critical (permissive MONITOR condition).
+
+
+
+   .. py:method:: _compute_attention_flags(intake_result, historical_analogs, schedule_impact, temporal_chain, insertion_options)
+
+      Compute the list of analyst attention flags.
+
+      Each flag is a string constant defined at module level.  Flags are
+      raised when:
+          _FLAG_REGULATORY        — intake_result.has_regulatory_constraint
+          _FLAG_LOW_CONFIDENCE    — confidence_tier == 'low_confidence'
+          _FLAG_LOW_ANALOGS       — analog_count < config.min_analog_count_for_no_flag
+          _FLAG_TEMPORAL_CONTRADICTION — temporal_chain.summary.has_temporal_contradiction
+          _FLAG_CP_IMPACT         — schedule_impact.float_analysis.criticality_label == "critical"
+          _FLAG_HIGH_ABBR_RATE    — intake_result.unknown_abbreviation_rate > threshold
+          _FLAG_FALLBACK          — historical_analogs.retrieval_summary.fallback_used
+          _FLAG_DISPLACED_REGULATORY — any displaced task has has_regulatory_constraint=True
+          _FLAG_LCO_EXPIRED       — intake_result.lco_clock_status == "expired"
+          _FLAG_LCO_CLOCK_CRITICAL — lco_clock_status in {"critical", "urgent", "unknown"}
+                                     and active LCO is present
+
+
+
+   .. py:method:: _determine_confidence_tier(historical_analogs, insertion_options)
+
+      Return the overall confidence tier for the recommendation.
+
+      Derived from the duration distribution confidence_tier in Stage D.
+      Degrades to low_confidence if the recommended option has confidence < 0.4.
+
+
+
+   .. py:method:: _build_executive_summary(decision_status, primary_option, confidence_tier, attention_flags, historical_analogs, schedule_impact, intake_result = None)
+
+      Build the plain-language executive summary for the outage manager.
+
+      primary_conclusion: one sentence stating the decision and key evidence.
+      Example: 'Insert now — non-critical path impact (4 h float consumed);
+      3 similar valve seal events in historical record, median 6.5 h.'
+
+      M1: when lco_clock_status indicates an active or expired action-level
+      deadline, the conclusion is prefixed with the clock warning so the most
+      time-critical information appears first — before any schedule or analog text.
+
+      States low_confidence explicitly when applicable.
+
+
+
+   .. py:method:: _build_lco_clock_prefix(intake_result)
+
+      Build an LCO action-level clock warning prefix for the primary conclusion.
+
+      M1: Returns a non-empty string when the LCO clock demands immediate
+      attention (expired/critical/urgent/unknown-active-lco), empty string
+      otherwise.  The prefix is prepended to the conclusion by
+      _build_executive_summary() so it always leads the manager briefing.
+
+
+
+   .. py:method:: _build_primary_recommendation(primary_option)
+
+      Extract the primary_recommendation block from the option dict.
+
+      Returns None if primary_option is None (maps to INCONCLUSIVE).
+
+
+
+   .. py:method:: _assemble_evidence_chain(temporal_event_chain, historical_analogs, schedule_impact, component_event_timeline, intake_result = None)
+
+      Build the evidence chain for the recommendation.
+
+      Each entry cites one specific piece of supporting evidence.
+      Sources in priority order:
+          0. regulatory_constraint — inserted at position 0 when
+             intake_result.has_regulatory_constraint is True (N6 fix:
+             the max_evidence_items cap must never displace a regulatory
+             entry; anchoring it first guarantees it survives truncation)
+          1. temporal_chain_link   — strongest Allen relation link(s)
+          2. historical_analog     — top-similarity analogs with duration data
+          3. schedule_analysis     — CP drag / float analysis result
+          4. condition_report      — highest-DQ CR from the component timeline
+
+      Each entry: evidence_id, source_type, source_id, snippet,
+      relevance_score, supports.
+
+      Mirrors _summarize_primary_evidence() from the RCA orchestrator but
+      operates on outage artifact types (read-only reuse pattern).
+
+
+
+   .. py:method:: _build_history_summary(historical_analogs, component_event_timeline)
+
+      Build the history_summary block for the executive view.
+
+      Extracts: analog_count, outages_represented, recurrence_pattern
+      (one sentence from recurrence_indicators), duration_p50_hours,
+      duration_p80_hours.
+
+
+
+   .. py:method:: _build_schedule_summary(schedule_impact)
+
+      Extract cp_impact_hours, criticality_label, float_consumed_hours,
+      displaced_task_count, and has_displaced_regulatory_tasks.
+
+
+
+   .. py:method:: _determine_analyst_review(decision_status, intake_result, historical_analogs, insertion_options, attention_flags)
+
+      Determine whether analyst review is required before acting.
+
+      required=True when any of:
+          - has_regulatory_constraint is True
+          - decision_status is INCONCLUSIVE
+          - duration distribution confidence_tier is low_confidence
+          - _FLAG_FALLBACK is in attention_flags
+          - _FLAG_HIGH_ABBR_RATE is in attention_flags (§6 exit criterion:
+            NER entity extraction unreliable when unknown_abbreviation_rate
+            exceeds RecommendationConfig.unknown_abbreviation_rate_warning)
+          - no feasible + regulatory-cleared option exists
+
+      reason: brief string summarising why review is required.
+      reviewer_decision initialised to None (populated by the analyst UI).
+
+
+
+   .. py:method:: _compute_validation_status(evidence_chain, regulatory_flags, historical_analogs)
+
+      Compute the validation_status block.
+
+      schema_valid:                  always True here (schema validation runs
+                                     in the orchestrator's _validate_and_persist).
+      all_regulatory_flags_resolved: True if every regulatory_flag entry has
+                                     a corresponding evidence_chain item that
+                                     supports=True, or if there are no flags.
+      minimum_evidence_met:          True if len(evidence_chain) >= 1 with at
+                                     least one supports=True entry.
+      fallback_used:                 from historical_analogs.retrieval_summary.
+
+
+
+.. py:function:: _make_evidence(*, source_type, source_id, snippet, relevance_score, supports)
+
+   Construct a standardised evidence chain entry.
+
+

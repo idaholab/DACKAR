@@ -1,0 +1,181 @@
+src.dackar.outage.validators.outage_artifact_validator
+======================================================
+
+.. py:module:: src.dackar.outage.validators.outage_artifact_validator
+
+.. autoapi-nested-parse::
+
+   OutageArtifactValidator — JSON Schema + semantic validation for the outage pipeline.
+
+   Two-layer validation for each of the 8 outage artifacts:
+       1. Per-artifact Draft-7 JSON Schema validation (schema files loaded from
+          outage/schemas/).
+       2. Per-artifact semantic checks for domain constraints that JSON Schema
+          cannot express: score range consistency, temporal ordering, referential
+          integrity between fields, outage-domain invariants.
+
+   Cross-artifact consistency is validated in validate_run_bundle():
+       - activity_id identical across all present artifacts.
+       - run_id identical across all present artifacts.
+       - Logical chain: e.g. INCONCLUSIVE recommendation must match no feasible
+         option in insertion_options.
+
+   Designed to be a drop-in replacement for NoOpSchemaValidator.  The
+   orchestrator calls:
+       validator.validate_artifact(artifact_name, payload) → ValidationReport
+       validator.validate_run_bundle(**artifact_kwargs)    → ValidationReport
+
+   Reuses ValidationReport / ValidationIssue from RCA validation module to
+   avoid duplication of the report dataclasses.
+
+   Source of truth
+   ---------------
+   The pipeline stage code is authoritative for artifact shape; the JSON Schemas
+   in ``outage/schemas/`` are maintained to accept what the stages actually emit.
+   When stage output and a schema disagree, the schema is corrected to match the
+   code (not the reverse).  This is a deliberate, documented stance (review
+   thread A2); a follow-up may generate the schemas from the stage dataclasses so
+   the two cannot drift again.  Until then, the A→G round-trip test in the tests
+   MR validates real stage output against these schemas to keep them locked.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.validators.outage_artifact_validator.LOGGER
+   src.dackar.outage.validators.outage_artifact_validator.JsonDict
+   src.dackar.outage.validators.outage_artifact_validator.Severity
+   src.dackar.outage.validators.outage_artifact_validator.OUTAGE_ARTIFACTS
+   src.dackar.outage.validators.outage_artifact_validator._SCHEMA_FILE
+   src.dackar.outage.validators.outage_artifact_validator._DEFAULT_SCHEMA_DIR
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.validators.outage_artifact_validator.OutageArtifactValidator
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.validators.outage_artifact_validator._issue
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:data:: JsonDict
+
+.. py:data:: Severity
+
+.. py:data:: OUTAGE_ARTIFACTS
+
+.. py:data:: _SCHEMA_FILE
+   :type:  Dict[str, str]
+
+.. py:data:: _DEFAULT_SCHEMA_DIR
+
+.. py:class:: OutageArtifactValidator(schema_dir = _DEFAULT_SCHEMA_DIR, *, mode = 'compat')
+
+   Two-layer validator for the outage unexpected-activity pipeline.
+
+   :param schema_dir: Directory containing the outage JSON Schema files.
+                      Defaults to outage/schemas/ relative to this file.
+   :param mode: Validation strictness.
+                'strict'    — schema mismatches are errors; no aliases.
+                'compat'    — same checks, but lenient about extra fields
+                              not covered by additionalProperties.
+                'warn_only' — all issues downgraded to warnings (useful
+                              during iterative stage development).
+
+
+   .. py:attribute:: schema_dir
+
+
+   .. py:attribute:: mode
+      :value: 'compat'
+
+
+
+   .. py:attribute:: schemas
+      :type:  Dict[str, JsonDict]
+
+
+   .. py:attribute:: validators
+      :type:  Dict[str, jsonschema.Draft7Validator]
+
+
+   .. py:method:: validate_artifact(artifact_name, payload)
+
+      Validate one artifact against its JSON Schema + semantic rules.
+
+      :param artifact_name: Orchestrator artifact key (e.g. 'intake_result').
+      :param payload: The artifact dict to validate.
+
+      :returns: ValidationReport with ok=True iff no error-severity issues found.
+
+
+
+   .. py:method:: validate_run_bundle(*, emergent_activity = None, intake_result = None, component_event_timeline = None, temporal_event_chain = None, historical_analogs = None, schedule_impact_assessment = None, insertion_options = None, outage_activity_recommendation = None)
+
+      Validate the complete set of artifacts for one pipeline run.
+
+      Runs per-artifact validation for every non-None artifact, then
+      applies cross-artifact consistency checks.
+
+
+
+   .. py:method:: _load_schemas()
+
+
+   .. py:method:: _semantic_checks(artifact_name, payload)
+
+
+   .. py:method:: _check_emergent_activity(p)
+
+
+   .. py:method:: _check_intake_result(p)
+
+
+   .. py:method:: _check_component_event_timeline(p)
+
+
+   .. py:method:: _check_temporal_event_chain(p)
+
+
+   .. py:method:: _check_historical_analogs(p)
+
+
+   .. py:method:: _check_schedule_impact(p)
+
+
+   .. py:method:: _check_insertion_options(p)
+
+
+   .. py:method:: _check_recommendation(p)
+
+
+   .. py:method:: _cross_artifact_checks(bundle)
+
+      Validate consistency across the full set of present artifacts.
+
+
+
+   .. py:method:: _sev(base)
+
+      Downgrade all issues to warnings in warn_only mode.
+
+
+
+.. py:function:: _issue(artifact, severity, code, message, path = None)
+

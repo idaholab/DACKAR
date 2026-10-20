@@ -1,0 +1,483 @@
+src.dackar.outage.stages.stage_b_kg_timeline
+============================================
+
+.. py:module:: src.dackar.outage.stages.stage_b_kg_timeline
+
+.. autoapi-nested-parse::
+
+   Stage B — KG Timeline Builder.
+
+   Responsibilities:
+       1. Query the knowledge graph for all events linked to the component(s)
+          resolved in Stage A within the configured time window.
+       2. Assemble events from four source types: condition reports (CRs),
+          work orders (WOs), preventive/corrective maintenance records,
+          and prior emergent activities.
+       3. Sort events chronologically and assign data quality scores.
+       4. Compute recurrence indicators (repeat failure count, inter-event
+          period, PM compliance status).
+       5. Summarise data coverage (event count, outages represented, window
+          span, any known gaps).
+
+   Output schema: outage/schemas/component_event_timeline.json
+
+   Reuse targets:
+       dackar.knowledge_graph.py2neo.Py2Neo              → all KG queries (read-only import)
+       RCA.storage.processed_record_store         → CR / WO text retrieval (injected)
+
+   KG node labels (defaults match RCA kg_schema_builder_workflow labels):
+       mbse_entity       — components, systems, assets
+       condition_report  — CR nodes
+       work_order        — WO, PM, CM nodes (distinguished by work_type property)
+       abnormal_event    — prior emergent activities
+       inspection        — standalone inspection records
+
+   KG relationship types:
+       LINKED_TO   — ConditionReport → Component
+       PERFORMED_ON — WorkOrder → Component
+       PART_OF     — Component → System → Asset
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_b_kg_timeline.LOGGER
+   src.dackar.outage.stages.stage_b_kg_timeline.JsonDict
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineConfig
+   src.dackar.outage.stages.stage_b_kg_timeline.KGTimelineBuilder
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_b_kg_timeline._parse_dt
+   src.dackar.outage.stages.stage_b_kg_timeline._iso
+   src.dackar.outage.stages.stage_b_kg_timeline._window_start_iso
+   src.dackar.outage.stages.stage_b_kg_timeline._score_event_dq
+   src.dackar.outage.stages.stage_b_kg_timeline._record_to_dict
+   src.dackar.outage.stages.stage_b_kg_timeline._node_props
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:data:: JsonDict
+
+.. py:function:: _parse_dt(iso_str)
+
+   Parse ISO-8601 string to timezone-aware datetime; returns None on failure.
+
+
+.. py:function:: _iso(dt)
+
+   Convert datetime to ISO string, or None.
+
+
+.. py:function:: _window_start_iso(before_ts, window_days)
+
+   Compute the ISO start of the timeline window.
+
+   When *before_ts* is absent or cannot be parsed, falls back to
+   ``datetime.now(UTC)`` so that Cypher always receives a concrete timestamp
+   for ``$window_start`` instead of ``NULL``.  Passing ``NULL`` to py2neo has
+   undefined behaviour — the Cypher ``IS NULL`` guard fires, but the driver may
+   serialise Python ``None`` differently across versions.
+
+   Callers that stored the return value in ``window_end`` or used it for
+   reporting should check ``before_ts`` directly if they need to distinguish
+   "no upper bound" from "explicit timestamp".
+
+
+.. py:function:: _score_event_dq(event)
+
+   Compute a [0, 1] data quality score for a raw KG event record.
+
+   Based on field completeness:
+       timestamp present:      +0.35  (required for temporal chain)
+       description present:    +0.30
+       source_doc_id present:  +0.20
+       source_system present:  +0.15
+
+
+.. py:function:: _record_to_dict(record)
+
+   Convert a Neo4j Record object to a plain Python dict.
+
+
+.. py:function:: _node_props(record, key = 'n')
+
+   Extract properties from a Neo4j node within a record.
+
+
+.. py:class:: KGTimelineConfig
+
+   Configuration for Stage B.
+
+
+   .. py:attribute:: timeline_window_days
+      :type:  int
+      :value: 1825
+
+
+      How far back from the emergent activity detection timestamp to query
+      the KG (in days).  Default 5 years.
+
+
+   .. py:attribute:: max_events
+      :type:  int
+      :value: 100
+
+
+      Maximum events to include in the timeline. Oldest events are truncated
+      when this limit is reached.
+
+
+   .. py:attribute:: include_work_orders
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: include_condition_reports
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: include_preventive_maintenance
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: include_corrective_maintenance
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: include_prior_emergent_activities
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: include_inspections
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: pm_overdue_threshold_days
+      :type:  int
+      :value: 30
+
+
+      Number of days past the scheduled PM due date before flagging as overdue.
+
+
+   .. py:attribute:: default_pm_interval_days
+      :type:  int
+      :value: 180
+
+
+      Assumed PM interval when no interval is stored on the KG component node.
+
+
+   .. py:attribute:: component_label
+      :type:  str
+      :value: 'mbse_entity'
+
+
+      Neo4j label for component / system / asset nodes.
+
+
+   .. py:attribute:: condition_report_label
+      :type:  str
+      :value: 'condition_report'
+
+
+      Neo4j label for condition report nodes.
+
+
+   .. py:attribute:: work_order_label
+      :type:  str
+      :value: 'work_order'
+
+
+      Neo4j label for work order nodes (PM, CM, and general WOs are
+      distinguished by a work_type property on the node).
+
+
+   .. py:attribute:: abnormal_event_label
+      :type:  str
+      :value: 'abnormal_event'
+
+
+      Neo4j label for prior emergent-activity / abnormal event nodes.
+
+
+   .. py:attribute:: inspection_label
+      :type:  str
+      :value: 'inspection'
+
+
+      Neo4j label for standalone inspection record nodes.
+
+
+   .. py:attribute:: cr_component_rel
+      :type:  str
+      :value: 'LINKED_TO'
+
+
+
+   .. py:attribute:: wo_component_rel
+      :type:  str
+      :value: 'PERFORMED_ON'
+
+
+
+   .. py:attribute:: component_hierarchy_rel
+      :type:  str
+      :value: 'PART_OF'
+
+
+
+   .. py:attribute:: pm_work_type_code
+      :type:  str
+      :value: 'PM'
+
+
+
+   .. py:attribute:: cm_work_type_code
+      :type:  str
+      :value: 'CM'
+
+
+
+   .. py:attribute:: kg_database
+      :type:  Optional[str]
+      :value: None
+
+
+
+.. py:class:: KGTimelineBuilder(config = None, *, kg_driver=None, record_store=None)
+
+   Concrete Stage B implementation.
+
+   :param config: Stage configuration.
+   :param kg_driver: Py2Neo instance (from dackar.knowledge_graph.py2neo).
+                     Provides all KG query methods.  When None, all KG queries
+                     are skipped and the returned timeline contains zero events.
+   :param record_store: ProcessedRecordStore instance (from RCA.storage).
+                        Used to retrieve text snippets for CR/WO events when the
+                        KG node itself carries only a source_doc_id.  Optional.
+
+
+   .. py:attribute:: config
+
+
+   .. py:attribute:: kg_driver
+      :value: None
+
+
+
+   .. py:attribute:: record_store
+      :value: None
+
+
+
+   .. py:method:: build(emergent_activity, intake_result, run_context)
+
+      Execute Stage B for one emergent activity.
+
+      :returns: ComponentEventTimeline artifact conforming to
+                outage/schemas/component_event_timeline.json.
+
+
+
+   .. py:method:: _select_primary_component(intake_result)
+
+      Return the primary component_id to build the timeline for.
+
+      Uses the first entry in resolved_component_ids if available;
+      falls back to known_component_id from the original intake record.
+
+      Raises ValueError if no component can be resolved.
+
+
+
+   .. py:method:: _fetch_component_metadata(component_id)
+
+      Fetch component name, system_id, system_name, asset_id from the KG.
+
+      Traverses the component → system → asset hierarchy using PART_OF edges.
+      Returns an empty dict (with None values) when the KG is unavailable or
+      the component node does not exist.
+
+      Reuse: Py2Neo.query() — read-only access, no modification to RCA KG code.
+
+
+
+   .. py:method:: _query_condition_reports(component_id, before_ts)
+
+      Fetch CRs linked to this component within the timeline window.
+
+      Cypher pattern:
+          MATCH (cr:condition_report)-[:LINKED_TO]->(c:mbse_entity {id: $component_id})
+          WHERE cr.initiated_date >= $window_start
+            AND ($before_ts IS NULL OR cr.initiated_date < $before_ts)
+          RETURN cr
+
+      Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo (read-only import).
+
+
+
+   .. py:method:: _query_work_orders(component_id, before_ts)
+
+      Fetch general WOs (excluding PM/CM — those are queried separately).
+
+      Cypher pattern:
+          MATCH (wo:work_order)-[:PERFORMED_ON]->(c:mbse_entity {id: $component_id})
+          WHERE wo.initiated_date >= $window_start
+            AND NOT wo.work_type IN ['PM', 'CM']
+          RETURN wo
+
+      Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.
+
+
+
+   .. py:method:: _query_preventive_maintenance(component_id, before_ts)
+
+      Fetch scheduled PM records for this component.
+
+      Filters work_order nodes where work_type == config.pm_work_type_code.
+      The completion_date (or initiated_date) is stored as the event timestamp.
+
+      Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.
+
+
+
+   .. py:method:: _query_corrective_maintenance(component_id, before_ts)
+
+      Fetch corrective maintenance records for this component.
+
+      Filters work_order nodes where work_type == config.cm_work_type_code.
+
+      Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.
+
+
+
+   .. py:method:: _query_prior_emergent_activities(component_id, before_ts)
+
+      Fetch prior emergent activities involving this component.
+
+      Queries abnormal_event nodes linked to this component.  These represent
+      historical unexpected-activity records ingested from prior outage runs.
+
+      Cypher pattern:
+          MATCH (e:abnormal_event)-[:LINKED_TO]->(c:mbse_entity {id: $component_id})
+          WHERE e.timestamp_start >= $window_start
+          RETURN e
+
+      Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.
+
+
+
+   .. py:method:: _query_inspections(component_id, before_ts)
+
+      Fetch standalone inspection records for this component.
+
+      Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.
+
+
+
+   .. py:method:: _deduplicate_events(events)
+
+      Remove duplicate events by source_doc_id, keeping the highest DQ score.
+
+      Events without a source_doc_id are retained as-is (they are treated as
+      distinct since we have no deduplication key for them).
+
+
+
+   .. py:method:: _sort_and_cap(events)
+
+      Sort events ascending by timestamp and cap at config.max_events.
+
+      Events with a null timestamp are placed at the end of the sorted list
+      (they cannot be used in Allen relation scoring but are retained for
+      recurrence counting).
+
+
+
+   .. py:method:: _compute_recurrence_indicators(events, detection_ts)
+
+      Compute repeat failure count, mean inter-event days, trend, and PM status.
+
+      trend logic:
+          Split the timeline window into two halves by event count.
+          If second-half count > first-half count × 1.5 → 'increasing'
+          If first-half count > second-half count × 1.5 → 'decreasing'
+          Otherwise → 'stable'
+          If fewer than 3 events → 'insufficient_data'
+
+      PM compliance:
+          Locate the most recent preventive_maintenance event in the timeline.
+          Compare its timestamp against detection_ts using
+          config.default_pm_interval_days.
+          If elapsed > interval + pm_overdue_threshold_days → 'overdue'
+          Else → 'current'
+
+
+
+   .. py:method:: _compute_data_coverage(events, detection_ts)
+
+      Summarise total_events, outages_represented, earliest/latest event.
+
+      outages_represented: count of distinct outage_id values across events
+      (events without an outage_id are excluded from this count).
+
+
+
+   .. py:method:: _run_query(cypher, parameters)
+
+      Execute a Cypher query via Py2Neo and return the raw record list.
+
+      Returns an empty list on any exception so that a KG connectivity
+      problem in one query does not abort the entire pipeline.
+
+      Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.
+
+
+
+   .. py:method:: _normalise_event(props, event_type, timestamp_field)
+
+      Convert raw KG node properties into a canonical timeline event dict.
+
+      Canonical fields:
+          event_id, event_type, timestamp, end_timestamp,
+          description, source_doc_id, source_system,
+          outage_id, data_quality_score.
+
+      Attempts to enrich description from record_store when the KG node
+      only carries a source_doc_id.
+
+      Reuse: record_store (from RCA.storage) — injected, no modification.
+
+
+

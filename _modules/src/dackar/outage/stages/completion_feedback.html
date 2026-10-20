@@ -1,0 +1,596 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.stages.completion_feedback &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.stages.completion_feedback</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.stages.completion_feedback</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Completion feedback loop for the outage analytics pipeline.</span>
+
+<span class="sd">After an emergent activity completes in the field, its actual duration must</span>
+<span class="sd">be written back into the historical analog index so future Stage D retrievals</span>
+<span class="sd">use it.  Without this loop the analog index grows only by manual data entry</span>
+<span class="sd">and each outage cycle repeats the same estimation errors.</span>
+
+<span class="sd">This module provides:</span>
+
+<span class="sd">    CompletionRecord          — immutable receipt for one write-back operation</span>
+<span class="sd">    CompletionFeedbackWriter  — coordinates index update + persistence</span>
+<span class="sd">    CsvAnalogPersister        — CSV write-through backend</span>
+
+<span class="sd">Typical wiring::</span>
+
+<span class="sd">    from dackar.outage.stages.completion_feedback import CompletionFeedbackWriter, CsvAnalogPersister</span>
+
+<span class="sd">    writer = CompletionFeedbackWriter(</span>
+<span class="sd">        index=analog_index,          # same HistoricalActivityIndex used by Stage D</span>
+<span class="sd">        persister=CsvAnalogPersister("/data/analogs/activities.csv"),</span>
+<span class="sd">    )</span>
+
+<span class="sd">    result = writer.record_completion(</span>
+<span class="sd">        activity_id="ACT-20260412-001",</span>
+<span class="sd">        run_id="OUTAGE::abc123",</span>
+<span class="sd">        actual_duration_hours=16.2,</span>
+<span class="sd">        actual_start="2026-04-12T08:00:00Z",</span>
+<span class="sd">        actual_finish="2026-04-13T00:12:00Z",</span>
+<span class="sd">        outcome_notes="Packing replaced; no scope expansion.",</span>
+<span class="sd">    )</span>
+<span class="sd">    # result.index_updated → True   (in-memory index hot-updated)</span>
+<span class="sd">    # result.persisted     → True   (row written to CSV)</span>
+
+<span class="sd">Both operations are best-effort: failures are logged and reflected in</span>
+<span class="sd">``CompletionRecord`` fields rather than raised.  This prevents completion</span>
+<span class="sd">recording from blocking the primary pipeline.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">csv</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Optional</span>
+
+<div class="viewcode-block" id="LOGGER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.LOGGER">[docs]</a>
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_utcnow_iso">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback._utcnow_iso">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_utcnow_iso</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="_parse_iso">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback._parse_iso">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_iso</span><span class="p">(</span><span class="n">iso_str</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Parse ISO-8601 string to a timezone-aware datetime; None on failure."""</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">dt</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="n">iso_str</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">dt</span><span class="o">.</span><span class="n">tzinfo</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">dt</span> <span class="o">=</span> <span class="n">dt</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">dt</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># CompletionRecord</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="viewcode-block" id="CompletionRecord">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionRecord">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CompletionRecord</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Immutable receipt for one analog feedback write-back operation.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    activity_id</span>
+<span class="sd">        The emergent activity that completed.</span>
+<span class="sd">    run_id</span>
+<span class="sd">        The pipeline run that produced the original recommendation.</span>
+<span class="sd">    actual_duration_hours</span>
+<span class="sd">        Observed field duration.</span>
+<span class="sd">    actual_start, actual_finish</span>
+<span class="sd">        Field-reported ISO-8601 timestamps.</span>
+<span class="sd">    outcome_notes</span>
+<span class="sd">        Free-text notes from the operator or outage manager.</span>
+<span class="sd">    written_at</span>
+<span class="sd">        UTC timestamp when ``record_completion()`` was called.</span>
+<span class="sd">    index_updated</span>
+<span class="sd">        True if the in-memory ``HistoricalActivityIndex`` was successfully</span>
+<span class="sd">        updated.  False when no index was injected, or upsert raised.</span>
+<span class="sd">    persisted</span>
+<span class="sd">        True if the ``AnalogPersister`` successfully stored the record.</span>
+<span class="sd">        False when no persister was injected, or append raised.</span>
+<span class="sd">    validation_warnings</span>
+<span class="sd">        Non-fatal issues detected during write-back (e.g. duration &lt;= 0).</span>
+<span class="sd">        When non-empty, neither ``index_updated`` nor ``persisted`` will be</span>
+<span class="sd">        True for that specific call.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="CompletionRecord.activity_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionRecord.activity_id">[docs]</a>
+    <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="CompletionRecord.run_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionRecord.run_id">[docs]</a>
+    <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="CompletionRecord.actual_duration_hours">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionRecord.actual_duration_hours">[docs]</a>
+    <span class="n">actual_duration_hours</span><span class="p">:</span> <span class="nb">float</span></div>
+
+<div class="viewcode-block" id="CompletionRecord.actual_start">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionRecord.actual_start">[docs]</a>
+    <span class="n">actual_start</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="CompletionRecord.actual_finish">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionRecord.actual_finish">[docs]</a>
+    <span class="n">actual_finish</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="CompletionRecord.outcome_notes">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionRecord.outcome_notes">[docs]</a>
+    <span class="n">outcome_notes</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="CompletionRecord.written_at">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionRecord.written_at">[docs]</a>
+    <span class="n">written_at</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="CompletionRecord.index_updated">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionRecord.index_updated">[docs]</a>
+    <span class="n">index_updated</span><span class="p">:</span> <span class="nb">bool</span></div>
+
+<div class="viewcode-block" id="CompletionRecord.persisted">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionRecord.persisted">[docs]</a>
+    <span class="n">persisted</span><span class="p">:</span> <span class="nb">bool</span></div>
+
+<div class="viewcode-block" id="CompletionRecord.validation_warnings">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionRecord.validation_warnings">[docs]</a>
+    <span class="n">validation_warnings</span><span class="p">:</span> <span class="nb">tuple</span>  <span class="c1"># tuple[str, ...] — frozen dataclass requires tuple</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># CompletionFeedbackWriter</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="CompletionFeedbackWriter">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionFeedbackWriter">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CompletionFeedbackWriter</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Write actual completion data back to the historical analog index.</span>
+
+<span class="sd">    Coordinates two operations on every successful write-back:</span>
+
+<span class="sd">    1. ``index.upsert(updated_activity)`` — hot-updates the in-memory</span>
+<span class="sd">       ``HistoricalActivityIndex`` so the current session's Stage D retrievals</span>
+<span class="sd">       immediately benefit from the real execution time.</span>
+
+<span class="sd">    2. ``persister.append(updated_activity)`` — writes the record to the</span>
+<span class="sd">       backing store so the *next* outage cycle's ``build()`` call includes</span>
+<span class="sd">       this activity with its actual duration.</span>
+
+<span class="sd">    Both operations are best-effort: failures are logged as warnings and</span>
+<span class="sd">    reflected in ``CompletionRecord.index_updated`` / ``.persisted`` rather</span>
+<span class="sd">    than raised.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        index: The ``HistoricalActivityIndex`` shared with Stage D.  When</span>
+<span class="sd">               ``None`` the in-memory update is skipped (``index_updated=False``).</span>
+<span class="sd">        persister: Persistence backend.  ``NoOpAnalogPersister`` (from</span>
+<span class="sd">                   ``orchestrators.protocols``) is the safe default for tests.</span>
+<span class="sd">                   When ``None`` the persistence step is skipped.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">persister</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="CompletionFeedbackWriter._index">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionFeedbackWriter._index">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_index</span> <span class="o">=</span> <span class="n">index</span></div>
+
+<div class="viewcode-block" id="CompletionFeedbackWriter._persister">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionFeedbackWriter._persister">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_persister</span> <span class="o">=</span> <span class="n">persister</span></div>
+
+
+    <span class="c1"># ── Public entry point ────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="CompletionFeedbackWriter.record_completion">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionFeedbackWriter.record_completion">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">record_completion</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">actual_duration_hours</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">actual_start</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">actual_finish</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">outcome_notes</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">,</span>
+        <span class="n">outage_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">plant_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CompletionRecord</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Record that an emergent activity has completed in the field.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            activity_id: The activity that finished.</span>
+<span class="sd">            run_id: The pipeline run that analysed this activity.</span>
+<span class="sd">            actual_duration_hours: Observed field duration (must be &gt; 0).</span>
+<span class="sd">            actual_start: ISO-8601 field start timestamp (optional).</span>
+<span class="sd">            actual_finish: ISO-8601 field finish timestamp (optional).</span>
+<span class="sd">            outcome_notes: Free-text operator notes (optional).</span>
+<span class="sd">            outage_id: Used when reconstructing an unknown activity.</span>
+<span class="sd">            plant_id: Used when reconstructing an unknown activity.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            :class:`CompletionRecord` with write-back status and any</span>
+<span class="sd">            validation warnings.</span>
+<span class="sd">        """</span>
+        <span class="n">warnings</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">written_at</span> <span class="o">=</span> <span class="n">_utcnow_iso</span><span class="p">()</span>
+
+        <span class="c1"># ── Validation ────────────────────────────────────────────────────────</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">activity_id</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"activity_id is empty — write-back skipped"</span><span class="p">)</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"CompletionFeedbackWriter: activity_id is empty; skipping"</span><span class="p">)</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_make_record</span><span class="p">(</span>
+                <span class="n">activity_id</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span> <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+                <span class="n">actual_duration_hours</span><span class="o">=</span><span class="n">actual_duration_hours</span><span class="p">,</span>
+                <span class="n">actual_start</span><span class="o">=</span><span class="n">actual_start</span><span class="p">,</span> <span class="n">actual_finish</span><span class="o">=</span><span class="n">actual_finish</span><span class="p">,</span>
+                <span class="n">outcome_notes</span><span class="o">=</span><span class="n">outcome_notes</span><span class="p">,</span> <span class="n">written_at</span><span class="o">=</span><span class="n">written_at</span><span class="p">,</span>
+                <span class="n">index_updated</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">persisted</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">warnings</span><span class="o">=</span><span class="n">warnings</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">actual_duration_hours</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"actual_duration_hours=</span><span class="si">{</span><span class="n">actual_duration_hours</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> is not positive; "</span>
+                <span class="s2">"write-back skipped to prevent corrupting the analog index"</span>
+            <span class="p">)</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"CompletionFeedbackWriter: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">msg</span><span class="p">)</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_make_record</span><span class="p">(</span>
+                <span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span> <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+                <span class="n">actual_duration_hours</span><span class="o">=</span><span class="n">actual_duration_hours</span><span class="p">,</span>
+                <span class="n">actual_start</span><span class="o">=</span><span class="n">actual_start</span><span class="p">,</span> <span class="n">actual_finish</span><span class="o">=</span><span class="n">actual_finish</span><span class="p">,</span>
+                <span class="n">outcome_notes</span><span class="o">=</span><span class="n">outcome_notes</span><span class="p">,</span> <span class="n">written_at</span><span class="o">=</span><span class="n">written_at</span><span class="p">,</span>
+                <span class="n">index_updated</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">persisted</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">warnings</span><span class="o">=</span><span class="n">warnings</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="c1"># ── Build updated ActivityCase ────────────────────────────────────────</span>
+        <span class="n">updated</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_updated_activity</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span>
+            <span class="n">actual_duration_hours</span><span class="o">=</span><span class="n">actual_duration_hours</span><span class="p">,</span>
+            <span class="n">actual_start</span><span class="o">=</span><span class="n">actual_start</span><span class="p">,</span>
+            <span class="n">actual_finish</span><span class="o">=</span><span class="n">actual_finish</span><span class="p">,</span>
+            <span class="n">outcome_notes</span><span class="o">=</span><span class="n">outcome_notes</span><span class="p">,</span>
+            <span class="n">outage_id</span><span class="o">=</span><span class="n">outage_id</span><span class="p">,</span>
+            <span class="n">plant_id</span><span class="o">=</span><span class="n">plant_id</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># ── Hot-update the in-memory index ────────────────────────────────────</span>
+        <span class="n">index_updated</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_index</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_index</span><span class="o">.</span><span class="n">upsert</span><span class="p">(</span><span class="n">updated</span><span class="p">)</span>
+                <span class="n">index_updated</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                    <span class="s2">"CompletionFeedbackWriter: index updated for </span><span class="si">%s</span><span class="s2"> "</span>
+                    <span class="s2">"(actual_duration_hours=</span><span class="si">%.2f</span><span class="s2"> h)"</span><span class="p">,</span>
+                    <span class="n">activity_id</span><span class="p">,</span> <span class="n">actual_duration_hours</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"index.upsert() failed: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"CompletionFeedbackWriter: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">msg</span><span class="p">)</span>
+
+        <span class="c1"># ── Persist to backing store ──────────────────────────────────────────</span>
+        <span class="n">persisted</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_persister</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_persister</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">updated</span><span class="p">)</span>
+                <span class="n">persisted</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                    <span class="s2">"CompletionFeedbackWriter: persisted activity </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">activity_id</span>
+                <span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"persister.append() failed: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"CompletionFeedbackWriter: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">msg</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_make_record</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span> <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+            <span class="n">actual_duration_hours</span><span class="o">=</span><span class="n">actual_duration_hours</span><span class="p">,</span>
+            <span class="n">actual_start</span><span class="o">=</span><span class="n">actual_start</span><span class="p">,</span> <span class="n">actual_finish</span><span class="o">=</span><span class="n">actual_finish</span><span class="p">,</span>
+            <span class="n">outcome_notes</span><span class="o">=</span><span class="n">outcome_notes</span><span class="p">,</span> <span class="n">written_at</span><span class="o">=</span><span class="n">written_at</span><span class="p">,</span>
+            <span class="n">index_updated</span><span class="o">=</span><span class="n">index_updated</span><span class="p">,</span> <span class="n">persisted</span><span class="o">=</span><span class="n">persisted</span><span class="p">,</span>
+            <span class="n">warnings</span><span class="o">=</span><span class="n">warnings</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># ── Private helpers ───────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="CompletionFeedbackWriter._build_updated_activity">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionFeedbackWriter._build_updated_activity">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_updated_activity</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">actual_duration_hours</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">actual_start</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">actual_finish</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">outcome_notes</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">outage_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">plant_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return an ActivityCase with completion fields stamped.</span>
+
+<span class="sd">        If the activity is already in the index, all existing fields are</span>
+<span class="sd">        preserved and only the completion fields are overwritten.  If it is</span>
+<span class="sd">        not in the index (or no index is injected), a minimal ActivityCase</span>
+<span class="sd">        is constructed from the provided kwargs so the persister can still</span>
+<span class="sd">        store it for the next ``build()`` cycle.</span>
+<span class="sd">        """</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.domain.activity</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActivityCase</span>
+
+        <span class="c1"># Try to retrieve the existing record from the index</span>
+        <span class="n">existing</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_index</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">existing</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">activity_id</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+                <span class="k">pass</span>  <span class="c1"># not found or index error — reconstruct below</span>
+
+        <span class="k">if</span> <span class="n">existing</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Shallow-copy the existing ActivityCase and overwrite completion fields</span>
+            <span class="n">updated</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">existing</span><span class="p">)</span>
+            <span class="n">updated</span><span class="o">.</span><span class="n">actual_duration_hours</span> <span class="o">=</span> <span class="n">actual_duration_hours</span>
+            <span class="k">if</span> <span class="n">actual_start</span><span class="p">:</span>
+                <span class="n">updated</span><span class="o">.</span><span class="n">actual_start</span> <span class="o">=</span> <span class="n">_parse_iso</span><span class="p">(</span><span class="n">actual_start</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">actual_finish</span><span class="p">:</span>
+                <span class="n">updated</span><span class="o">.</span><span class="n">actual_finish</span> <span class="o">=</span> <span class="n">_parse_iso</span><span class="p">(</span><span class="n">actual_finish</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">outcome_notes</span><span class="p">:</span>
+                <span class="n">meta</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">updated</span><span class="o">.</span><span class="n">metadata</span><span class="p">)</span>
+                <span class="n">meta</span><span class="p">[</span><span class="s2">"outcome_notes"</span><span class="p">]</span> <span class="o">=</span> <span class="n">outcome_notes</span>
+                <span class="n">updated</span><span class="o">.</span><span class="n">metadata</span> <span class="o">=</span> <span class="n">meta</span>
+            <span class="k">return</span> <span class="n">updated</span>
+
+        <span class="c1"># Minimal reconstruction for unknown activities</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">"CompletionFeedbackWriter: </span><span class="si">%s</span><span class="s2"> not found in index; "</span>
+            <span class="s2">"constructing minimal ActivityCase for persistence"</span><span class="p">,</span>
+            <span class="n">activity_id</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">meta</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">outcome_notes</span><span class="p">:</span>
+            <span class="n">meta</span><span class="p">[</span><span class="s2">"outcome_notes"</span><span class="p">]</span> <span class="o">=</span> <span class="n">outcome_notes</span>
+        <span class="k">return</span> <span class="n">ActivityCase</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span>
+            <span class="n">outage_id</span><span class="o">=</span><span class="n">outage_id</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">,</span>
+            <span class="n">plant_id</span><span class="o">=</span><span class="n">plant_id</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">,</span>
+            <span class="n">actual_duration_hours</span><span class="o">=</span><span class="n">actual_duration_hours</span><span class="p">,</span>
+            <span class="n">actual_start</span><span class="o">=</span><span class="n">_parse_iso</span><span class="p">(</span><span class="n">actual_start</span><span class="p">)</span> <span class="k">if</span> <span class="n">actual_start</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">actual_finish</span><span class="o">=</span><span class="n">_parse_iso</span><span class="p">(</span><span class="n">actual_finish</span><span class="p">)</span> <span class="k">if</span> <span class="n">actual_finish</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">is_emergent</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">metadata</span><span class="o">=</span><span class="n">meta</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="CompletionFeedbackWriter._make_record">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CompletionFeedbackWriter._make_record">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_make_record</span><span class="p">(</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">actual_duration_hours</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">actual_start</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">actual_finish</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">outcome_notes</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">written_at</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">index_updated</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+        <span class="n">persisted</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+        <span class="n">warnings</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CompletionRecord</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">CompletionRecord</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span>
+            <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+            <span class="n">actual_duration_hours</span><span class="o">=</span><span class="n">actual_duration_hours</span><span class="p">,</span>
+            <span class="n">actual_start</span><span class="o">=</span><span class="n">actual_start</span><span class="p">,</span>
+            <span class="n">actual_finish</span><span class="o">=</span><span class="n">actual_finish</span><span class="p">,</span>
+            <span class="n">outcome_notes</span><span class="o">=</span><span class="n">outcome_notes</span><span class="p">,</span>
+            <span class="n">written_at</span><span class="o">=</span><span class="n">written_at</span><span class="p">,</span>
+            <span class="n">index_updated</span><span class="o">=</span><span class="n">index_updated</span><span class="p">,</span>
+            <span class="n">persisted</span><span class="o">=</span><span class="n">persisted</span><span class="p">,</span>
+            <span class="n">validation_warnings</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">warnings</span><span class="p">),</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># CsvAnalogPersister</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="c1"># Canonical column order for the CSV backing store.  Must match the fields</span>
+<span class="c1"># that PandasActivityRepository.load_activities() reads so that persisted rows</span>
+<span class="c1"># are immediately usable on the next index build() call.</span>
+<div class="viewcode-block" id="_CSV_COLUMNS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback._CSV_COLUMNS">[docs]</a>
+<span class="n">_CSV_COLUMNS</span><span class="p">:</span> <span class="nb">tuple</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">"activity_id"</span><span class="p">,</span> <span class="s2">"outage_id"</span><span class="p">,</span> <span class="s2">"plant_id"</span><span class="p">,</span> <span class="s2">"unit_id"</span><span class="p">,</span>
+    <span class="s2">"raw_description"</span><span class="p">,</span> <span class="s2">"cleaned_description"</span><span class="p">,</span>
+    <span class="s2">"planned_duration_hours"</span><span class="p">,</span> <span class="s2">"actual_duration_hours"</span><span class="p">,</span>
+    <span class="s2">"actual_start"</span><span class="p">,</span> <span class="s2">"actual_finish"</span><span class="p">,</span>
+    <span class="s2">"discipline"</span><span class="p">,</span> <span class="s2">"task_family"</span><span class="p">,</span> <span class="s2">"component_family"</span><span class="p">,</span>
+    <span class="s2">"system_name"</span><span class="p">,</span> <span class="s2">"work_order_type"</span><span class="p">,</span>
+    <span class="s2">"is_emergent"</span><span class="p">,</span> <span class="s2">"is_rework"</span><span class="p">,</span>
+    <span class="s2">"has_rp_hold"</span><span class="p">,</span> <span class="s2">"requires_scaffold"</span><span class="p">,</span> <span class="s2">"has_clearance"</span><span class="p">,</span> <span class="s2">"is_vendor_supported"</span><span class="p">,</span>
+    <span class="s2">"crew_size"</span><span class="p">,</span> <span class="s2">"outage_phase"</span><span class="p">,</span>
+<span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="CsvAnalogPersister">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CsvAnalogPersister">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CsvAnalogPersister</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Append completed ActivityCase records to a CSV file.</span>
+
+<span class="sd">    The file is created (with a header row) if it does not yet exist.  Each</span>
+<span class="sd">    ``append()`` call adds one row.  Column order follows ``_CSV_COLUMNS``</span>
+<span class="sd">    so that rows written across sessions are compatible and can be loaded</span>
+<span class="sd">    directly by :class:`~outage_uncertainty.adapters.pandas_repository.PandasActivityRepository`.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        filepath: Path to the CSV file.  The parent directory must exist.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filepath</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="CsvAnalogPersister._path">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CsvAnalogPersister._path">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_path</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">filepath</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CsvAnalogPersister.append">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CsvAnalogPersister.append">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">append</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Append one row to the CSV file, creating it with a header if needed."""</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="p">{</span><span class="n">col</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">activity</span><span class="p">,</span> <span class="n">col</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">_CSV_COLUMNS</span><span class="p">}</span>
+
+        <span class="c1"># Serialise datetime fields to ISO strings</span>
+        <span class="k">for</span> <span class="n">dt_field</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"actual_start"</span><span class="p">,</span> <span class="s2">"actual_finish"</span><span class="p">):</span>
+            <span class="n">val</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">dt_field</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">val</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="s2">"isoformat"</span><span class="p">):</span>
+                <span class="n">row</span><span class="p">[</span><span class="n">dt_field</span><span class="p">]</span> <span class="o">=</span> <span class="n">val</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span>
+
+        <span class="n">needs_header</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+        <span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">,</span> <span class="s2">"a"</span><span class="p">,</span> <span class="n">newline</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+            <span class="n">writer</span> <span class="o">=</span> <span class="n">csv</span><span class="o">.</span><span class="n">DictWriter</span><span class="p">(</span><span class="n">fh</span><span class="p">,</span> <span class="n">fieldnames</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">_CSV_COLUMNS</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">needs_header</span><span class="p">:</span>
+                <span class="n">writer</span><span class="o">.</span><span class="n">writeheader</span><span class="p">()</span>
+            <span class="n">writer</span><span class="o">.</span><span class="n">writerow</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">"CsvAnalogPersister: appended activity </span><span class="si">%s</span><span class="s2"> to </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+            <span class="nb">getattr</span><span class="p">(</span><span class="n">activity</span><span class="p">,</span> <span class="s2">"activity_id"</span><span class="p">,</span> <span class="s2">"?"</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

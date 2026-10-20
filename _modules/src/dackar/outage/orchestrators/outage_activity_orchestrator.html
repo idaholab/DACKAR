@@ -1,0 +1,1397 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.orchestrators.outage_activity_orchestrator &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.orchestrators.outage_activity_orchestrator</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.orchestrators.outage_activity_orchestrator</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">OutageActivityOrchestrator — stage-based pipeline for unexpected outage activities.</span>
+
+<span class="sd">Executes stages A → B → C → D → E → F → G in sequence, validating and</span>
+<span class="sd">optionally persisting each artifact at stage boundaries.  Any stage can be</span>
+<span class="sd">skipped by passing a pre-computed artifact as a keyword argument to ``run()``;</span>
+<span class="sd">this supports replay, partial re-runs, and unit testing of individual stages.</span>
+
+<span class="sd">Stage execution order:</span>
+<span class="sd">    A  _stage_a_intake            emergent_activity → intake_result</span>
+<span class="sd">    B  _stage_b_kg_timeline       intake_result → component_event_timeline</span>
+<span class="sd">    C  _stage_c_temporal_chain    component_event_timeline → temporal_event_chain</span>
+<span class="sd">    D  _stage_d_analogs           intake_result → historical_analogs</span>
+<span class="sd">    E  _stage_e_schedule          historical_analogs → schedule_impact_assessment</span>
+<span class="sd">    F  _stage_f_options           all prior → insertion_options</span>
+<span class="sd">    G  _stage_g_recommendation    all prior → outage_activity_recommendation</span>
+<span class="sd">                                  + run_manifest</span>
+
+<span class="sd">Design notes:</span>
+<span class="sd">  - Protocol implementations are injected at construction time; no concrete</span>
+<span class="sd">    backend is imported here.</span>
+<span class="sd">  - _validate_and_persist() mirrors the RCA orchestrator pattern: required</span>
+<span class="sd">    artifacts raise on validation failure (when stop_on_validation_error=True);</span>
+<span class="sd">    optional artifacts log a warning and continue.</span>
+<span class="sd">  - run() returns a dict of all artifacts keyed by artifact name, so callers</span>
+<span class="sd">    can inspect any intermediate result without reaching into the file store.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.protocols</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">ActivityIntakeProcessor</span><span class="p">,</span>
+    <span class="n">ArtifactStore</span><span class="p">,</span>
+    <span class="n">FileArtifactStore</span><span class="p">,</span>
+    <span class="n">HistoricalAnalogRetriever</span><span class="p">,</span>
+    <span class="n">InsertionOptionGeneratorProtocol</span><span class="p">,</span>
+    <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="n">KGTimelineBuilder</span><span class="p">,</span>
+    <span class="n">NoOpSchemaValidator</span><span class="p">,</span>
+    <span class="n">OutageOrchestratorConfig</span><span class="p">,</span>
+    <span class="n">RecommendationSynthesizerProtocol</span><span class="p">,</span>
+    <span class="n">ScheduleImpactAssessor</span><span class="p">,</span>
+    <span class="n">SchemaValidator</span><span class="p">,</span>
+    <span class="n">TemporalChainScorer</span><span class="p">,</span>
+    <span class="n">new_run_id</span><span class="p">,</span>
+    <span class="n">utcnow_iso</span><span class="p">,</span>
+<span class="p">)</span>
+
+<div class="viewcode-block" id="LOGGER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.LOGGER">[docs]</a>
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Internal helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_validation_outcome">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator._validation_outcome">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_validation_outcome</span><span class="p">(</span><span class="n">validation</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="nb">list</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Return (ok, issues) from a validator result of either shape.</span>
+
+<span class="sd">    The real :class:`OutageArtifactValidator` returns a ``ValidationReport``</span>
+<span class="sd">    dataclass (``.ok`` / ``.issues``); :class:`NoOpSchemaValidator` returns a</span>
+<span class="sd">    plain ``{"ok": ..., "issues": [...]}`` dict.  Reading ``ok`` only off the</span>
+<span class="sd">    dict shape (the previous behaviour) silently treated every real report as</span>
+<span class="sd">    passing, disabling validation entirely.</span>
+<span class="sd">    """</span>
+    <span class="n">ok</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">validation</span><span class="p">,</span> <span class="s2">"ok"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">ok</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">validation</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="n">ok</span> <span class="o">=</span> <span class="n">validation</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ok"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">ok</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">ok</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">issues</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">validation</span><span class="p">,</span> <span class="s2">"issues"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">issues</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">validation</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="n">issues</span> <span class="o">=</span> <span class="n">validation</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"issues"</span><span class="p">,</span> <span class="p">[])</span>
+    <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">ok</span><span class="p">),</span> <span class="nb">list</span><span class="p">(</span><span class="n">issues</span> <span class="ow">or</span> <span class="p">[])</span></div>
+
+
+
+<div class="viewcode-block" id="_validation_to_dict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator._validation_to_dict">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_validation_to_dict</span><span class="p">(</span><span class="n">validation</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Normalise a validator result to a JSON-serialisable dict for persistence."""</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">validation</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">validation</span>
+    <span class="n">ok</span><span class="p">,</span> <span class="n">issues</span> <span class="o">=</span> <span class="n">_validation_outcome</span><span class="p">(</span><span class="n">validation</span><span class="p">)</span>
+    <span class="n">serialised</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">issues</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">serialised</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="s2">"__dict__"</span><span class="p">):</span>
+            <span class="n">serialised</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">vars</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="o">.</span><span class="n">items</span><span class="p">()})</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">serialised</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">"message"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)})</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">"ok"</span><span class="p">:</span> <span class="n">ok</span><span class="p">,</span> <span class="s2">"issues"</span><span class="p">:</span> <span class="n">serialised</span><span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_stub_component_event_timeline">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator._stub_component_event_timeline">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_stub_component_event_timeline</span><span class="p">(</span>
+    <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return an empty ComponentEventTimeline used when Stage B cannot determine</span>
+<span class="sd">    a component_id (e.g. no resolved_component_ids and no known_component_id).</span>
+
+<span class="sd">    All history fields are empty/zero so downstream stages degrade gracefully:</span>
+<span class="sd">    Stage C produces ``causal_posture = "insufficient_data"`` with zero chain links.</span>
+<span class="sd">    Stage D runs independently and is unaffected.</span>
+<span class="sd">    Stage G cannot raise KG-derived attention flags (correct — no KG data available).</span>
+
+<span class="sd">    The ``kg_driver_available`` flag is ``False`` so the orchestrator surfaces</span>
+<span class="sd">    this in ``review_hooks`` as ``kg_unavailable``.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"activity_id"</span><span class="p">:</span> <span class="n">activity_id</span><span class="p">,</span>
+        <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+        <span class="s2">"generated_at"</span><span class="p">:</span> <span class="n">utcnow_iso</span><span class="p">(),</span>
+        <span class="s2">"component_id"</span><span class="p">:</span> <span class="s2">""</span><span class="p">,</span>
+        <span class="s2">"component_name"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"system_id"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"asset_id"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"kg_driver_available"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="s2">"events"</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">"recurrence_indicators"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"repeat_failure_count"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">"mean_inter_event_days"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"trend"</span><span class="p">:</span> <span class="s2">"insufficient_data"</span><span class="p">,</span>
+            <span class="s2">"last_cm_date"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"last_pm_date"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"pm_compliance_status"</span><span class="p">:</span> <span class="s2">"unknown"</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="s2">"data_coverage"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"total_events"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">"outages_represented"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">"earliest_event"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"latest_event"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"data_quality_summary"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"generated_by"</span><span class="p">:</span> <span class="s2">"stub"</span><span class="p">,</span>
+            <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+            <span class="s2">"kg_driver_version"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"query_window_days"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">"notes"</span><span class="p">:</span> <span class="p">[</span><span class="n">reason</span><span class="p">],</span>
+        <span class="p">},</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_stub_schedule_impact_artifact">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator._stub_schedule_impact_artifact">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_stub_schedule_impact_artifact</span><span class="p">(</span>
+    <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return a null ScheduleImpactAssessment used when Stage E cannot load</span>
+<span class="sd">    the schedule network (e.g. ``schedule_loader`` not injected).</span>
+
+<span class="sd">    All CP-derived fields are ``None`` so downstream stages degrade gracefully:</span>
+<span class="sd">    Stage F defaults to permissive float estimates and Stage G cannot raise</span>
+<span class="sd">    ``_FLAG_CP_IMPACT`` (correct — no schedule information is available).</span>
+
+<span class="sd">    The stub is identified by ``schedule_version_id == "STUB::no_schedule"`` and</span>
+<span class="sd">    the reason string in ``notes``.  ``schedule_loader_unavailable`` is ``True``</span>
+<span class="sd">    so the orchestrator's review hook surfaces it, and ``criticality_label`` is</span>
+<span class="sd">    ``"unknown"`` rather than ``"non_critical"`` so Stage G does not read an</span>
+<span class="sd">    absent schedule as a safely non-critical one.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"activity_id"</span><span class="p">:</span> <span class="n">activity_id</span><span class="p">,</span>
+        <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+        <span class="s2">"generated_at"</span><span class="p">:</span> <span class="n">utcnow_iso</span><span class="p">(),</span>
+        <span class="s2">"schedule_version_id"</span><span class="p">:</span> <span class="s2">"STUB::no_schedule"</span><span class="p">,</span>
+        <span class="s2">"schedule_loader_unavailable"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="s2">"duration_estimate"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"p50_hours"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+            <span class="s2">"p80_hours"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+            <span class="s2">"p90_hours"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+            <span class="s2">"confidence_tier"</span><span class="p">:</span> <span class="s2">"low_confidence"</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="s2">"float_analysis"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"criticality_label"</span><span class="p">:</span> <span class="s2">"unknown"</span><span class="p">,</span>
+            <span class="s2">"float_consumed_hours"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+            <span class="s2">"available_float_before_hours"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"remaining_float_after_hours"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"is_critical_path_impact"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="s2">"cp_impact"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"cp_drag_hours"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+            <span class="s2">"baseline_cp_hours"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+            <span class="s2">"estimated_new_cp_hours"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="s2">"displaced_tasks"</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">"resource_conflicts"</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">"confidence"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+        <span class="s2">"notes"</span><span class="p">:</span> <span class="p">[</span><span class="n">reason</span><span class="p">],</span>
+        <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"generated_by"</span><span class="p">:</span> <span class="s2">"stub"</span><span class="p">,</span>
+            <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+            <span class="s2">"schedule_graph_version"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"monte_carlo_runs"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="p">},</span>
+    <span class="p">}</span></div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="OutageActivityOrchestrator">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">OutageActivityOrchestrator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Pipeline orchestrator for unexpected outage activity analysis.</span>
+
+<span class="sd">    All stage implementations are injected via their Protocols, keeping this</span>
+<span class="sd">    class free of any backend dependency.</span>
+
+<span class="sd">    Minimal wiring example (all no-ops)::</span>
+
+<span class="sd">        from dackar.outage.orchestrators.protocols import (</span>
+<span class="sd">            NoOpSchemaValidator, FileArtifactStore, OutageOrchestratorConfig,</span>
+<span class="sd">        )</span>
+
+<span class="sd">        class _StubStage:</span>
+<span class="sd">            def process(self, *a, **kw): return {}</span>
+<span class="sd">            def build(self, *a, **kw): return {}</span>
+<span class="sd">            def score(self, *a, **kw): return {}</span>
+<span class="sd">            def retrieve(self, *a, **kw): return {}</span>
+<span class="sd">            def assess(self, *a, **kw): return {}</span>
+<span class="sd">            def generate(self, *a, **kw): return {}</span>
+<span class="sd">            def synthesize(self, *a, **kw): return {}</span>
+
+<span class="sd">        stub = _StubStage()</span>
+<span class="sd">        orch = OutageActivityOrchestrator(</span>
+<span class="sd">            validator=NoOpSchemaValidator(),</span>
+<span class="sd">            artifact_store=FileArtifactStore("/tmp/outage_runs"),</span>
+<span class="sd">            intake_processor=stub,</span>
+<span class="sd">            kg_timeline_builder=stub,</span>
+<span class="sd">            temporal_chain_scorer=stub,</span>
+<span class="sd">            analog_retriever=stub,</span>
+<span class="sd">            schedule_impact_assessor=stub,</span>
+<span class="sd">            option_generator=stub,</span>
+<span class="sd">            recommendation_synthesizer=stub,</span>
+<span class="sd">        )</span>
+<span class="sd">        result = orch.run(emergent_activity={...})</span>
+<span class="sd">    """</span>
+
+    <span class="c1"># ── Infrastructure ────────────────────────────────────────────────────────</span>
+<div class="viewcode-block" id="OutageActivityOrchestrator.validator">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator.validator">[docs]</a>
+    <span class="n">validator</span><span class="p">:</span> <span class="n">SchemaValidator</span></div>
+
+<div class="viewcode-block" id="OutageActivityOrchestrator.artifact_store">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator.artifact_store">[docs]</a>
+    <span class="n">artifact_store</span><span class="p">:</span> <span class="n">ArtifactStore</span></div>
+
+
+    <span class="c1"># ── Stage implementations (injected) ─────────────────────────────────────</span>
+<div class="viewcode-block" id="OutageActivityOrchestrator.intake_processor">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator.intake_processor">[docs]</a>
+    <span class="n">intake_processor</span><span class="p">:</span> <span class="n">ActivityIntakeProcessor</span></div>
+
+<div class="viewcode-block" id="OutageActivityOrchestrator.kg_timeline_builder">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator.kg_timeline_builder">[docs]</a>
+    <span class="n">kg_timeline_builder</span><span class="p">:</span> <span class="n">KGTimelineBuilder</span></div>
+
+<div class="viewcode-block" id="OutageActivityOrchestrator.temporal_chain_scorer">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator.temporal_chain_scorer">[docs]</a>
+    <span class="n">temporal_chain_scorer</span><span class="p">:</span> <span class="n">TemporalChainScorer</span></div>
+
+<div class="viewcode-block" id="OutageActivityOrchestrator.analog_retriever">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator.analog_retriever">[docs]</a>
+    <span class="n">analog_retriever</span><span class="p">:</span> <span class="n">HistoricalAnalogRetriever</span></div>
+
+<div class="viewcode-block" id="OutageActivityOrchestrator.schedule_impact_assessor">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator.schedule_impact_assessor">[docs]</a>
+    <span class="n">schedule_impact_assessor</span><span class="p">:</span> <span class="n">ScheduleImpactAssessor</span></div>
+
+<div class="viewcode-block" id="OutageActivityOrchestrator.option_generator">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator.option_generator">[docs]</a>
+    <span class="n">option_generator</span><span class="p">:</span> <span class="n">InsertionOptionGeneratorProtocol</span></div>
+
+<div class="viewcode-block" id="OutageActivityOrchestrator.recommendation_synthesizer">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator.recommendation_synthesizer">[docs]</a>
+    <span class="n">recommendation_synthesizer</span><span class="p">:</span> <span class="n">RecommendationSynthesizerProtocol</span></div>
+
+
+    <span class="c1"># ── Optional: completion feedback loop ────────────────────────────────────</span>
+<div class="viewcode-block" id="OutageActivityOrchestrator.feedback_writer">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator.feedback_writer">[docs]</a>
+    <span class="n">feedback_writer</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<span class="w">    </span><span class="sd">"""Optional :class:`~stages.completion_feedback.CompletionFeedbackWriter`</span>
+<span class="sd">    that closes the learning loop by writing actual execution data back into</span>
+<span class="sd">    the historical analog index after an activity completes in the field.</span>
+
+<span class="sd">    Typical wiring::</span>
+
+<span class="sd">        from dackar.outage.stages.completion_feedback import CompletionFeedbackWriter, CsvAnalogPersister</span>
+
+<span class="sd">        orchestrator = OutageActivityOrchestrator(</span>
+<span class="sd">            ...</span>
+<span class="sd">            feedback_writer=CompletionFeedbackWriter(</span>
+<span class="sd">                index=analog_retriever.index,           # shared HistoricalActivityIndex</span>
+<span class="sd">                persister=CsvAnalogPersister("/data/analogs/activities.csv"),</span>
+<span class="sd">            ),</span>
+<span class="sd">        )</span>
+
+<span class="sd">        # After the field activity completes, call record_completion():</span>
+<span class="sd">        result = orchestrator.record_completion(</span>
+<span class="sd">            activity_id="ACT-20260412-001",</span>
+<span class="sd">            run_id="OUTAGE::abc123",</span>
+<span class="sd">            actual_duration_hours=16.2,</span>
+<span class="sd">            actual_start="2026-04-12T08:00:00Z",</span>
+<span class="sd">            actual_finish="2026-04-13T00:12:00Z",</span>
+<span class="sd">            outcome_notes="Packing replaced; no scope expansion.",</span>
+<span class="sd">        )</span>
+<span class="sd">        # result.index_updated → True    (Stage D retrieval benefits immediately)</span>
+<span class="sd">        # result.persisted     → True    (next outage cycle sees this activity)</span>
+
+<span class="sd">    When ``None`` (default) calls to ``record_completion()`` log a WARNING and</span>
+<span class="sd">    return a no-op result; the pipeline continues unaffected.</span>
+<span class="sd">    """</span>
+
+    <span class="c1"># ── Optional: two-pass insertion point pre-computation (Gap 4) ────────────</span>
+<div class="viewcode-block" id="OutageActivityOrchestrator.insertion_point_determiner">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator.insertion_point_determiner">[docs]</a>
+    <span class="n">insertion_point_determiner</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<span class="w">    </span><span class="sd">"""Optional :class:`~stages.insertion_point_determiner.InsertionPointDeterminer`</span>
+<span class="sd">    injected to enable the two-pass analog retrieval design.</span>
+
+<span class="sd">    When provided the orchestrator runs a lightweight insertion-point</span>
+<span class="sd">    determination between Stage C and Stage D.  The resulting</span>
+<span class="sd">    ``ScheduleContext`` is threaded into both Stage D (structural affinity</span>
+<span class="sd">    re-ranking) and Stage E (insertion point reuse).</span>
+
+<span class="sd">    What the two-pass design saves: Stage E skips its own insertion-point</span>
+<span class="sd">    search because the answer is already in ``ScheduleContext``.</span>
+<span class="sd">    What it does NOT save: Stage E still loads the full schedule</span>
+<span class="sd">    independently for Monte Carlo simulation.  The schedule is therefore</span>
+<span class="sd">    loaded twice — once in the pre-pass and once in Stage E.  To eliminate</span>
+<span class="sd">    the second load, cache the loaded ``OutageData`` inside ``ScheduleContext``</span>
+<span class="sd">    and have Stage E read it from there instead of re-fetching.</span>
+
+<span class="sd">    When ``None`` (default) the pipeline behaves exactly as before: Stage D</span>
+<span class="sd">    runs without schedule context and Stage E determines the insertion point</span>
+<span class="sd">    independently as it always has.</span>
+<span class="sd">    """</span>
+
+    <span class="c1"># ── Configuration ─────────────────────────────────────────────────────────</span>
+<div class="viewcode-block" id="OutageActivityOrchestrator.config">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator.config">[docs]</a>
+    <span class="n">config</span><span class="p">:</span> <span class="n">OutageOrchestratorConfig</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span>
+        <span class="n">default_factory</span><span class="o">=</span><span class="n">OutageOrchestratorConfig</span>
+    <span class="p">)</span></div>
+
+
+    <span class="c1"># ─────────────────────────────────────────────────────────────────────────</span>
+    <span class="c1"># Public entry point</span>
+    <span class="c1"># ─────────────────────────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="OutageActivityOrchestrator.run">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator.run">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="c1"># Pre-computed artifacts — pass any to skip the corresponding stage.</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">component_event_timeline</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">temporal_event_chain</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">schedule_impact_assessment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">insertion_options</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Execute the full A → G pipeline for one emergent activity.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            emergent_activity: Validated EmergentActivity artifact (required).</span>
+<span class="sd">            intake_result: Pre-computed Stage A output — skips Stage A if provided.</span>
+<span class="sd">            component_event_timeline: Pre-computed Stage B output.</span>
+<span class="sd">            temporal_event_chain: Pre-computed Stage C output.</span>
+<span class="sd">            historical_analogs: Pre-computed Stage D output.</span>
+<span class="sd">            schedule_impact_assessment: Pre-computed Stage E output.</span>
+<span class="sd">            insertion_options: Pre-computed Stage F output.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Dict containing all artifact keys:</span>
+<span class="sd">                run_context, intake_result, component_event_timeline,</span>
+<span class="sd">                temporal_event_chain, historical_analogs,</span>
+<span class="sd">                schedule_impact_assessment, insertion_options,</span>
+<span class="sd">                outage_activity_recommendation, run_manifest.</span>
+<span class="sd">        """</span>
+        <span class="n">run_id</span> <span class="o">=</span> <span class="n">new_run_id</span><span class="p">()</span>
+        <span class="n">optional_failures</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># ── Run context (always built; not a skippable stage) ─────────────────</span>
+        <span class="n">run_context</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_run_context</span><span class="p">(</span>
+            <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+            <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># ── Stage A — Activity Intake ─────────────────────────────────────────</span>
+        <span class="n">intake_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stage_a_intake</span><span class="p">(</span>
+            <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+            <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+            <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+            <span class="n">precomputed</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># ── Stage B — KG Timeline ─────────────────────────────────────────────</span>
+        <span class="n">component_event_timeline</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stage_b_kg_timeline</span><span class="p">(</span>
+            <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+            <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+            <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+            <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+            <span class="n">precomputed</span><span class="o">=</span><span class="n">component_event_timeline</span><span class="p">,</span>
+            <span class="n">optional_failures</span><span class="o">=</span><span class="n">optional_failures</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># ── Stage C — Temporal Event Chain ────────────────────────────────────</span>
+        <span class="n">temporal_event_chain</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stage_c_temporal_chain</span><span class="p">(</span>
+            <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+            <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+            <span class="n">component_event_timeline</span><span class="o">=</span><span class="n">component_event_timeline</span><span class="p">,</span>
+            <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+            <span class="n">precomputed</span><span class="o">=</span><span class="n">temporal_event_chain</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># ── Pre-pass: insertion point determination (Gap 4 two-pass design) ──</span>
+        <span class="c1"># Runs after Stage C and before Stage D.  Requires no duration</span>
+        <span class="c1"># distribution — only the schedule network + activity metadata.</span>
+        <span class="c1"># Results are threaded into Stage D (structural affinity re-ranking)</span>
+        <span class="c1"># and Stage E (insertion point reuse).  Note: Stage E still loads the</span>
+        <span class="c1"># full schedule independently for Monte Carlo — only the insertion-point</span>
+        <span class="c1"># determination step is avoided, not the schedule load itself.</span>
+        <span class="c1"># Falls back to None → existing behavior when determiner not injected.</span>
+        <span class="n">schedule_context</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_precompute_schedule_context</span><span class="p">(</span>
+            <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+            <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># ── Stage D — Historical Analogs (before E: provides duration dist.) ──</span>
+        <span class="n">historical_analogs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stage_d_analogs</span><span class="p">(</span>
+            <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+            <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+            <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+            <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+            <span class="n">precomputed</span><span class="o">=</span><span class="n">historical_analogs</span><span class="p">,</span>
+            <span class="n">schedule_context</span><span class="o">=</span><span class="n">schedule_context</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># ── Stage E — Schedule Impact Assessment ──────────────────────────────</span>
+        <span class="n">schedule_impact_assessment</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stage_e_schedule</span><span class="p">(</span>
+            <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+            <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+            <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+            <span class="n">historical_analogs</span><span class="o">=</span><span class="n">historical_analogs</span><span class="p">,</span>
+            <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+            <span class="n">precomputed</span><span class="o">=</span><span class="n">schedule_impact_assessment</span><span class="p">,</span>
+            <span class="n">optional_failures</span><span class="o">=</span><span class="n">optional_failures</span><span class="p">,</span>
+            <span class="n">schedule_context</span><span class="o">=</span><span class="n">schedule_context</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># ── Stage F — Insertion Option Generation ────────────────────────────</span>
+        <span class="n">insertion_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stage_f_options</span><span class="p">(</span>
+            <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+            <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+            <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+            <span class="n">temporal_event_chain</span><span class="o">=</span><span class="n">temporal_event_chain</span><span class="p">,</span>
+            <span class="n">schedule_impact_assessment</span><span class="o">=</span><span class="n">schedule_impact_assessment</span><span class="p">,</span>
+            <span class="n">historical_analogs</span><span class="o">=</span><span class="n">historical_analogs</span><span class="p">,</span>
+            <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+            <span class="n">precomputed</span><span class="o">=</span><span class="n">insertion_options</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># ── Stage G — Recommendation + Manifest ──────────────────────────────</span>
+        <span class="n">outage_activity_recommendation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stage_g_recommendation</span><span class="p">(</span>
+            <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+            <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+            <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+            <span class="n">component_event_timeline</span><span class="o">=</span><span class="n">component_event_timeline</span><span class="p">,</span>
+            <span class="n">temporal_event_chain</span><span class="o">=</span><span class="n">temporal_event_chain</span><span class="p">,</span>
+            <span class="n">historical_analogs</span><span class="o">=</span><span class="n">historical_analogs</span><span class="p">,</span>
+            <span class="n">schedule_impact_assessment</span><span class="o">=</span><span class="n">schedule_impact_assessment</span><span class="p">,</span>
+            <span class="n">insertion_options</span><span class="o">=</span><span class="n">insertion_options</span><span class="p">,</span>
+            <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+            <span class="n">optional_failures</span><span class="o">=</span><span class="n">optional_failures</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">run_manifest</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_finalize_manifest</span><span class="p">(</span>
+            <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+            <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+            <span class="n">component_event_timeline</span><span class="o">=</span><span class="n">component_event_timeline</span><span class="p">,</span>
+            <span class="n">temporal_event_chain</span><span class="o">=</span><span class="n">temporal_event_chain</span><span class="p">,</span>
+            <span class="n">historical_analogs</span><span class="o">=</span><span class="n">historical_analogs</span><span class="p">,</span>
+            <span class="n">schedule_impact_assessment</span><span class="o">=</span><span class="n">schedule_impact_assessment</span><span class="p">,</span>
+            <span class="n">insertion_options</span><span class="o">=</span><span class="n">insertion_options</span><span class="p">,</span>
+            <span class="n">outage_activity_recommendation</span><span class="o">=</span><span class="n">outage_activity_recommendation</span><span class="p">,</span>
+            <span class="n">optional_failures</span><span class="o">=</span><span class="n">optional_failures</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">artifact_store</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"run_manifest"</span><span class="p">,</span> <span class="n">run_manifest</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"run_context"</span><span class="p">:</span> <span class="n">run_context</span><span class="p">,</span>
+            <span class="s2">"intake_result"</span><span class="p">:</span> <span class="n">intake_result</span><span class="p">,</span>
+            <span class="s2">"component_event_timeline"</span><span class="p">:</span> <span class="n">component_event_timeline</span><span class="p">,</span>
+            <span class="s2">"temporal_event_chain"</span><span class="p">:</span> <span class="n">temporal_event_chain</span><span class="p">,</span>
+            <span class="s2">"historical_analogs"</span><span class="p">:</span> <span class="n">historical_analogs</span><span class="p">,</span>
+            <span class="s2">"schedule_impact_assessment"</span><span class="p">:</span> <span class="n">schedule_impact_assessment</span><span class="p">,</span>
+            <span class="s2">"insertion_options"</span><span class="p">:</span> <span class="n">insertion_options</span><span class="p">,</span>
+            <span class="s2">"outage_activity_recommendation"</span><span class="p">:</span> <span class="n">outage_activity_recommendation</span><span class="p">,</span>
+            <span class="s2">"run_manifest"</span><span class="p">:</span> <span class="n">run_manifest</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+    <span class="c1"># ─────────────────────────────────────────────────────────────────────────</span>
+    <span class="c1"># Completion feedback — learning loop entry point</span>
+    <span class="c1"># ─────────────────────────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="OutageActivityOrchestrator.record_completion">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator.record_completion">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">record_completion</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">actual_duration_hours</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">actual_start</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">actual_finish</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">outcome_notes</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">,</span>
+        <span class="n">outage_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">plant_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Record that an emergent activity has completed in the field.</span>
+
+<span class="sd">        Delegates to the injected ``feedback_writer`` to:</span>
+
+<span class="sd">        1. Hot-update the in-memory ``HistoricalActivityIndex`` shared with</span>
+<span class="sd">           Stage D — subsequent Stage D retrievals in the same session</span>
+<span class="sd">           immediately incorporate the real execution time.</span>
+<span class="sd">        2. Persist the record to the backing analog store via the injected</span>
+<span class="sd">           ``AnalogPersister`` — the *next* outage cycle's ``build()`` call</span>
+<span class="sd">           will include this activity with its actual duration.</span>
+
+<span class="sd">        Both operations are best-effort: failures are logged and reflected in</span>
+<span class="sd">        the returned ``CompletionRecord`` rather than raised.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            activity_id: The emergent activity that completed.</span>
+<span class="sd">            run_id: The pipeline run that produced the original recommendation.</span>
+<span class="sd">            actual_duration_hours: Observed field duration (must be &gt; 0).</span>
+<span class="sd">            actual_start: ISO-8601 field start timestamp (optional).</span>
+<span class="sd">            actual_finish: ISO-8601 field finish timestamp (optional).</span>
+<span class="sd">            outcome_notes: Free-text operator notes (optional).</span>
+<span class="sd">            outage_id: Used when the activity is not in the index (fallback).</span>
+<span class="sd">            plant_id: Used when the activity is not in the index (fallback).</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            :class:`~stages.completion_feedback.CompletionRecord` with</span>
+<span class="sd">            ``index_updated``, ``persisted``, and ``validation_warnings``.</span>
+<span class="sd">            Returns a minimal no-op record if no ``feedback_writer`` is injected.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">feedback_writer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"record_completion called for activity </span><span class="si">%s</span><span class="s2"> (run=</span><span class="si">%s</span><span class="s2">) but no "</span>
+                <span class="s2">"feedback_writer is injected — write-back skipped. "</span>
+                <span class="s2">"Inject a CompletionFeedbackWriter to enable the learning loop."</span><span class="p">,</span>
+                <span class="n">activity_id</span><span class="p">,</span> <span class="n">run_id</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="c1"># Return a minimal no-op object so callers can check .index_updated</span>
+            <span class="c1"># without an isinstance guard.</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.stages.completion_feedback</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+                <span class="n">CompletionRecord</span><span class="p">,</span>
+                <span class="n">_utcnow_iso</span> <span class="k">as</span> <span class="n">_fb_utcnow</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">CompletionRecord</span><span class="p">(</span>
+                <span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span>
+                <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+                <span class="n">actual_duration_hours</span><span class="o">=</span><span class="n">actual_duration_hours</span><span class="p">,</span>
+                <span class="n">actual_start</span><span class="o">=</span><span class="n">actual_start</span><span class="p">,</span>
+                <span class="n">actual_finish</span><span class="o">=</span><span class="n">actual_finish</span><span class="p">,</span>
+                <span class="n">outcome_notes</span><span class="o">=</span><span class="n">outcome_notes</span><span class="p">,</span>
+                <span class="n">written_at</span><span class="o">=</span><span class="n">_fb_utcnow</span><span class="p">(),</span>
+                <span class="n">index_updated</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="n">persisted</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="n">validation_warnings</span><span class="o">=</span><span class="p">(</span><span class="s2">"feedback_writer not injected"</span><span class="p">,),</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">feedback_writer</span><span class="o">.</span><span class="n">record_completion</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span>
+            <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+            <span class="n">actual_duration_hours</span><span class="o">=</span><span class="n">actual_duration_hours</span><span class="p">,</span>
+            <span class="n">actual_start</span><span class="o">=</span><span class="n">actual_start</span><span class="p">,</span>
+            <span class="n">actual_finish</span><span class="o">=</span><span class="n">actual_finish</span><span class="p">,</span>
+            <span class="n">outcome_notes</span><span class="o">=</span><span class="n">outcome_notes</span><span class="p">,</span>
+            <span class="n">outage_id</span><span class="o">=</span><span class="n">outage_id</span><span class="p">,</span>
+            <span class="n">plant_id</span><span class="o">=</span><span class="n">plant_id</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># ─────────────────────────────────────────────────────────────────────────</span>
+    <span class="c1"># Run context (not a skippable stage)</span>
+    <span class="c1"># ─────────────────────────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="OutageActivityOrchestrator._build_run_context">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator._build_run_context">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_run_context</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Build and persist the run metadata block.</span>
+
+<span class="sd">        This is always executed; it cannot be skipped via a pre-computed artifact.</span>
+<span class="sd">        Mirrors _stage_a_build_run_context in the RCA orchestrator.</span>
+<span class="sd">        """</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+            <span class="s2">"run_label"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">run_label</span><span class="p">,</span>
+            <span class="s2">"started_at"</span><span class="p">:</span> <span class="n">utcnow_iso</span><span class="p">(),</span>
+            <span class="s2">"config"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"persist_intermediate_artifacts"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">persist_intermediate_artifacts</span><span class="p">,</span>
+                <span class="s2">"stop_on_validation_error"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">stop_on_validation_error</span><span class="p">,</span>
+                <span class="c1"># unknown_abbreviation_rate_warning is consumed by the</span>
+                <span class="c1"># orchestrator's own analyst-review gating (below), so it is</span>
+                <span class="c1"># reported here.  Per-stage thresholds (near-critical float,</span>
+                <span class="c1"># Monte Carlo runs, …) live on each stage's own config and are</span>
+                <span class="c1"># not reproduced here to avoid implying the orchestrator sets</span>
+                <span class="c1"># them.</span>
+                <span class="s2">"unknown_abbreviation_rate_warning"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">unknown_abbreviation_rate_warning</span><span class="p">,</span>
+                <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">extra</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="s2">"input_refs"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"activity_id"</span><span class="p">:</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"activity_id"</span><span class="p">),</span>
+                <span class="s2">"outage_id"</span><span class="p">:</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"outage_id"</span><span class="p">),</span>
+                <span class="s2">"plant_id"</span><span class="p">:</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"plant_id"</span><span class="p">),</span>
+                <span class="s2">"unit_id"</span><span class="p">:</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"unit_id"</span><span class="p">),</span>
+                <span class="s2">"source_system"</span><span class="p">:</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_system"</span><span class="p">),</span>
+                <span class="s2">"detection_timestamp"</span><span class="p">:</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection_timestamp"</span><span class="p">),</span>
+            <span class="p">},</span>
+        <span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">artifact_store</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"run_context"</span><span class="p">,</span> <span class="n">run_context</span><span class="p">)</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Run </span><span class="si">%s</span><span class="s2"> started for activity </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">run_id</span><span class="p">,</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"activity_id"</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">run_context</span></div>
+
+
+    <span class="c1"># ─────────────────────────────────────────────────────────────────────────</span>
+    <span class="c1"># Stage methods</span>
+    <span class="c1"># ─────────────────────────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="OutageActivityOrchestrator._stage_a_intake">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator._stage_a_intake">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_stage_a_intake</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">precomputed</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Stage A — Activity Intake.</span>
+
+<span class="sd">        NER, abbreviation expansion, emergence type classification, regulatory</span>
+<span class="sd">        flag detection, component/WO/CR reference resolution, DQ scoring.</span>
+
+<span class="sd">        Exits with analyst_review=True if unknown_abbreviation_rate exceeds</span>
+<span class="sd">        the configured warning threshold.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">precomputed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Stage A skipped — using pre-computed intake_result"</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_persist</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"intake_result"</span><span class="p">,</span> <span class="n">precomputed</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">precomputed</span>
+
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Stage A — intake processing (run=</span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span> <span class="n">run_id</span><span class="p">)</span>
+        <span class="n">intake_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">intake_processor</span><span class="o">.</span><span class="n">process</span><span class="p">(</span>
+            <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+            <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Exit criterion: high unknown abbreviation rate forces analyst review.</span>
+        <span class="n">abbr_rate</span> <span class="o">=</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"unknown_abbreviation_rate"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">abbr_rate</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">unknown_abbreviation_rate_warning</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Stage A (run=</span><span class="si">%s</span><span class="s2">): unknown_abbreviation_rate=</span><span class="si">%.2f</span><span class="s2"> exceeds threshold </span><span class="si">%.2f</span><span class="s2"> "</span>
+                <span class="s2">"— downstream semantic extraction may be unreliable."</span><span class="p">,</span>
+                <span class="n">run_id</span><span class="p">,</span> <span class="n">abbr_rate</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">unknown_abbreviation_rate_warning</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_persist</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"intake_result"</span><span class="p">,</span> <span class="n">intake_result</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">intake_result</span></div>
+
+
+<div class="viewcode-block" id="OutageActivityOrchestrator._stage_b_kg_timeline">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator._stage_b_kg_timeline">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_stage_b_kg_timeline</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">precomputed</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">optional_failures</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Stage B — KG Timeline Builder.</span>
+
+<span class="sd">        Queries the knowledge graph for the resolved component(s) and assembles</span>
+<span class="sd">        a time-ordered ComponentEventTimeline of CRs, WOs, maintenance events,</span>
+<span class="sd">        inspections, and prior emergent activities.</span>
+
+<span class="sd">        When ``kg_timeline_builder.build()`` raises ``ValueError`` (no resolvable</span>
+<span class="sd">        component_id), this method catches the error, logs a WARNING, appends to</span>
+<span class="sd">        ``optional_failures``, and returns an empty stub timeline so Stages C, F,</span>
+<span class="sd">        and G can still produce a partial recommendation.  The ``kg_driver_available``</span>
+<span class="sd">        flag in the stub is ``False``, which is surfaced in ``review_hooks`` as</span>
+<span class="sd">        ``kg_unavailable`` so the analyst knows the recommendation was made without</span>
+<span class="sd">        KG history.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">precomputed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Stage B skipped — using pre-computed component_event_timeline"</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_persist</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"component_event_timeline"</span><span class="p">,</span> <span class="n">precomputed</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">precomputed</span>
+
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Stage B — KG timeline query (run=</span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span> <span class="n">run_id</span><span class="p">)</span>
+        <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"activity_id"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">component_event_timeline</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">kg_timeline_builder</span><span class="o">.</span><span class="n">build</span><span class="p">(</span>
+                <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+                <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+                <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Stage B (run=</span><span class="si">%s</span><span class="s2">): cannot determine component_id — "</span>
+                <span class="s2">"producing empty stub timeline. Downstream stages will run "</span>
+                <span class="s2">"without KG history. Reason: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                <span class="n">run_id</span><span class="p">,</span> <span class="n">reason</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">optional_failures</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"stage"</span><span class="p">:</span> <span class="s2">"stage_b_kg_timeline"</span><span class="p">,</span>
+                <span class="s2">"artifact"</span><span class="p">:</span> <span class="s2">"component_event_timeline"</span><span class="p">,</span>
+                <span class="s2">"error"</span><span class="p">:</span> <span class="n">reason</span><span class="p">,</span>
+                <span class="s2">"optional"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="p">})</span>
+            <span class="n">component_event_timeline</span> <span class="o">=</span> <span class="n">_stub_component_event_timeline</span><span class="p">(</span>
+                <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+                <span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span>
+                <span class="n">reason</span><span class="o">=</span><span class="n">reason</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_persist</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"component_event_timeline"</span><span class="p">,</span> <span class="n">component_event_timeline</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">component_event_timeline</span></div>
+
+
+<div class="viewcode-block" id="OutageActivityOrchestrator._stage_c_temporal_chain">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator._stage_c_temporal_chain">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_stage_c_temporal_chain</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">component_event_timeline</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">precomputed</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Stage C — Temporal Event Chain Scorer.</span>
+
+<span class="sd">        Applies Allen interval algebra to the ComponentEventTimeline.</span>
+<span class="sd">        Classifies each prior event as PRECEDES, OVERLAPS, CONTAINS, DURING,</span>
+<span class="sd">        FOLLOWS, or SIMULTANEOUS relative to the emergent activity interval.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">precomputed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Stage C skipped — using pre-computed temporal_event_chain"</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_persist</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"temporal_event_chain"</span><span class="p">,</span> <span class="n">precomputed</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">precomputed</span>
+
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Stage C — temporal chain scoring (run=</span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span> <span class="n">run_id</span><span class="p">)</span>
+        <span class="n">temporal_event_chain</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">temporal_chain_scorer</span><span class="o">.</span><span class="n">score</span><span class="p">(</span>
+            <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+            <span class="n">component_event_timeline</span><span class="o">=</span><span class="n">component_event_timeline</span><span class="p">,</span>
+            <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_persist</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"temporal_event_chain"</span><span class="p">,</span> <span class="n">temporal_event_chain</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">temporal_event_chain</span></div>
+
+
+<div class="viewcode-block" id="OutageActivityOrchestrator._stage_d_analogs">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator._stage_d_analogs">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_stage_d_analogs</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">precomputed</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">schedule_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Stage D — Historical Analog Retriever.</span>
+
+<span class="sd">        Retrieves the most similar past emergent activities from the indexed</span>
+<span class="sd">        historical record and fits a duration distribution.  The duration</span>
+<span class="sd">        distribution is consumed by Stage E — this is why D runs before E.</span>
+
+<span class="sd">        When ``schedule_context`` is provided (Gap 4 two-pass design) the</span>
+<span class="sd">        retriever applies a structural affinity re-ranking pass and stamps</span>
+<span class="sd">        the query ActivityCase with predecessor/successor topology for</span>
+<span class="sd">        future DependencyPatternScorer activation.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">precomputed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Stage D skipped — using pre-computed historical_analogs"</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_persist</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"historical_analogs"</span><span class="p">,</span> <span class="n">precomputed</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">precomputed</span>
+
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Stage D — historical analog retrieval (run=</span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span> <span class="n">run_id</span><span class="p">)</span>
+        <span class="n">historical_analogs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">analog_retriever</span><span class="o">.</span><span class="n">retrieve</span><span class="p">(</span>
+            <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+            <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+            <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+            <span class="n">schedule_context</span><span class="o">=</span><span class="n">schedule_context</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_persist</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"historical_analogs"</span><span class="p">,</span> <span class="n">historical_analogs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">historical_analogs</span></div>
+
+
+<div class="viewcode-block" id="OutageActivityOrchestrator._stage_e_schedule">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator._stage_e_schedule">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_stage_e_schedule</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">precomputed</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">optional_failures</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">schedule_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Stage E — Schedule Impact Assessor.</span>
+
+<span class="sd">        Inserts the emergent activity into the current schedule network and</span>
+<span class="sd">        computes critical path impact using the duration distribution from</span>
+<span class="sd">        Stage D for Monte Carlo simulation.</span>
+
+<span class="sd">        When ``schedule_context`` is provided (Gap 4 two-pass design) the</span>
+<span class="sd">        assessor reuses the pre-computed insertion point rather than</span>
+<span class="sd">        re-loading and re-traversing the schedule network.</span>
+
+<span class="sd">        Any schedule failure degrades to a null stub rather than crashing the</span>
+<span class="sd">        run: a missing ``schedule_loader`` / ``schedule_graph_builder`` raises</span>
+<span class="sd">        ``RuntimeError``, but an empty or uncomputed schedule can also surface</span>
+<span class="sd">        as ``IndexError`` (no phase candidates) and loader/builder backends can</span>
+<span class="sd">        raise their own exceptions.  This method catches any of them, logs a</span>
+<span class="sd">        WARNING with the error type, appends to ``optional_failures``, and</span>
+<span class="sd">        returns the null stub so Stages F and G can still produce a partial</span>
+<span class="sd">        recommendation from analog data alone.  The ``schedule_loader_unavailable``</span>
+<span class="sd">        flag in the stub is surfaced in ``review_hooks`` so the analyst knows the</span>
+<span class="sd">        recommendation was made without schedule data.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">precomputed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Stage E skipped — using pre-computed schedule_impact_assessment"</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_persist</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"schedule_impact_assessment"</span><span class="p">,</span> <span class="n">precomputed</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">precomputed</span>
+
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Stage E — schedule impact assessment (run=</span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span> <span class="n">run_id</span><span class="p">)</span>
+        <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"activity_id"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">schedule_impact_assessment</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schedule_impact_assessor</span><span class="o">.</span><span class="n">assess</span><span class="p">(</span>
+                <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+                <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+                <span class="n">historical_analogs</span><span class="o">=</span><span class="n">historical_analogs</span><span class="p">,</span>
+                <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+                <span class="n">schedule_context</span><span class="o">=</span><span class="n">schedule_context</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Stage E (run=</span><span class="si">%s</span><span class="s2">): schedule assessment failed (</span><span class="si">%s</span><span class="s2">) — "</span>
+                <span class="s2">"producing null stub artifact. Downstream stages will run "</span>
+                <span class="s2">"without CP metrics. Reason: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                <span class="n">run_id</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="n">reason</span><span class="p">,</span>
+                <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">optional_failures</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"stage"</span><span class="p">:</span> <span class="s2">"stage_e_schedule"</span><span class="p">,</span>
+                <span class="s2">"artifact"</span><span class="p">:</span> <span class="s2">"schedule_impact_assessment"</span><span class="p">,</span>
+                <span class="s2">"error_type"</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+                <span class="s2">"error"</span><span class="p">:</span> <span class="n">reason</span><span class="p">,</span>
+                <span class="s2">"optional"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="p">})</span>
+            <span class="n">schedule_impact_assessment</span> <span class="o">=</span> <span class="n">_stub_schedule_impact_artifact</span><span class="p">(</span>
+                <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+                <span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span>
+                <span class="n">reason</span><span class="o">=</span><span class="n">reason</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_persist</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"schedule_impact_assessment"</span><span class="p">,</span> <span class="n">schedule_impact_assessment</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">schedule_impact_assessment</span></div>
+
+
+<div class="viewcode-block" id="OutageActivityOrchestrator._stage_f_options">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator._stage_f_options">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_stage_f_options</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">temporal_event_chain</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact_assessment</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">precomputed</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Stage F — Insertion Option Generator.</span>
+
+<span class="sd">        Generates a ranked set of options for handling the emergent activity.</span>
+<span class="sd">        Filters options that violate regulatory constraints from Stage A.</span>
+<span class="sd">        Ranks feasible options by composite risk score.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">precomputed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Stage F skipped — using pre-computed insertion_options"</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_persist</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"insertion_options"</span><span class="p">,</span> <span class="n">precomputed</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">precomputed</span>
+
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Stage F — insertion option generation (run=</span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span> <span class="n">run_id</span><span class="p">)</span>
+        <span class="n">insertion_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">option_generator</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span>
+            <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+            <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+            <span class="n">temporal_event_chain</span><span class="o">=</span><span class="n">temporal_event_chain</span><span class="p">,</span>
+            <span class="n">schedule_impact_assessment</span><span class="o">=</span><span class="n">schedule_impact_assessment</span><span class="p">,</span>
+            <span class="n">historical_analogs</span><span class="o">=</span><span class="n">historical_analogs</span><span class="p">,</span>
+            <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_persist</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"insertion_options"</span><span class="p">,</span> <span class="n">insertion_options</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">insertion_options</span></div>
+
+
+<div class="viewcode-block" id="OutageActivityOrchestrator._stage_g_recommendation">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator._stage_g_recommendation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_stage_g_recommendation</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">component_event_timeline</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">temporal_event_chain</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact_assessment</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">insertion_options</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">optional_failures</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Stage G — Recommendation Synthesizer.</span>
+
+<span class="sd">        Synthesizes all upstream artifacts into a single</span>
+<span class="sd">        OutageActivityRecommendation.  Sets analyst_review=True when:</span>
+<span class="sd">          - has_regulatory_constraint is True</span>
+<span class="sd">          - confidence_tier is low_confidence</span>
+<span class="sd">          - decision_status is INCONCLUSIVE</span>
+<span class="sd">          - any upstream stage produced an optional failure</span>
+<span class="sd">          - unknown_abbreviation_rate exceeded the warning threshold in Stage A</span>
+<span class="sd">        """</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Stage G — recommendation synthesis (run=</span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span> <span class="n">run_id</span><span class="p">)</span>
+        <span class="n">outage_activity_recommendation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">recommendation_synthesizer</span><span class="o">.</span><span class="n">synthesize</span><span class="p">(</span>
+            <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+            <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+            <span class="n">component_event_timeline</span><span class="o">=</span><span class="n">component_event_timeline</span><span class="p">,</span>
+            <span class="n">temporal_event_chain</span><span class="o">=</span><span class="n">temporal_event_chain</span><span class="p">,</span>
+            <span class="n">historical_analogs</span><span class="o">=</span><span class="n">historical_analogs</span><span class="p">,</span>
+            <span class="n">schedule_impact_assessment</span><span class="o">=</span><span class="n">schedule_impact_assessment</span><span class="p">,</span>
+            <span class="n">insertion_options</span><span class="o">=</span><span class="n">insertion_options</span><span class="p">,</span>
+            <span class="n">run_context</span><span class="o">=</span><span class="n">run_context</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_persist</span><span class="p">(</span>
+            <span class="n">run_id</span><span class="p">,</span> <span class="s2">"outage_activity_recommendation"</span><span class="p">,</span> <span class="n">outage_activity_recommendation</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">outage_activity_recommendation</span></div>
+
+
+    <span class="c1"># ─────────────────────────────────────────────────────────────────────────</span>
+    <span class="c1"># Run manifest</span>
+    <span class="c1"># ─────────────────────────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="OutageActivityOrchestrator._finalize_manifest">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator._finalize_manifest">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_finalize_manifest</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">component_event_timeline</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">temporal_event_chain</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact_assessment</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">insertion_options</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">outage_activity_recommendation</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">optional_failures</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Build the run manifest: a single summary of what the pipeline produced.</span>
+
+<span class="sd">        Mirrors _stage_g_finalize_manifest in the RCA orchestrator.</span>
+<span class="sd">        Used for monitoring, audit, and the learning loop.</span>
+<span class="sd">        """</span>
+        <span class="n">review_hooks</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_review_hooks</span><span class="p">(</span>
+            <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+            <span class="n">component_event_timeline</span><span class="o">=</span><span class="n">component_event_timeline</span><span class="p">,</span>
+            <span class="n">schedule_impact_assessment</span><span class="o">=</span><span class="n">schedule_impact_assessment</span><span class="p">,</span>
+            <span class="n">outage_activity_recommendation</span><span class="o">=</span><span class="n">outage_activity_recommendation</span><span class="p">,</span>
+            <span class="n">optional_failures</span><span class="o">=</span><span class="n">optional_failures</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">rec</span> <span class="o">=</span> <span class="n">outage_activity_recommendation</span>
+        <span class="n">exec_summary</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"executive_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">sched</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"schedule_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">hist</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"history_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"validation_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">analogs_summary</span> <span class="o">=</span> <span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"retrieval_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">chain_summary</span> <span class="o">=</span> <span class="n">temporal_event_chain</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">options_summary</span> <span class="o">=</span> <span class="n">insertion_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ranking_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_context</span><span class="p">[</span><span class="s2">"run_id"</span><span class="p">],</span>
+            <span class="s2">"completed_at"</span><span class="p">:</span> <span class="n">utcnow_iso</span><span class="p">(),</span>
+            <span class="s2">"input_refs"</span><span class="p">:</span> <span class="n">run_context</span><span class="p">[</span><span class="s2">"input_refs"</span><span class="p">],</span>
+            <span class="s2">"pipeline_config"</span><span class="p">:</span> <span class="n">run_context</span><span class="p">[</span><span class="s2">"config"</span><span class="p">],</span>
+            <span class="s2">"artifacts"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"intake_result"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"present"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                    <span class="s2">"emergence_type"</span><span class="p">:</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"emergence_type"</span><span class="p">),</span>
+                    <span class="s2">"has_regulatory_constraint"</span><span class="p">:</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_regulatory_constraint"</span><span class="p">),</span>
+                    <span class="s2">"unknown_abbreviation_rate"</span><span class="p">:</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"unknown_abbreviation_rate"</span><span class="p">),</span>
+                    <span class="s2">"data_quality_score"</span><span class="p">:</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"data_quality_score"</span><span class="p">),</span>
+                    <span class="s2">"resolved_component_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"resolved_component_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]),</span>
+                <span class="p">},</span>
+                <span class="s2">"component_event_timeline"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"present"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                    <span class="s2">"kg_driver_available"</span><span class="p">:</span> <span class="n">component_event_timeline</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"kg_driver_available"</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
+                    <span class="s2">"total_events"</span><span class="p">:</span> <span class="p">(</span><span class="n">component_event_timeline</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"data_coverage"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"total_events"</span><span class="p">),</span>
+                    <span class="s2">"repeat_failure_count"</span><span class="p">:</span> <span class="p">(</span><span class="n">component_event_timeline</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"recurrence_indicators"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"repeat_failure_count"</span><span class="p">),</span>
+                    <span class="s2">"pm_compliance_status"</span><span class="p">:</span> <span class="p">(</span><span class="n">component_event_timeline</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"recurrence_indicators"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pm_compliance_status"</span><span class="p">),</span>
+                <span class="p">},</span>
+                <span class="s2">"temporal_event_chain"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"present"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                    <span class="s2">"chain_length"</span><span class="p">:</span> <span class="n">chain_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"chain_length"</span><span class="p">),</span>
+                    <span class="s2">"causal_posture"</span><span class="p">:</span> <span class="n">chain_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causal_posture"</span><span class="p">),</span>
+                    <span class="s2">"has_temporal_contradiction"</span><span class="p">:</span> <span class="n">chain_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_temporal_contradiction"</span><span class="p">),</span>
+                <span class="p">},</span>
+                <span class="s2">"historical_analogs"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"present"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                    <span class="s2">"analog_count"</span><span class="p">:</span> <span class="n">analogs_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analog_count"</span><span class="p">),</span>
+                    <span class="s2">"outages_represented"</span><span class="p">:</span> <span class="n">analogs_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"outages_represented"</span><span class="p">),</span>
+                    <span class="s2">"fallback_used"</span><span class="p">:</span> <span class="n">analogs_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fallback_used"</span><span class="p">),</span>
+                    <span class="s2">"duration_p50_hours"</span><span class="p">:</span> <span class="p">(</span><span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"duration_distribution"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"p50_hours"</span><span class="p">),</span>
+                    <span class="s2">"confidence_tier"</span><span class="p">:</span> <span class="p">(</span><span class="n">historical_analogs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"duration_distribution"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_tier"</span><span class="p">),</span>
+                <span class="p">},</span>
+                <span class="s2">"schedule_impact_assessment"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"present"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                    <span class="s2">"schedule_loader_unavailable"</span><span class="p">:</span> <span class="n">schedule_impact_assessment</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"schedule_loader_unavailable"</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+                    <span class="s2">"criticality_label"</span><span class="p">:</span> <span class="p">(</span><span class="n">schedule_impact_assessment</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_analysis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">),</span>
+                    <span class="s2">"cp_drag_hours"</span><span class="p">:</span> <span class="p">(</span><span class="n">schedule_impact_assessment</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_drag_hours"</span><span class="p">),</span>
+                    <span class="s2">"float_consumed_hours"</span><span class="p">:</span> <span class="p">(</span><span class="n">schedule_impact_assessment</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_analysis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_consumed_hours"</span><span class="p">),</span>
+                    <span class="s2">"displaced_task_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">schedule_impact_assessment</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"displaced_tasks"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]),</span>
+                <span class="p">},</span>
+                <span class="s2">"insertion_options"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"present"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                    <span class="s2">"options_generated"</span><span class="p">:</span> <span class="n">options_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"options_generated"</span><span class="p">),</span>
+                    <span class="s2">"options_feasible"</span><span class="p">:</span> <span class="n">options_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"options_feasible"</span><span class="p">),</span>
+                    <span class="s2">"options_regulatory_blocked"</span><span class="p">:</span> <span class="n">options_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"options_regulatory_blocked"</span><span class="p">),</span>
+                    <span class="s2">"recommended_option_id"</span><span class="p">:</span> <span class="n">insertion_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"recommended_option_id"</span><span class="p">),</span>
+                    <span class="s2">"min_cost_option_id"</span><span class="p">:</span> <span class="n">insertion_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"min_cost_option_id"</span><span class="p">),</span>
+                <span class="p">},</span>
+                <span class="s2">"outage_activity_recommendation"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"present"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                    <span class="s2">"decision_status"</span><span class="p">:</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"decision_status"</span><span class="p">),</span>
+                    <span class="s2">"confidence_tier"</span><span class="p">:</span> <span class="n">exec_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_tier"</span><span class="p">),</span>
+                    <span class="s2">"cp_impact_hours"</span><span class="p">:</span> <span class="n">sched</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact_hours"</span><span class="p">),</span>
+                    <span class="s2">"criticality_label"</span><span class="p">:</span> <span class="n">sched</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">),</span>
+                    <span class="s2">"analog_count"</span><span class="p">:</span> <span class="n">hist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analog_count"</span><span class="p">),</span>
+                    <span class="s2">"analyst_review_required"</span><span class="p">:</span> <span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_review"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"required"</span><span class="p">),</span>
+                    <span class="s2">"fallback_used"</span><span class="p">:</span> <span class="n">val</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fallback_used"</span><span class="p">),</span>
+                    <span class="s2">"attention_flags"</span><span class="p">:</span> <span class="n">exec_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_attention_flags"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[],</span>
+                <span class="p">},</span>
+            <span class="p">},</span>
+            <span class="s2">"validation"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"optional_artifact_failures"</span><span class="p">:</span> <span class="n">optional_failures</span><span class="p">,</span>
+                <span class="s2">"optional_artifacts_degraded"</span><span class="p">:</span> <span class="nb">bool</span><span class="p">(</span><span class="n">optional_failures</span><span class="p">),</span>
+            <span class="p">},</span>
+            <span class="s2">"review_hooks"</span><span class="p">:</span> <span class="n">review_hooks</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+    <span class="c1"># ─────────────────────────────────────────────────────────────────────────</span>
+    <span class="c1"># Review hooks</span>
+    <span class="c1"># ─────────────────────────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="OutageActivityOrchestrator._compute_review_hooks">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator._compute_review_hooks">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compute_review_hooks</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">component_event_timeline</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact_assessment</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">outage_activity_recommendation</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">optional_failures</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Compute attention flags for the run manifest.</span>
+
+<span class="sd">        These hooks drive monitoring dashboards and the low-confidence watchlist</span>
+<span class="sd">        (WBS 11.3). Mirrors _compute_review_hooks in the RCA orchestrator.</span>
+<span class="sd">        """</span>
+        <span class="n">rec</span> <span class="o">=</span> <span class="n">outage_activity_recommendation</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"validation_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">exec_summary</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"executive_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">analyst_review</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_review"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+
+        <span class="n">has_regulatory_constraint</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_regulatory_constraint"</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+        <span class="n">abbr_rate</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"unknown_abbreviation_rate"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">abbr_rate_high</span> <span class="o">=</span> <span class="n">abbr_rate</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">unknown_abbreviation_rate_warning</span>
+
+        <span class="c1"># When kg_driver_available is absent (pre-computed artifact without the field),</span>
+        <span class="c1"># default to True to avoid spurious warnings on replayed runs.</span>
+        <span class="n">kg_unavailable</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">component_event_timeline</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"kg_driver_available"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+
+        <span class="c1"># When schedule_loader_unavailable is True Stage E produced a null stub;</span>
+        <span class="c1"># the recommendation was made without schedule/CP data.</span>
+        <span class="n">schedule_loader_unavailable</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span>
+            <span class="n">schedule_impact_assessment</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"schedule_loader_unavailable"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">decision_status</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"decision_status"</span><span class="p">)</span>
+        <span class="n">confidence_tier</span> <span class="o">=</span> <span class="n">exec_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_tier"</span><span class="p">)</span>
+        <span class="n">fallback_used</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">val</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fallback_used"</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+        <span class="n">analyst_review_required</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">analyst_review</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"required"</span><span class="p">,</span> <span class="kc">True</span><span class="p">))</span>
+        <span class="n">schema_valid</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">val</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"schema_valid"</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+        <span class="n">min_evidence_met</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">val</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"minimum_evidence_met"</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+        <span class="n">optional_artifacts_degraded</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">optional_failures</span><span class="p">)</span>
+
+        <span class="c1"># Determine the recommended next step for the analyst dashboard.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">schema_valid</span><span class="p">:</span>
+            <span class="n">next_step</span> <span class="o">=</span> <span class="s2">"validation_remediation"</span>
+        <span class="k">elif</span> <span class="n">decision_status</span> <span class="o">==</span> <span class="s2">"INCONCLUSIVE"</span><span class="p">:</span>
+            <span class="n">next_step</span> <span class="o">=</span> <span class="s2">"analyst_review"</span>
+        <span class="k">elif</span> <span class="n">has_regulatory_constraint</span><span class="p">:</span>
+            <span class="n">next_step</span> <span class="o">=</span> <span class="s2">"licensing_review"</span>
+        <span class="k">elif</span> <span class="n">analyst_review_required</span><span class="p">:</span>
+            <span class="n">next_step</span> <span class="o">=</span> <span class="s2">"analyst_review"</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">next_step</span> <span class="o">=</span> <span class="s2">"ready_to_act"</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"requires_human_review"</span><span class="p">:</span> <span class="n">analyst_review_required</span><span class="p">,</span>
+            <span class="s2">"next_step"</span><span class="p">:</span> <span class="n">next_step</span><span class="p">,</span>
+            <span class="s2">"schema_valid"</span><span class="p">:</span> <span class="n">schema_valid</span><span class="p">,</span>
+            <span class="s2">"minimum_evidence_met"</span><span class="p">:</span> <span class="n">min_evidence_met</span><span class="p">,</span>
+            <span class="s2">"fallback_used"</span><span class="p">:</span> <span class="n">fallback_used</span><span class="p">,</span>
+            <span class="s2">"has_regulatory_constraint"</span><span class="p">:</span> <span class="n">has_regulatory_constraint</span><span class="p">,</span>
+            <span class="s2">"kg_unavailable"</span><span class="p">:</span> <span class="n">kg_unavailable</span><span class="p">,</span>
+            <span class="s2">"schedule_loader_unavailable"</span><span class="p">:</span> <span class="n">schedule_loader_unavailable</span><span class="p">,</span>
+            <span class="s2">"high_unknown_abbreviation_rate"</span><span class="p">:</span> <span class="n">abbr_rate_high</span><span class="p">,</span>
+            <span class="s2">"unknown_abbreviation_rate"</span><span class="p">:</span> <span class="n">abbr_rate</span><span class="p">,</span>
+            <span class="s2">"confidence_tier"</span><span class="p">:</span> <span class="n">confidence_tier</span><span class="p">,</span>
+            <span class="s2">"decision_status"</span><span class="p">:</span> <span class="n">decision_status</span><span class="p">,</span>
+            <span class="s2">"optional_artifacts_degraded"</span><span class="p">:</span> <span class="n">optional_artifacts_degraded</span><span class="p">,</span>
+            <span class="s2">"optional_failure_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">optional_failures</span><span class="p">),</span>
+        <span class="p">}</span></div>
+
+
+    <span class="c1"># ─────────────────────────────────────────────────────────────────────────</span>
+    <span class="c1"># Internal helpers</span>
+    <span class="c1"># ─────────────────────────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="OutageActivityOrchestrator._precompute_schedule_context">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator._precompute_schedule_context">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_precompute_schedule_context</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Run the lightweight insertion-point pre-pass (Gap 4 two-pass design).</span>
+
+<span class="sd">        Calls ``insertion_point_determiner.determine()`` and returns the</span>
+<span class="sd">        resulting ``ScheduleContext``.  Returns ``None`` when:</span>
+
+<span class="sd">        - ``insertion_point_determiner`` was not injected (default behavior).</span>
+<span class="sd">        - The determiner raises or returns ``None`` itself (graceful degradation).</span>
+
+<span class="sd">        Callers pass the result into both Stage D and Stage E; both stages</span>
+<span class="sd">        fall back to their existing behavior when ``None`` is received.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">insertion_point_determiner</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">ctx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">insertion_point_determiner</span><span class="o">.</span><span class="n">determine</span><span class="p">(</span>
+                <span class="n">emergent_activity</span><span class="p">,</span> <span class="n">intake_result</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                    <span class="s2">"Pre-pass: ScheduleContext computed for activity </span><span class="si">%s</span><span class="s2"> "</span>
+                    <span class="s2">"(after=</span><span class="si">%s</span><span class="s2">, on_cp=</span><span class="si">%s</span><span class="s2">, float=</span><span class="si">%.2f</span><span class="s2"> h)"</span><span class="p">,</span>
+                    <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"activity_id"</span><span class="p">),</span>
+                    <span class="nb">getattr</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="s2">"after_task_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+                    <span class="nb">getattr</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="s2">"insertion_on_cp"</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+                    <span class="nb">getattr</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="s2">"available_float_hours"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+                <span class="p">)</span>
+            <span class="k">return</span> <span class="n">ctx</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Pre-pass: InsertionPointDeterminer failed for activity </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2"> — "</span>
+                <span class="s2">"continuing without schedule context"</span><span class="p">,</span>
+                <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"activity_id"</span><span class="p">),</span> <span class="n">exc</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="OutageActivityOrchestrator._validate_and_persist">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/outage_activity_orchestrator/index.html#src.dackar.outage.orchestrators.outage_activity_orchestrator.OutageActivityOrchestrator._validate_and_persist">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_and_persist</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">artifact_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">payload</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">optional</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">optional_failures</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Validate an artifact and optionally persist it to the ArtifactStore.</span>
+
+<span class="sd">        For required artifacts (optional=False): a validation failure raises</span>
+<span class="sd">        immediately when stop_on_validation_error=True; otherwise it is logged</span>
+<span class="sd">        as an error and execution continues.</span>
+
+<span class="sd">        For optional artifacts: a validation failure is logged as a warning and</span>
+<span class="sd">        appended to optional_failures (if provided).</span>
+<span class="sd">        """</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">validation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">validator</span><span class="o">.</span><span class="n">validate_artifact</span><span class="p">(</span><span class="n">artifact_name</span><span class="p">,</span> <span class="n">payload</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">optional</span><span class="p">:</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">"Optional artifact '</span><span class="si">%s</span><span class="s2">' failed validation (run=</span><span class="si">%s</span><span class="s2">): </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                    <span class="n">artifact_name</span><span class="p">,</span> <span class="n">run_id</span><span class="p">,</span> <span class="n">exc</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">failure</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"artifact"</span><span class="p">:</span> <span class="n">artifact_name</span><span class="p">,</span> <span class="s2">"error"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">),</span> <span class="s2">"optional"</span><span class="p">:</span> <span class="kc">True</span><span class="p">}</span>
+                <span class="k">if</span> <span class="n">optional_failures</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">optional_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">failure</span><span class="p">)</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">persist_intermediate_artifacts</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">artifact_store</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="n">artifact_name</span><span class="p">,</span> <span class="n">payload</span><span class="p">)</span>
+                <span class="k">return</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                    <span class="s2">"Artifact '</span><span class="si">%s</span><span class="s2">' failed validation (run=</span><span class="si">%s</span><span class="s2">): </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                    <span class="n">artifact_name</span><span class="p">,</span> <span class="n">run_id</span><span class="p">,</span> <span class="n">exc</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">stop_on_validation_error</span><span class="p">:</span>
+                    <span class="k">raise</span>
+                <span class="n">validation</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"ok"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span> <span class="s2">"issues"</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">)]}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">is_ok</span><span class="p">,</span> <span class="n">issues</span> <span class="o">=</span> <span class="n">_validation_outcome</span><span class="p">(</span><span class="n">validation</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">is_ok</span><span class="p">:</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                    <span class="s2">"Artifact '</span><span class="si">%s</span><span class="s2">' validation issues (run=</span><span class="si">%s</span><span class="s2">): </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                    <span class="n">artifact_name</span><span class="p">,</span> <span class="n">run_id</span><span class="p">,</span> <span class="n">issues</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">stop_on_validation_error</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">optional</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">"Artifact '</span><span class="si">{</span><span class="n">artifact_name</span><span class="si">}</span><span class="s2">' failed validation: </span><span class="si">{</span><span class="n">issues</span><span class="si">}</span><span class="s2">"</span>
+                    <span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">persist_intermediate_artifacts</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">artifact_store</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="n">artifact_name</span><span class="p">,</span> <span class="n">payload</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">artifact_store</span><span class="o">.</span><span class="n">save</span><span class="p">(</span>
+                <span class="n">run_id</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">artifact_name</span><span class="si">}</span><span class="s2">__validation"</span><span class="p">,</span> <span class="n">_validation_to_dict</span><span class="p">(</span><span class="n">validation</span><span class="p">)</span>
+            <span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

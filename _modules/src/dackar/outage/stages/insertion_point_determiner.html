@@ -1,0 +1,612 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.stages.insertion_point_determiner &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.stages.insertion_point_determiner</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.stages.insertion_point_determiner</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Insertion point determination pre-pass for the two-pass analog retrieval design.</span>
+
+<span class="sd">Background</span>
+<span class="sd">----------</span>
+<span class="sd">Stage D (analog retrieval) runs before Stage E (schedule impact) because Stage E</span>
+<span class="sd">needs the duration distribution produced by Stage D to drive its Monte Carlo</span>
+<span class="sd">simulation.  This ordering means Stage D cannot use schedule-position signals</span>
+<span class="sd">during similarity scoring — it has no knowledge of *where* the emergent activity</span>
+<span class="sd">will sit in the network.</span>
+
+<span class="sd">The key insight is that **determining the insertion point does not require the</span>
+<span class="sd">duration distribution**.  It only needs:</span>
+
+<span class="sd">    1. The schedule network (LOGOS Pert, loadable independently).</span>
+<span class="sd">    2. The emergent activity's ``actual_start`` / ``outage_phase`` metadata.</span>
+
+<span class="sd">``InsertionPointDeterminer`` executes this lightweight pre-pass between Stage C</span>
+<span class="sd">and Stage D, producing a ``ScheduleContext`` that carries:</span>
+
+<span class="sd">    - Insertion topology: ``after_task_id``, ``before_task_id``, degree metrics.</span>
+<span class="sd">    - Schedule risk indicators: ``available_float_hours``, ``insertion_on_cp``.</span>
+
+<span class="sd">This context is then threaded through both Stage D and Stage E:</span>
+
+<span class="sd">    Stage D:  ``_rerank_by_schedule_context()`` uses the signals to apply a</span>
+<span class="sd">              structural affinity boost to the ranked analog pool (Layer 1).</span>
+<span class="sd">              The query ``ActivityCase`` also receives ``predecessor_ids`` /</span>
+<span class="sd">              ``successor_ids`` so ``DependencyPatternScorer`` activates</span>
+<span class="sd">              automatically once historical topology data enters the index</span>
+<span class="sd">              (Layer 2, deferred).</span>
+
+<span class="sd">    Stage E:  ``ScheduleContext.to_insertion_point()`` provides the pre-computed</span>
+<span class="sd">              insertion point dict, avoiding a redundant second determination.</span>
+
+<span class="sd">Typical wiring in the orchestrator::</span>
+
+<span class="sd">    from dackar.outage.stages.insertion_point_determiner import InsertionPointDeterminer</span>
+
+<span class="sd">    determiner = InsertionPointDeterminer(</span>
+<span class="sd">        schedule_loader=my_loader,</span>
+<span class="sd">        schedule_graph_builder=my_builder,</span>
+<span class="sd">        schedule_version="working",</span>
+<span class="sd">    )</span>
+<span class="sd">    # Called between Stage C and Stage D:</span>
+<span class="sd">    schedule_context = determiner.determine(emergent_activity, intake_result)</span>
+
+<span class="sd">Graceful degradation</span>
+<span class="sd">--------------------</span>
+<span class="sd">All failures in ``determine()`` are caught and logged; the method returns</span>
+<span class="sd">``None`` rather than raising.  Stage D and Stage E fall back to their existing</span>
+<span class="sd">behavior when ``schedule_context`` is ``None``.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timedelta</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span>
+
+<div class="viewcode-block" id="LOGGER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.LOGGER">[docs]</a>
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<span class="c1"># Minimum slack to be considered off the critical path (hours).</span>
+<div class="viewcode-block" id="_FLOAT_EPSILON">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner._FLOAT_EPSILON">[docs]</a>
+<span class="n">_FLOAT_EPSILON</span> <span class="o">=</span> <span class="mf">0.01</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># ScheduleContext dataclass</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="viewcode-block" id="ScheduleContext">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.ScheduleContext">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ScheduleContext</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Immutable snapshot of the insertion site's schedule topology.</span>
+
+<span class="sd">    Produced by :class:`InsertionPointDeterminer` and consumed by Stage D</span>
+<span class="sd">    (structural affinity re-ranking) and Stage E (insertion point reuse).</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    activity_id</span>
+<span class="sd">        The emergent activity this context was computed for.</span>
+<span class="sd">    after_task_id</span>
+<span class="sd">        The schedule task immediately before the insertion point (the activity</span>
+<span class="sd">        the emergent task will follow).  ``None`` when the schedule is empty or</span>
+<span class="sd">        no suitable predecessor was found.</span>
+<span class="sd">    before_task_id</span>
+<span class="sd">        The schedule task immediately after the insertion point (the first</span>
+<span class="sd">        successor of ``after_task_id`` on the critical path).  ``None`` when</span>
+<span class="sd">        ``after_task_id`` is a sink.</span>
+<span class="sd">    outage_phase</span>
+<span class="sd">        Outage phase label at the insertion site (from intake result or</span>
+<span class="sd">        inferred from schedule position).</span>
+<span class="sd">    proposed_start</span>
+<span class="sd">        ISO-8601 datetime of the proposed insertion start, derived from the</span>
+<span class="sd">        schedule network's project start + ``after_task`` EF.</span>
+<span class="sd">    proposed_finish</span>
+<span class="sd">        ISO-8601 datetime of the proposed insertion finish.  Uses</span>
+<span class="sd">        ``planned_duration_hours`` from the emergent activity as the best</span>
+<span class="sd">        available pre-analog estimate.  Stage D will overwrite this with the</span>
+<span class="sd">        p50 distribution estimate when available.</span>
+<span class="sd">    insertion_in_degree</span>
+<span class="sd">        Number of predecessors of ``after_task_id`` in the schedule network.</span>
+<span class="sd">        High in-degree signals a merge point (multiple work streams converging)</span>
+<span class="sd">        where coordination overhead is elevated.</span>
+<span class="sd">    insertion_out_degree</span>
+<span class="sd">        Number of successors of ``after_task_id`` in the schedule network.</span>
+<span class="sd">        High out-degree signals a burst point (work-package fan-out) where the</span>
+<span class="sd">        insertion blocks multiple downstream tasks simultaneously.</span>
+<span class="sd">    available_float_hours</span>
+<span class="sd">        Total float (slack) at ``after_task_id`` before insertion.  Small</span>
+<span class="sd">        values indicate the insertion site is near-critical; zero means</span>
+<span class="sd">        any delay propagates directly to the outage completion date.</span>
+<span class="sd">    insertion_on_cp</span>
+<span class="sd">        True when ``available_float_hours`` ≤ ``_FLOAT_EPSILON`` — i.e. the</span>
+<span class="sd">        insertion site is on or adjacent to the critical path.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="ScheduleContext.activity_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.ScheduleContext.activity_id">[docs]</a>
+    <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="ScheduleContext.after_task_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.ScheduleContext.after_task_id">[docs]</a>
+    <span class="n">after_task_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="ScheduleContext.before_task_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.ScheduleContext.before_task_id">[docs]</a>
+    <span class="n">before_task_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="ScheduleContext.outage_phase">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.ScheduleContext.outage_phase">[docs]</a>
+    <span class="n">outage_phase</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="ScheduleContext.proposed_start">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.ScheduleContext.proposed_start">[docs]</a>
+    <span class="n">proposed_start</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="ScheduleContext.proposed_finish">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.ScheduleContext.proposed_finish">[docs]</a>
+    <span class="n">proposed_finish</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="ScheduleContext.insertion_in_degree">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.ScheduleContext.insertion_in_degree">[docs]</a>
+    <span class="n">insertion_in_degree</span><span class="p">:</span> <span class="nb">int</span></div>
+
+<div class="viewcode-block" id="ScheduleContext.insertion_out_degree">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.ScheduleContext.insertion_out_degree">[docs]</a>
+    <span class="n">insertion_out_degree</span><span class="p">:</span> <span class="nb">int</span></div>
+
+<div class="viewcode-block" id="ScheduleContext.available_float_hours">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.ScheduleContext.available_float_hours">[docs]</a>
+    <span class="n">available_float_hours</span><span class="p">:</span> <span class="nb">float</span></div>
+
+<div class="viewcode-block" id="ScheduleContext.insertion_on_cp">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.ScheduleContext.insertion_on_cp">[docs]</a>
+    <span class="n">insertion_on_cp</span><span class="p">:</span> <span class="nb">bool</span></div>
+
+
+<div class="viewcode-block" id="ScheduleContext.to_insertion_point">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.ScheduleContext.to_insertion_point">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_insertion_point</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return an insertion_point dict compatible with Stage E's artifact schema.</span>
+
+<span class="sd">        Stage E accepts this in place of the output of</span>
+<span class="sd">        ``_determine_insertion_point()`` so the schedule network does not need</span>
+<span class="sd">        to be traversed a second time.</span>
+<span class="sd">        """</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"emergent_task_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"EA::</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">activity_id</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+            <span class="s2">"after_task_id"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">after_task_id</span><span class="p">,</span>
+            <span class="s2">"before_task_id"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">before_task_id</span><span class="p">,</span>
+            <span class="s2">"outage_phase"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">outage_phase</span><span class="p">,</span>
+            <span class="s2">"proposed_start"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">proposed_start</span><span class="p">,</span>
+            <span class="s2">"proposed_finish"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">proposed_finish</span><span class="p">,</span>
+        <span class="p">}</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># InsertionPointDeterminer</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="InsertionPointDeterminer">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.InsertionPointDeterminer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">InsertionPointDeterminer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Lightweight pre-pass that determines where the emergent activity inserts.</span>
+
+<span class="sd">    Loads the schedule network (same loader / builder pair used by Stage E),</span>
+<span class="sd">    finds the insertion point, and extracts topology metrics — all without</span>
+<span class="sd">    needing the duration distribution from Stage D.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        schedule_loader: ``callable(outage_id, version=...) → OutageData``.</span>
+<span class="sd">            The same loader injected into ``ScheduleImpactAssessor``.</span>
+<span class="sd">        schedule_graph_builder: Object with ``.build(outage_data) → Pert``.</span>
+<span class="sd">            The builder must return a Pert with ``generateInfo()`` called so</span>
+<span class="sd">            ``infoDict`` is populated.</span>
+<span class="sd">        schedule_version: Schedule version tag to load.  Defaults to</span>
+<span class="sd">            ``"working"`` (same default as Stage E).</span>
+<span class="sd">        near_critical_float_threshold_hours: Float below which a site is</span>
+<span class="sd">            considered near-critical.  Used only for logging; the binary</span>
+<span class="sd">            ``insertion_on_cp`` uses ``_FLOAT_EPSILON``.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">schedule_loader</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">schedule_graph_builder</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">schedule_version</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"working"</span><span class="p">,</span>
+        <span class="n">near_critical_float_threshold_hours</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">8.0</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="InsertionPointDeterminer.schedule_loader">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.InsertionPointDeterminer.schedule_loader">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">schedule_loader</span> <span class="o">=</span> <span class="n">schedule_loader</span></div>
+
+<div class="viewcode-block" id="InsertionPointDeterminer.schedule_graph_builder">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.InsertionPointDeterminer.schedule_graph_builder">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">schedule_graph_builder</span> <span class="o">=</span> <span class="n">schedule_graph_builder</span></div>
+
+<div class="viewcode-block" id="InsertionPointDeterminer.schedule_version">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.InsertionPointDeterminer.schedule_version">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">schedule_version</span> <span class="o">=</span> <span class="n">schedule_version</span></div>
+
+<div class="viewcode-block" id="InsertionPointDeterminer.near_critical_float_threshold_hours">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.InsertionPointDeterminer.near_critical_float_threshold_hours">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">near_critical_float_threshold_hours</span> <span class="o">=</span> <span class="n">near_critical_float_threshold_hours</span></div>
+
+
+    <span class="c1"># ── Public entry point ────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="InsertionPointDeterminer.determine">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.InsertionPointDeterminer.determine">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">determine</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="s2">"ScheduleContext"</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Determine the insertion point and return a ScheduleContext.</span>
+
+<span class="sd">        Returns ``None`` on any failure (missing loader, schedule load error,</span>
+<span class="sd">        empty schedule) so callers can safely treat ``None`` as "no context</span>
+<span class="sd">        available — fall back to existing behavior."</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            emergent_activity: Raw EmergentActivity artifact (must include</span>
+<span class="sd">                ``activity_id`` and ``outage_id``).</span>
+<span class="sd">            intake_result: Stage A output (used for ``outage_phase``).</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">schedule_loader</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">schedule_graph_builder</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">"InsertionPointDeterminer: loader/builder not injected; skipping"</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"activity_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">outage_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"outage_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">outage_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schedule_loader</span><span class="p">(</span>
+                <span class="n">outage_id</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">schedule_version</span>
+            <span class="p">)</span>
+            <span class="n">pert</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schedule_graph_builder</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">outage_data</span><span class="p">)</span>
+            <span class="n">pert</span><span class="o">.</span><span class="n">generateInfo</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"InsertionPointDeterminer: schedule load failed for outage </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                <span class="n">outage_id</span><span class="p">,</span> <span class="n">exc</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">pert</span><span class="p">,</span> <span class="s2">"infoDict"</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">"InsertionPointDeterminer: empty schedule for outage </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">outage_id</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_context</span><span class="p">(</span>
+                <span class="n">pert</span><span class="o">=</span><span class="n">pert</span><span class="p">,</span>
+                <span class="n">emergent_activity</span><span class="o">=</span><span class="n">emergent_activity</span><span class="p">,</span>
+                <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span><span class="p">,</span>
+                <span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"InsertionPointDeterminer: context extraction failed: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">exc</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span></div>
+
+
+    <span class="c1"># ── Private helpers ───────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="InsertionPointDeterminer._build_context">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.InsertionPointDeterminer._build_context">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_context</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">pert</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">activity_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"ScheduleContext"</span><span class="p">:</span>
+        <span class="n">outage_phase</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"outage_phase"</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"outage_phase"</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="s2">"unknown"</span>
+        <span class="p">)</span>
+
+        <span class="n">after_act</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_after_task</span><span class="p">(</span><span class="n">pert</span><span class="p">,</span> <span class="n">emergent_activity</span><span class="p">,</span> <span class="n">outage_phase</span><span class="p">)</span>
+
+        <span class="n">info</span> <span class="o">=</span> <span class="n">pert</span><span class="o">.</span><span class="n">infoDict</span>
+        <span class="n">fwd</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">pert</span><span class="p">,</span> <span class="s2">"forwardDict"</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="n">bwd</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">pert</span><span class="p">,</span> <span class="s2">"backwardDict"</span><span class="p">,</span> <span class="p">{})</span>
+
+        <span class="c1"># Successor / predecessor of after_task</span>
+        <span class="n">successors</span> <span class="o">=</span> <span class="n">fwd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">after_act</span><span class="p">,</span> <span class="p">[])</span> <span class="k">if</span> <span class="n">after_act</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[]</span>
+        <span class="n">before_act</span> <span class="o">=</span> <span class="n">successors</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">successors</span> <span class="k">else</span> <span class="kc">None</span>
+
+        <span class="c1"># Topology metrics at insertion site</span>
+        <span class="n">in_degree</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">bwd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">after_act</span><span class="p">,</span> <span class="p">[]))</span> <span class="k">if</span> <span class="n">after_act</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mi">0</span>
+        <span class="n">out_degree</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">successors</span><span class="p">)</span>
+
+        <span class="c1"># Float at insertion site</span>
+        <span class="n">available_float</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">if</span> <span class="n">after_act</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">after_act</span> <span class="ow">in</span> <span class="n">info</span><span class="p">:</span>
+            <span class="n">available_float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">info</span><span class="p">[</span><span class="n">after_act</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"slack"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+
+        <span class="n">on_cp</span> <span class="o">=</span> <span class="n">available_float</span> <span class="o">&lt;=</span> <span class="n">_FLOAT_EPSILON</span>
+
+        <span class="c1"># Absolute proposed times</span>
+        <span class="n">proposed_start_iso</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">proposed_finish_iso</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">base_dt</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">pert</span><span class="p">,</span> <span class="s2">"startTime"</span><span class="p">)</span> <span class="ow">and</span> <span class="n">pert</span><span class="o">.</span><span class="n">startTime</span><span class="p">:</span>
+            <span class="n">base_dt</span> <span class="o">=</span> <span class="n">_ensure_tz</span><span class="p">(</span><span class="n">pert</span><span class="o">.</span><span class="n">startTime</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">after_act</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">after_act</span> <span class="ow">in</span> <span class="n">info</span> <span class="ow">and</span> <span class="n">base_dt</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ef</span> <span class="o">=</span> <span class="n">info</span><span class="p">[</span><span class="n">after_act</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ef"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="n">proposed_start_iso</span> <span class="o">=</span> <span class="p">(</span><span class="n">base_dt</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">hours</span><span class="o">=</span><span class="n">ef</span><span class="p">))</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span>
+            <span class="n">planned_dur</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span>
+                <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"planned_duration_hours"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span>
+            <span class="p">)</span>
+            <span class="n">proposed_finish_iso</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">base_dt</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">hours</span><span class="o">=</span><span class="n">ef</span> <span class="o">+</span> <span class="n">planned_dur</span><span class="p">)</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">on_cp</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">"InsertionPointDeterminer: activity </span><span class="si">%s</span><span class="s2"> inserts on CP "</span>
+                <span class="s2">"(after=</span><span class="si">%s</span><span class="s2">, float=</span><span class="si">%.2f</span><span class="s2"> h)"</span><span class="p">,</span>
+                <span class="n">activity_id</span><span class="p">,</span>
+                <span class="n">after_act</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="n">after_act</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="n">available_float</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">available_float</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">near_critical_float_threshold_hours</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">"InsertionPointDeterminer: activity </span><span class="si">%s</span><span class="s2"> near-critical insertion "</span>
+                <span class="s2">"(after=</span><span class="si">%s</span><span class="s2">, float=</span><span class="si">%.2f</span><span class="s2"> h)"</span><span class="p">,</span>
+                <span class="n">activity_id</span><span class="p">,</span>
+                <span class="n">after_act</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="n">after_act</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="n">available_float</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">ScheduleContext</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span>
+            <span class="n">after_task_id</span><span class="o">=</span><span class="n">after_act</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="n">after_act</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">before_task_id</span><span class="o">=</span><span class="n">before_act</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="n">before_act</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">outage_phase</span><span class="o">=</span><span class="n">outage_phase</span><span class="p">,</span>
+            <span class="n">proposed_start</span><span class="o">=</span><span class="n">proposed_start_iso</span><span class="p">,</span>
+            <span class="n">proposed_finish</span><span class="o">=</span><span class="n">proposed_finish_iso</span><span class="p">,</span>
+            <span class="n">insertion_in_degree</span><span class="o">=</span><span class="n">in_degree</span><span class="p">,</span>
+            <span class="n">insertion_out_degree</span><span class="o">=</span><span class="n">out_degree</span><span class="p">,</span>
+            <span class="n">available_float_hours</span><span class="o">=</span><span class="nb">round</span><span class="p">(</span><span class="n">available_float</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+            <span class="n">insertion_on_cp</span><span class="o">=</span><span class="n">on_cp</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="InsertionPointDeterminer._find_after_task">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner.InsertionPointDeterminer._find_after_task">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_find_after_task</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">pert</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">outage_phase</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Find the schedule task the emergent activity should follow.</span>
+
+<span class="sd">        Mirrors Stage E's ``_determine_insertion_point()`` strategy:</span>
+
+<span class="sd">        1. If ``actual_start`` is known, find the task active at that offset.</span>
+<span class="sd">        2. Otherwise filter by ``outage_phase`` window and pick max-float task.</span>
+<span class="sd">        """</span>
+        <span class="n">info</span> <span class="o">=</span> <span class="n">pert</span><span class="o">.</span><span class="n">infoDict</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">info</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="n">candidates</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">(</span><span class="n">act</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span> <span class="k">for</span> <span class="n">act</span><span class="p">,</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">info</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"es"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ef"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">candidates</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="c1"># Strategy 1: steer by actual_start</span>
+        <span class="n">actual_start_iso</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"actual_start"</span><span class="p">)</span>
+        <span class="n">base_dt</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">pert</span><span class="p">,</span> <span class="s2">"startTime"</span><span class="p">)</span> <span class="ow">and</span> <span class="n">pert</span><span class="o">.</span><span class="n">startTime</span><span class="p">:</span>
+            <span class="n">base_dt</span> <span class="o">=</span> <span class="n">_ensure_tz</span><span class="p">(</span><span class="n">pert</span><span class="o">.</span><span class="n">startTime</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">actual_start_iso</span> <span class="ow">and</span> <span class="n">base_dt</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">start_dt</span> <span class="o">=</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">actual_start_iso</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">start_dt</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">offset</span> <span class="o">=</span> <span class="p">(</span><span class="n">start_dt</span> <span class="o">-</span> <span class="n">base_dt</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">/</span> <span class="mf">3600.0</span>
+                    <span class="n">active</span> <span class="o">=</span> <span class="p">[</span>
+                        <span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">candidates</span>
+                        <span class="k">if</span> <span class="n">d</span><span class="p">[</span><span class="s2">"es"</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">offset</span> <span class="o">&lt;=</span> <span class="n">d</span><span class="p">[</span><span class="s2">"ef"</span><span class="p">]</span>
+                    <span class="p">]</span>
+                    <span class="k">if</span> <span class="n">active</span><span class="p">:</span>
+                        <span class="n">active</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">abs</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"slack"</span><span class="p">,</span> <span class="mi">999</span><span class="p">)))</span>
+                        <span class="k">return</span> <span class="n">active</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+                <span class="k">pass</span>
+
+        <span class="c1"># Strategy 2: phase-window filter + max-float</span>
+        <span class="n">total_dur</span> <span class="o">=</span> <span class="nb">max</span><span class="p">((</span><span class="n">d</span><span class="p">[</span><span class="s2">"ef"</span><span class="p">]</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+        <span class="n">phase_low</span><span class="p">,</span> <span class="n">phase_high</span> <span class="o">=</span> <span class="n">_default_phase_windows</span><span class="p">(</span><span class="n">outage_phase</span><span class="p">,</span> <span class="n">total_dur</span><span class="p">)</span>
+        <span class="n">phase_cands</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">candidates</span>
+            <span class="k">if</span> <span class="n">phase_low</span> <span class="o">&lt;=</span> <span class="n">d</span><span class="p">[</span><span class="s2">"es"</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">phase_high</span>
+        <span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">phase_cands</span><span class="p">:</span>
+            <span class="n">phase_cands</span> <span class="o">=</span> <span class="n">candidates</span>
+        <span class="n">phase_cands</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"slack"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">phase_cands</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Module-level helpers (mirrors stage_e_schedule utilities)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_parse_dt">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner._parse_dt">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_dt</span><span class="p">(</span><span class="n">iso_str</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">iso_str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">dt</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="n">iso_str</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">dt</span><span class="o">.</span><span class="n">tzinfo</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">dt</span> <span class="o">=</span> <span class="n">dt</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">dt</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_ensure_tz">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner._ensure_tz">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_ensure_tz</span><span class="p">(</span><span class="n">dt</span><span class="p">:</span> <span class="n">datetime</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">datetime</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">dt</span><span class="o">.</span><span class="n">tzinfo</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">dt</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">dt</span></div>
+
+
+
+<div class="viewcode-block" id="_default_phase_windows">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/insertion_point_determiner/index.html#src.dackar.outage.stages.insertion_point_determiner._default_phase_windows">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_default_phase_windows</span><span class="p">(</span>
+    <span class="n">outage_phase</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">total_hours</span><span class="p">:</span> <span class="nb">float</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Map outage phase label to approximate (start_offset, end_offset) range."""</span>
+    <span class="n">_PHASE_MAP</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"shutdown"</span><span class="p">:</span>        <span class="p">(</span><span class="mf">0.00</span><span class="p">,</span> <span class="mf">0.10</span><span class="p">),</span>
+        <span class="s2">"defueling"</span><span class="p">:</span>       <span class="p">(</span><span class="mf">0.05</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">),</span>
+        <span class="s2">"maintenance"</span><span class="p">:</span>     <span class="p">(</span><span class="mf">0.20</span><span class="p">,</span> <span class="mf">0.70</span><span class="p">),</span>
+        <span class="s2">"refueling"</span><span class="p">:</span>       <span class="p">(</span><span class="mf">0.20</span><span class="p">,</span> <span class="mf">0.70</span><span class="p">),</span>
+        <span class="s2">"inspection"</span><span class="p">:</span>      <span class="p">(</span><span class="mf">0.30</span><span class="p">,</span> <span class="mf">0.80</span><span class="p">),</span>
+        <span class="s2">"testing"</span><span class="p">:</span>         <span class="p">(</span><span class="mf">0.60</span><span class="p">,</span> <span class="mf">0.90</span><span class="p">),</span>
+        <span class="s2">"startup"</span><span class="p">:</span>         <span class="p">(</span><span class="mf">0.80</span><span class="p">,</span> <span class="mf">1.00</span><span class="p">),</span>
+        <span class="s2">"power_ascension"</span><span class="p">:</span> <span class="p">(</span><span class="mf">0.85</span><span class="p">,</span> <span class="mf">1.00</span><span class="p">),</span>
+    <span class="p">}</span>
+    <span class="n">frac</span> <span class="o">=</span> <span class="n">_PHASE_MAP</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">outage_phase</span><span class="o">.</span><span class="n">lower</span><span class="p">(),</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">frac</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">total_hours</span><span class="p">,</span> <span class="n">frac</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">total_hours</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

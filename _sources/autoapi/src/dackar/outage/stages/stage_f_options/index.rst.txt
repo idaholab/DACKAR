@@ -1,0 +1,600 @@
+src.dackar.outage.stages.stage_f_options
+========================================
+
+.. py:module:: src.dackar.outage.stages.stage_f_options
+
+.. autoapi-nested-parse::
+
+   Stage F — Insertion Option Generator.
+
+   Responsibilities:
+       1. Generate a candidate set of options for handling the emergent activity
+          (insert_now, defer_to_post_outage, pre_outage_staging,
+          add_contingency_buffer, parallel_execution, scope_reduction,
+          escalate_to_management).
+       2. Assess feasibility of each option (resource availability, dependency
+          constraints, technical limitations).
+       3. Check regulatory clearance for each option against the regulatory_drivers
+          identified in Stage A.  Options that would violate a TS surveillance,
+          NRC commitment, or CAP commitment are marked regulatory_cleared=False
+          and retained with a block reason (never silently dropped).
+       4. Score each option with a composite risk score.
+       5. Rank and select the recommended option (top feasible + regulatory-cleared
+          by risk score).
+
+   Output schema: outage/schemas/insertion_options.json
+
+   This is the only pipeline stage with no direct reuse target from RCA —
+   the option generation and ranking logic is unique to outage decision support.
+   The scoring pattern is adapted from RuleBasedCausalityEngineV31 but the
+   dimensions are entirely different.
+
+   Scoring dimensions for each option (lower total = lower risk = better):
+       cp_impact       (0.35) — normalised CP drag hours; 0.0 for defer/escalate
+       confidence      (0.15) — 1 − option_confidence; high confidence → low risk
+       resource_ready  (0.20) — 0.0 if no resource conflicts, 1.0 if conflicts present
+       causal_urgency  (0.20) — action options: 1 − urgency (urgency to act lowers
+                                 risk of acting); non-action options: urgency
+                                 (urgency to act increases risk of not acting)
+       cost            (0.10) — normalised total_cost_usd (labour + schedule extension
+                                 + crash premium) across all candidate options
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_f_options.LOGGER
+   src.dackar.outage.stages.stage_f_options.JsonDict
+   src.dackar.outage.stages.stage_f_options._INSERT_NOW
+   src.dackar.outage.stages.stage_f_options._DEFER
+   src.dackar.outage.stages.stage_f_options._PRE_STAGE
+   src.dackar.outage.stages.stage_f_options._CONTINGENCY
+   src.dackar.outage.stages.stage_f_options._PARALLEL
+   src.dackar.outage.stages.stage_f_options._SCOPE_REDUCTION
+   src.dackar.outage.stages.stage_f_options._ESCALATE
+   src.dackar.outage.stages.stage_f_options._W_CP_IMPACT
+   src.dackar.outage.stages.stage_f_options._W_CONFIDENCE
+   src.dackar.outage.stages.stage_f_options._W_RESOURCE
+   src.dackar.outage.stages.stage_f_options._W_URGENCY
+   src.dackar.outage.stages.stage_f_options._W_COST
+   src.dackar.outage.stages.stage_f_options._NON_ACTION_TYPES
+   src.dackar.outage.stages.stage_f_options._DEFER_PROHIBITED_TYPES
+   src.dackar.outage.stages.stage_f_options._SCOPE_REDUCTION_PROHIBITED_TYPES
+   src.dackar.outage.stages.stage_f_options._TIER_TO_CONFIDENCE
+   src.dackar.outage.stages.stage_f_options._POSTURE_TO_URGENCY
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_f_options.InsertionOptionConfig
+   src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.stages.stage_f_options._parse_dt
+   src.dackar.outage.stages.stage_f_options._compute_cost_estimate
+   src.dackar.outage.stages.stage_f_options._make_option
+   src.dackar.outage.stages.stage_f_options._tier_confidence
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:data:: JsonDict
+
+.. py:data:: _INSERT_NOW
+   :value: 'insert_now'
+
+
+.. py:data:: _DEFER
+   :value: 'defer_to_post_outage'
+
+
+.. py:data:: _PRE_STAGE
+   :value: 'pre_outage_staging'
+
+
+.. py:data:: _CONTINGENCY
+   :value: 'add_contingency_buffer'
+
+
+.. py:data:: _PARALLEL
+   :value: 'parallel_execution'
+
+
+.. py:data:: _SCOPE_REDUCTION
+   :value: 'scope_reduction'
+
+
+.. py:data:: _ESCALATE
+   :value: 'escalate_to_management'
+
+
+.. py:data:: _W_CP_IMPACT
+   :value: 0.35
+
+
+.. py:data:: _W_CONFIDENCE
+   :value: 0.15
+
+
+.. py:data:: _W_RESOURCE
+   :value: 0.2
+
+
+.. py:data:: _W_URGENCY
+   :value: 0.2
+
+
+.. py:data:: _W_COST
+   :value: 0.1
+
+
+.. py:data:: _NON_ACTION_TYPES
+
+.. py:data:: _DEFER_PROHIBITED_TYPES
+
+.. py:data:: _SCOPE_REDUCTION_PROHIBITED_TYPES
+
+.. py:data:: _TIER_TO_CONFIDENCE
+   :type:  Dict[str, float]
+
+.. py:data:: _POSTURE_TO_URGENCY
+   :type:  Dict[str, float]
+
+.. py:class:: InsertionOptionConfig
+
+   Configuration for Stage F.
+
+
+   .. py:attribute:: max_options
+      :type:  int
+      :value: 6
+
+
+      Maximum options to generate.
+
+
+   .. py:attribute:: include_infeasible_options
+      :type:  bool
+      :value: True
+
+
+      Retain infeasible options with feasible=False and an infeasibility_reason
+      so the outage manager can see why they were ruled out.
+
+
+   .. py:attribute:: include_regulatory_blocked_options
+      :type:  bool
+      :value: True
+
+
+      Retain regulatory-blocked options with regulatory_cleared=False and a
+      block reason.  Hiding them would mask the constraint from the user.
+
+
+   .. py:attribute:: escalate_if_cp_drag_exceeds_hours
+      :type:  float
+      :value: 24.0
+
+
+      Automatically generate an escalate_to_management option if the
+      insert_now CP drag exceeds this threshold.
+
+
+   .. py:attribute:: escalate_decision_delay_hours
+      :type:  float
+      :value: 4.0
+
+
+      Expected hours from escalation trigger to management decision.
+      Added as a separate ``decision_latency_cost_usd`` line item in the
+      escalate option cost estimate (and included in ``total_cost_usd``) to
+      reflect the outage time consumed while waiting for approval.
+      Override per-plant based on typical escalation turnaround time.
+
+
+   .. py:attribute:: near_critical_float_threshold_hours
+      :type:  float
+      :value: 8.0
+
+
+      Passed down from orchestrator config for option feasibility checks.
+
+
+   .. py:attribute:: contingency_buffer_p_level
+      :type:  float
+      :value: 0.8
+
+
+      Percentile to use for contingency buffer sizing.  p80 − p50 of the
+      duration distribution sets the buffer width.
+
+
+   .. py:attribute:: scope_reduction_fraction
+      :type:  float
+      :value: 0.6
+
+
+      Fraction of the p50 duration estimate used for the scope-reduction option.
+      Represents executing minimum required scope only (e.g. 60% of full scope).
+
+
+   .. py:attribute:: labor_rate_per_crew_hour
+      :type:  float
+      :value: 150.0
+
+
+      Fully-loaded labour cost per crew-hour (USD).  Default 150 $/crew-hr is a
+      reasonable US nuclear outage approximation; override per-plant.
+
+
+   .. py:attribute:: outage_day_cost_per_hour
+      :type:  float
+      :value: 50000.0
+
+
+      Opportunity cost of one hour of additional outage duration (USD/hr).
+      Typical range for PWR/BWR: $40k–$80k/hr depending on energy market and
+      fuel-cycle position.  Used to price CP drag across all options.
+
+
+   .. py:attribute:: crash_premium_multiplier
+      :type:  float
+      :value: 1.5
+
+
+      Overtime / expedite premium applied to the labour cost of the
+      ``parallel_execution`` option.  1.5 = 50% premium above standard rate.
+
+
+   .. py:attribute:: default_crew_count
+      :type:  int
+      :value: 2
+
+
+      Crew head-count used when Stage E crew_continuity data is unavailable.
+      Applied to all options uniformly in that fall-back case.
+
+
+   .. py:attribute:: scoring_weights
+      :type:  Dict[str, float]
+
+
+.. py:class:: InsertionOptionGenerator(config = None, extra_option_generators = None)
+
+   Concrete Stage F implementation.
+
+   :param config: Stage configuration.
+   :param extra_option_generators: Optional list of domain-specific option generator
+                                   callables to supplement the built-in seven option types.  Each callable
+                                   receives the same keyword arguments as ``generate()`` and must return
+                                   one of: a single ``JsonDict`` option, a ``List[JsonDict]`` of options
+                                   (including an empty list to produce zero options), or ``None`` to opt
+                                   out.  Results are appended to the candidate list before regulatory
+                                   clearance, cost estimation, and scoring.
+
+                                   Example::
+
+                                       def partial_completion_option(
+                                           emergent_activity, intake_result, temporal_event_chain,
+                                           schedule_impact_assessment, historical_analogs, run_context,
+                                       ) -> JsonDict:
+                                           ...
+
+                                       generator = InsertionOptionGenerator(
+                                           extra_option_generators=[partial_completion_option]
+                                       )
+
+
+   .. py:attribute:: config
+
+
+   .. py:attribute:: extra_option_generators
+      :type:  List[Any]
+      :value: []
+
+
+
+   .. py:method:: register_option_generator(fn)
+
+      Register an additional option generator callable.
+
+      Appended to ``extra_option_generators``; called on every ``generate()``
+      invocation after the built-in option generators.
+
+
+
+   .. py:method:: generate(emergent_activity, intake_result, temporal_event_chain, schedule_impact_assessment, historical_analogs, run_context)
+
+      Execute Stage F for one emergent activity.
+
+      :returns: InsertionOptions artifact conforming to
+                outage/schemas/insertion_options.json.
+
+
+
+   .. py:method:: _generate_insert_now(emergent_activity, intake_result, schedule_impact, analogs)
+
+      Generate the insert_now option.
+
+      Uses the schedule_impact_assessment insertion_point and float_analysis
+      to set cp_impact_hours and criticality_label.
+
+      feasible=True unless resource_conflicts are present and cannot be resolved.
+      Resource conflicts make the option infeasible only when the conflict type
+      is 'crew_unavailable' — tool/scaffold conflicts are usually resolvable
+      within the window and are noted in the rationale rather than blocking.
+
+
+
+   .. py:method:: _generate_defer(emergent_activity, intake_result, schedule_impact)
+
+      Generate the defer_to_post_outage option.
+
+      feasible=True for non-safety-related items; infeasible when the activity
+      is safety-critical or in an active LCO window (regulatory clearance is
+      checked separately by _check_regulatory_clearance).
+
+      cp_impact_hours=0.0 — deferral avoids all in-outage schedule impact.
+      Confidence is inherently high (0.85) because the scheduling outcome is
+      certain; the residual risk lies in the plant state during the deferral
+      period, which is captured in causal_urgency during scoring.
+
+
+
+   .. py:method:: _generate_contingency_buffer(emergent_activity, schedule_impact, analogs)
+
+      Generate the add_contingency_buffer option.
+
+      Proposes reserving a float buffer sized at p80 − p50 duration hours
+      (from the historical analog distribution) rather than scheduling the full
+      scope immediately.  Suitable when scope is uncertain and the activity may
+      be shorter than estimated.
+
+      If the activity has not yet started and there is adequate lead time before
+      the outage window, the option type is upgraded to pre_outage_staging.
+      feasible=True when the buffer fits within the available float.
+
+
+
+   .. py:method:: _generate_parallel_option(emergent_activity, schedule_impact, historical_analogs)
+
+      Generate parallel_execution option(s) if a non-conflicting window exists.
+
+      Returns a **list** (not a single JsonDict like all other generators)
+      because this option is conditionally generated: the list is empty when
+      no viable parallel window exists, and contains exactly one option
+      otherwise.  The caller uses ``candidates.extend(...)`` for this method
+      and ``candidates.append(...)`` for all others.  This asymmetry is
+      intentional and documented here to prevent future callers from wrapping
+      the return value in an extra list.
+
+      A parallel window is viable when:
+          - criticality_label is non_critical (activity has float to work in parallel)
+          - OR displaced_tasks contains non-critical tasks whose float absorbs
+            the new activity without driving the critical path.
+
+      Discipline conflict check: the emergent activity discipline is compared
+      against displaced task disciplines — same discipline with same crew means
+      parallel execution would create a crew conflict.
+
+
+
+   .. py:method:: _generate_scope_reduction(emergent_activity, schedule_impact, analogs)
+
+      Generate the scope_reduction option.
+
+      Proposes performing only the minimum required scope to address the
+      immediate safety or operability concern, deferring full corrective action
+      to the next planned window.
+
+      Duration estimate = p50 × config.scope_reduction_fraction (default 60%).
+      feasible=True by default (scope reduction is always technically possible
+      even if not always preferred operationally).  Regulatory clearance for
+      TS/surveillance items is checked separately in _check_regulatory_clearance.
+
+
+
+   .. py:method:: _generate_escalate(emergent_activity, schedule_impact, intake_result = None)
+
+      Generate the escalate_to_management option.
+
+      Always feasible and regulatory-cleared — escalation is always a valid
+      path.  Generated automatically when CP drag exceeds
+      config.escalate_if_cp_drag_exceeds_hours.
+
+      cp_impact_hours reflects the full insert_now impact (same work, higher
+      authority required to approve it).
+
+      N3 fix: when ``intake_result.has_regulatory_constraint`` is True, the
+      rationale is extended with an explicit TS/LCO deadline note so the
+      outage manager escalating to management can immediately surface the
+      action-level time constraint.  If ``active_lco`` is set on the
+      emergent_activity the note includes the LCO number.
+
+
+
+   .. py:method:: _check_regulatory_clearance(option, regulatory_drivers)
+
+      Check whether an option is compatible with all regulatory constraints.
+
+      Returns (regulatory_cleared, block_reason).
+
+      Rules:
+          defer_to_post_outage — blocked when any driver has defer_prohibited=True
+          scope_reduction      — blocked when any driver type is in
+                                 _SCOPE_REDUCTION_PROHIBITED_TYPES (cannot reduce
+                                 scope below a TS minimum or surveillance requirement)
+          insert_now / contingency / pre_outage_staging / parallel / escalate
+                               — always cleared (these options perform the work)
+
+
+
+   .. py:method:: _resolve_crew_count(schedule_impact)
+
+      Extract crew head-count from Stage E crew_continuity, or fall back to config.
+
+      Stage E crew_continuity.utilization_at_window maps skill_type → {committed, ...}.
+      We take the maximum committed count across skill types as a proxy for the
+      activity crew size.  Falls back to ``config.default_crew_count`` when the
+      key is absent (e.g. schedule_impact assessor stub, no LOGOS connection).
+
+
+
+   .. py:method:: _compute_option_cost(option, *, p50, p80, crew_count)
+
+      Derive the effective duration for this option type and call _compute_cost_estimate.
+
+      Duration mapping:
+          insert_now / escalate_to_management   → p50  (full scope, standard pacing)
+          defer_to_post_outage                  → in-outage: 0 h; deferred: p50
+                                                  (work moves to next cycle, not eliminated)
+          add_contingency_buffer / pre_outage_staging → max(0, p80 − p50)
+          scope_reduction                       → p50 × scope_reduction_fraction
+          parallel_execution                    → p50  (crash premium applied separately)
+
+
+
+   .. py:method:: _min_cost_option_id(options)
+
+      Return the option_id of the feasible + cleared option with lowest total_cost_usd.
+
+      Returns None when no feasible options carry a cost_estimate.
+
+
+
+   .. py:method:: _score_option(option, schedule_impact, analogs, causal_posture, *, max_cost = 1.0)
+
+      Compute a composite risk score in [0, 1] for this option.
+
+      Lower score = lower risk = better option.
+
+      Dimensions:
+          cp_impact (W=0.35):
+              Normalise cp_impact_hours against baseline_cp_hours.
+              0.0 drag → 0.0; drag ≥ baseline → 1.0; clamped to [0, 1].
+
+          confidence (W=0.15):
+              1 − option_confidence.  High confidence → low risk contribution.
+
+          resource_ready (W=0.20):
+              0.0 = no resource conflicts; 1.0 = conflicts present.
+
+          causal_urgency (W=0.20):
+              Action options  (insert_now, contingency, parallel, scope_reduction):
+                  1 − urgency (high urgency to act lowers risk of taking action)
+              Non-action options (defer, escalate):
+                  urgency (high urgency to act increases risk of not acting)
+              Weight raised from 0.10 to 0.20 (N4 fix) so high-urgency signals
+              dominate cp_impact for sub-48h drag non-TS activities.
+
+          cost (W=0.10):
+              total_cost_usd / max_cost across all candidates.
+              Normalised to [0, 1]; 0.0 when cost_estimate absent.
+
+
+
+   .. py:method:: _rank_options(candidates)
+
+      Sort options by risk_score ascending.
+
+      Sort key: (infeasible, regulatory_blocked, risk_score).
+      Feasible + cleared options appear first, ordered by risk_score.
+      Infeasible options are pushed after regulatory-blocked ones.
+
+
+
+   .. py:method:: _select_recommended(options)
+
+      Return the option_id of the top-ranked feasible + regulatory-cleared option.
+
+      Returns None if no such option exists (maps to INCONCLUSIVE in Stage G).
+
+
+
+   .. py:method:: _recommendation_confidence(options, recommended_id, analogs)
+
+      Map to data_supported / sme_informed / low_confidence.
+
+      Derived from the duration distribution confidence_tier of Stage D.
+      Degrades to low_confidence when no feasible option is available.
+
+
+
+   .. py:method:: _build_ranking_summary(options)
+
+      Compute options_generated, feasible_count, cleared_count, blocked_count.
+
+
+
+.. py:function:: _parse_dt(iso_str)
+
+   Parse an ISO-8601 string to a timezone-aware datetime.
+
+   Naive datetimes are assumed UTC.  Returns None on invalid or absent input.
+
+
+.. py:function:: _compute_cost_estimate(option_type, duration_hours, crew_count, cp_drag_hours, *, labor_rate, outage_day_cost, crash_premium_multiplier, deferred_duration_hours = 0.0, decision_delay_hours = 0.0)
+
+   Compute a parametric cost estimate for one option mode.
+
+   :param option_type: The option type constant (e.g. ``_INSERT_NOW``).
+   :param duration_hours: In-outage execution hours (0 for defer).
+   :param crew_count: Number of crew members assigned to the activity.
+   :param cp_drag_hours: CP drag from the option (``cp_impact_hours``).
+   :param labor_rate: Fully-loaded labour rate (USD / crew-hour).
+   :param outage_day_cost: Opportunity cost of outage extension (USD / hr).
+   :param crash_premium_multiplier: Overtime multiplier applied to parallel_execution.
+   :param deferred_duration_hours: Duration of the work when performed in the next
+                                   maintenance cycle.  Non-zero only for
+                                   ``defer_to_post_outage``.  Kept as an informational
+                                   field (``deferred_labor_cost_usd``) but intentionally
+                                   excluded from ``total_cost_usd`` so that deferred
+                                   future-cycle costs do not inflate the cost denominator
+                                   used for normalised scoring across all options.
+                                   Including it would unfairly raise the cost score of
+                                   every non-defer option relative to deferral.
+   :param decision_delay_hours: Hours of outage time consumed waiting for a
+                                management decision before work can begin.
+                                Non-zero only for ``escalate_to_management``.
+                                Priced at ``outage_day_cost`` and included in
+                                ``total_cost_usd`` since the outage clock runs
+                                during the decision window.
+
+   :returns:     labor_cost_usd              – in-outage: duration × crew × rate
+                 schedule_extension_cost_usd – cp_drag × outage_day_cost
+                 crash_premium_usd           – additional cost for expedite modes
+                 deferred_labor_cost_usd     – future-cycle labor cost (informational only;
+                                               not included in total_cost_usd)
+                 decision_latency_cost_usd   – decision_delay × outage_day_cost;
+                                               non-zero only for escalate_to_management
+                 total_cost_usd              – labor + schedule_extension + crash_premium
+                                               + decision_latency (comparable across all
+                                               option types)
+                 cost_basis                  – always ``"parametric"``
+   :rtype: Dict with keys
+
+
+.. py:function:: _make_option(*, activity_id, option_type, rationale, feasible, infeasibility_reason, cp_impact_hours, criticality_label, confidence, resource_conflicts)
+
+   Build a canonical option dict (pre-scoring, pre-clearance).
+
+
+.. py:function:: _tier_confidence(tier)
+
+   Map a duration distribution confidence_tier string to a float.
+
+

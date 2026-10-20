@@ -1,0 +1,741 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.orchestrators.protocols &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.orchestrators.protocols</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.orchestrators.protocols</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Outage Activity Workflow — Protocol definitions and configuration dataclasses.</span>
+
+<span class="sd">Each Protocol defines the contract for one pipeline stage. Concrete</span>
+<span class="sd">implementations are injected into OutageActivityOrchestrator at construction</span>
+<span class="sd">time, keeping the orchestration logic decoupled from any specific NLP backend,</span>
+<span class="sd">KG driver, or scheduling library.</span>
+
+<span class="sd">Stage execution order (and data dependencies):</span>
+<span class="sd">    A  ActivityIntakeProcessor      emergent_activity → intake_result</span>
+<span class="sd">    B  KGTimelineBuilder            intake_result → component_event_timeline</span>
+<span class="sd">    C  TemporalChainScorer          component_event_timeline → temporal_event_chain</span>
+<span class="sd">    D  HistoricalAnalogRetriever    intake_result → historical_analogs</span>
+<span class="sd">    E  ScheduleImpactAssessor       historical_analogs → schedule_impact_assessment</span>
+<span class="sd">    F  InsertionOptionGenerator     temporal_event_chain + schedule_impact_assessment</span>
+<span class="sd">                                    + historical_analogs → insertion_options</span>
+<span class="sd">    G  RecommendationSynthesizer    all upstream artifacts → outage_activity_recommendation</span>
+
+<span class="sd">Note: Stage D runs before Stage E because the duration distribution produced by</span>
+<span class="sd">analog retrieval is a required input to schedule impact assessment.</span>
+
+<span class="sd">Shared infrastructure:</span>
+<span class="sd">    SchemaValidator     validate_artifact / validate_run_bundle</span>
+<span class="sd">    ArtifactStore       save / save_list</span>
+
+<span class="sd">Concrete no-op implementations (NoOpSchemaValidator, FileArtifactStore) are</span>
+<span class="sd">provided here for bootstrapping and testing.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Protocol</span><span class="p">,</span> <span class="n">runtime_checkable</span>
+
+<div class="viewcode-block" id="LOGGER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.LOGGER">[docs]</a>
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+
+<span class="c1"># ── Helpers ───────────────────────────────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="utcnow_iso">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.utcnow_iso">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">utcnow_iso</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return current UTC time as ISO-8601 string."""</span>
+    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="new_run_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.new_run_id">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">new_run_id</span><span class="p">(</span><span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"OUTAGE"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Generate a stable run identifier with an optional prefix."""</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">hex</span><span class="p">[:</span><span class="mi">12</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span></div>
+
+
+
+<span class="c1"># ── Stage A — Activity Intake ─────────────────────────────────────────────────</span>
+
+<span class="nd">@runtime_checkable</span>
+<div class="viewcode-block" id="ActivityIntakeProcessor">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.ActivityIntakeProcessor">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ActivityIntakeProcessor</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Stage A.</span>
+
+<span class="sd">    Consumes a raw EmergentActivity record and produces an ActivityIntakeResult:</span>
+<span class="sd">    cleaned and expanded description, NER entities, emergence type classification,</span>
+<span class="sd">    resolved component/WO/CR references, regulatory constraint flags, and data</span>
+<span class="sd">    quality scores.</span>
+
+<span class="sd">    Reuse targets from RCA:</span>
+<span class="sd">        - HybridNERPipeline (entity extraction)</span>
+<span class="sd">        - SpacyAnnotator (temporal refs, measurements)</span>
+<span class="sd">        - EntityNormalizer (component ID resolution)</span>
+<span class="sd">        - outage_uncertainty.preprocessing (cleaners, abbreviation expander)</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="ActivityIntakeProcessor.process">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.ActivityIntakeProcessor.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Args:</span>
+<span class="sd">            emergent_activity: Validated EmergentActivity artifact.</span>
+<span class="sd">            run_context: Run metadata produced by the orchestrator (run_id,</span>
+<span class="sd">                         timestamps, config snapshot).</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Validated ActivityIntakeResult artifact.</span>
+<span class="sd">        """</span>
+        <span class="o">...</span></div>
+</div>
+
+
+
+<span class="c1"># ── Stage B — KG Timeline Builder ────────────────────────────────────────────</span>
+
+<span class="nd">@runtime_checkable</span>
+<div class="viewcode-block" id="KGTimelineBuilder">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.KGTimelineBuilder">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">KGTimelineBuilder</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Stage B.</span>
+
+<span class="sd">    Queries the knowledge graph for the component(s) resolved in Stage A and</span>
+<span class="sd">    assembles a time-ordered ComponentEventTimeline: condition reports, work</span>
+<span class="sd">    orders, preventive and corrective maintenance records, inspection results,</span>
+<span class="sd">    and prior emergent activities. Also computes recurrence indicators and</span>
+<span class="sd">    PM compliance status.</span>
+
+<span class="sd">    Reuse targets from RCA:</span>
+<span class="sd">        - Py2Neo (KG driver)</span>
+<span class="sd">        - ProcessedRecordStore (indexed CR/WO text retrieval)</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="KGTimelineBuilder.build">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.KGTimelineBuilder.build">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Args:</span>
+<span class="sd">            emergent_activity: Validated EmergentActivity artifact.</span>
+<span class="sd">            intake_result: Validated ActivityIntakeResult from Stage A.</span>
+<span class="sd">            run_context: Run metadata.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Validated ComponentEventTimeline artifact.</span>
+<span class="sd">        """</span>
+        <span class="o">...</span></div>
+</div>
+
+
+
+<span class="c1"># ── Stage C — Temporal Chain Scorer ──────────────────────────────────────────</span>
+
+<span class="nd">@runtime_checkable</span>
+<div class="viewcode-block" id="TemporalChainScorer">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.TemporalChainScorer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">TemporalChainScorer</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Stage C.</span>
+
+<span class="sd">    Applies Allen interval algebra to the ComponentEventTimeline to classify</span>
+<span class="sd">    the temporal relationship between each prior event and the emergent activity:</span>
+<span class="sd">    PRECEDES, OVERLAPS, CONTAINS, DURING, FOLLOWS, SIMULTANEOUS.</span>
+
+<span class="sd">    Produces a TemporalEventChain with per-link causal strength scores and an</span>
+<span class="sd">    overall causal posture assessment.</span>
+
+<span class="sd">    Reuse targets from RCA:</span>
+<span class="sd">        - TSKRTemporalScorerV1 (Allen relation logic, confidence scoring)</span>
+<span class="sd">          Adaptation: operates on CR/WO event intervals rather than telemetry</span>
+<span class="sd">          anomaly windows. The interval algebra itself is unchanged.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="TemporalChainScorer.score">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.TemporalChainScorer.score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">component_event_timeline</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Args:</span>
+<span class="sd">            emergent_activity: Validated EmergentActivity artifact.</span>
+<span class="sd">            component_event_timeline: Validated ComponentEventTimeline from Stage B.</span>
+<span class="sd">            run_context: Run metadata.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Validated TemporalEventChain artifact.</span>
+<span class="sd">        """</span>
+        <span class="o">...</span></div>
+</div>
+
+
+
+<span class="c1"># ── Stage D — Historical Analog Retriever ────────────────────────────────────</span>
+
+<span class="nd">@runtime_checkable</span>
+<div class="viewcode-block" id="HistoricalAnalogRetriever">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.HistoricalAnalogRetriever">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">HistoricalAnalogRetriever</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Stage D.</span>
+
+<span class="sd">    Retrieves the most similar past emergent activities from the indexed</span>
+<span class="sd">    historical record using lexical, semantic, component, and context</span>
+<span class="sd">    similarity. Fits a duration distribution from the analog set. The</span>
+<span class="sd">    resulting HistoricalAnalogs artifact is consumed by Stage E to size</span>
+<span class="sd">    the duration estimate used in schedule impact assessment.</span>
+
+<span class="sd">    Reuse targets from RCA:</span>
+<span class="sd">        - ChromaEvidenceRetriever (semantic + keyword search with KG filters)</span>
+<span class="sd">        - ProcessedRecordStore (activity text index)</span>
+<span class="sd">        - outage_uncertainty.retrieval (lexical_similarity, semantic_similarity,</span>
+<span class="sd">          dependency_similarity, context_similarity, similarity_engine)</span>
+<span class="sd">        - outage_uncertainty.uncertainty (distribution_fitter, outlier_handler,</span>
+<span class="sd">          confidence, fallback_policy)</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="HistoricalAnalogRetriever.retrieve">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.HistoricalAnalogRetriever.retrieve">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">retrieve</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Args:</span>
+<span class="sd">            emergent_activity: Validated EmergentActivity artifact.</span>
+<span class="sd">            intake_result: Validated ActivityIntakeResult from Stage A.</span>
+<span class="sd">            run_context: Run metadata.</span>
+<span class="sd">            schedule_context: Optional pre-computed schedule context (Gap 4</span>
+<span class="sd">                two-pass design); the orchestrator always passes this.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Validated HistoricalAnalogs artifact including the fitted</span>
+<span class="sd">            duration distribution.</span>
+<span class="sd">        """</span>
+        <span class="o">...</span></div>
+</div>
+
+
+
+<span class="c1"># ── Stage E — Schedule Impact Assessor ───────────────────────────────────────</span>
+
+<span class="nd">@runtime_checkable</span>
+<div class="viewcode-block" id="ScheduleImpactAssessor">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.ScheduleImpactAssessor">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ScheduleImpactAssessor</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Stage E.</span>
+
+<span class="sd">    Inserts the emergent activity into the current schedule network and</span>
+<span class="sd">    computes critical path impact: float consumed, CP drag, criticality label,</span>
+<span class="sd">    displaced tasks, and resource conflicts. Uses the duration distribution</span>
+<span class="sd">    from Stage D for probabilistic impact estimation (Monte Carlo).</span>
+
+<span class="sd">    Reuse targets from RCA: none directly.</span>
+<span class="sd">    Reuse targets from outage_uncertainty:</span>
+<span class="sd">        - P6_adapter.outage_model (OutageDataset — schedule version access)</span>
+
+<span class="sd">    Implemented by the Stage E schedule stage, which builds the critical-path</span>
+<span class="sd">    network and runs the Monte Carlo impact estimate directly on the LOGOS</span>
+<span class="sd">    ``Pert`` engine.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="ScheduleImpactAssessor.assess">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.ScheduleImpactAssessor.assess">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">assess</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Args:</span>
+<span class="sd">            emergent_activity: Validated EmergentActivity artifact.</span>
+<span class="sd">            intake_result: Validated ActivityIntakeResult from Stage A.</span>
+<span class="sd">            historical_analogs: Validated HistoricalAnalogs from Stage D.</span>
+<span class="sd">                                Duration distribution is consumed here.</span>
+<span class="sd">            run_context: Run metadata.</span>
+<span class="sd">            schedule_context: Optional pre-computed schedule context (Gap 4</span>
+<span class="sd">                two-pass design); the orchestrator always passes this.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Validated ScheduleImpactAssessment artifact.</span>
+<span class="sd">        """</span>
+        <span class="o">...</span></div>
+</div>
+
+
+
+<span class="c1"># ── Stage F — Insertion Option Generator ─────────────────────────────────────</span>
+
+<span class="nd">@runtime_checkable</span>
+<div class="viewcode-block" id="InsertionOptionGeneratorProtocol">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.InsertionOptionGeneratorProtocol">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">InsertionOptionGeneratorProtocol</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Stage F.</span>
+
+<span class="sd">    Generates a ranked set of options for handling the emergent activity:</span>
+<span class="sd">    insert now, defer, pre-stage, add contingency buffer, parallel execution,</span>
+<span class="sd">    scope reduction, or escalate. Filters options that violate regulatory</span>
+<span class="sd">    constraints identified in Stage A. Ranks remaining feasible options by</span>
+<span class="sd">    composite risk score (CP impact, confidence, resource availability).</span>
+
+<span class="sd">    This is the only stage with no direct reuse target from RCA or</span>
+<span class="sd">    outage_uncertainty — it is new logic specific to outage decision support.</span>
+
+<span class="sd">    Reuse targets (partial):</span>
+<span class="sd">        - RuleBasedCausalityEngineV31 scoring pattern (adapt for option ranking)</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="InsertionOptionGeneratorProtocol.generate">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.InsertionOptionGeneratorProtocol.generate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">temporal_event_chain</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact_assessment</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Args:</span>
+<span class="sd">            emergent_activity: Validated EmergentActivity artifact.</span>
+<span class="sd">            intake_result: Validated ActivityIntakeResult from Stage A.</span>
+<span class="sd">            temporal_event_chain: Validated TemporalEventChain from Stage C.</span>
+<span class="sd">            schedule_impact_assessment: Validated ScheduleImpactAssessment</span>
+<span class="sd">                                        from Stage E.</span>
+<span class="sd">            historical_analogs: Validated HistoricalAnalogs from Stage D.</span>
+<span class="sd">            run_context: Run metadata.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Validated InsertionOptions artifact with ranked options and a</span>
+<span class="sd">            recommended_option_id.</span>
+<span class="sd">        """</span>
+        <span class="o">...</span></div>
+</div>
+
+
+
+<span class="c1"># ── Stage G — Recommendation Synthesizer ─────────────────────────────────────</span>
+
+<span class="nd">@runtime_checkable</span>
+<div class="viewcode-block" id="RecommendationSynthesizerProtocol">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.RecommendationSynthesizerProtocol">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RecommendationSynthesizerProtocol</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Stage G.</span>
+
+<span class="sd">    Synthesizes all upstream artifacts into a single OutageActivityRecommendation.</span>
+<span class="sd">    Selects the top-ranked feasible option, assembles the evidence chain,</span>
+<span class="sd">    surfaces regulatory flags, computes the executive summary, and sets the</span>
+<span class="sd">    analyst_review flag when required (regulatory constraints present, low</span>
+<span class="sd">    confidence, or INCONCLUSIVE status).</span>
+
+<span class="sd">    This is the artifact the outage manager reads. It must be fully traceable:</span>
+<span class="sd">    every claim cites a source, every flag is visible, and the analyst can</span>
+<span class="sd">    reject with a reason that feeds back into the learning loop.</span>
+
+<span class="sd">    Reuse targets from RCA:</span>
+<span class="sd">        - RCASynthesizer pattern (evidence selection, confidence tier logic)</span>
+<span class="sd">        - RCAArtifactValidator (schema + semantic validation)</span>
+<span class="sd">        - ArtifactStore (persistence)</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="RecommendationSynthesizerProtocol.synthesize">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.RecommendationSynthesizerProtocol.synthesize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">synthesize</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">component_event_timeline</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">temporal_event_chain</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">historical_analogs</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">schedule_impact_assessment</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">insertion_options</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Args:</span>
+<span class="sd">            All validated upstream artifacts from Stages A–F.</span>
+<span class="sd">            run_context: Run metadata.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Validated OutageActivityRecommendation artifact.</span>
+<span class="sd">        """</span>
+        <span class="o">...</span></div>
+</div>
+
+
+
+<span class="c1"># ── Shared infrastructure Protocols ──────────────────────────────────────────</span>
+
+<div class="viewcode-block" id="SchemaValidator">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.SchemaValidator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SchemaValidator</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Validates pipeline artifacts against their JSON schemas.</span>
+
+<span class="sd">    Compatible with RCAArtifactValidator from dackar.RCA.validation — that</span>
+<span class="sd">    class can be wrapped with outage-specific schema paths and reused here</span>
+<span class="sd">    without modification.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="SchemaValidator.validate_artifact">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.SchemaValidator.validate_artifact">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_artifact</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">artifact_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">payload</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Validate a single artifact. Returns a ValidationReport or raises."""</span>
+        <span class="o">...</span></div>
+
+
+<div class="viewcode-block" id="SchemaValidator.validate_run_bundle">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.SchemaValidator.validate_run_bundle">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_run_bundle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Cross-artifact semantic consistency check across a full run."""</span>
+        <span class="o">...</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="ArtifactStore">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.ArtifactStore">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ArtifactStore</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Persists pipeline artifacts keyed by run_id and artifact name.</span>
+
+<span class="sd">    Compatible with FileArtifactStore from dackar.RCA.orchestrators — that</span>
+<span class="sd">    class implements this protocol and can be reused directly.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="ArtifactStore.save">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.ArtifactStore.save">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">artifact_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">payload</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Persist a single artifact. Returns the storage path or key."""</span>
+        <span class="o">...</span></div>
+
+
+<div class="viewcode-block" id="ArtifactStore.save_list">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.ArtifactStore.save_list">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save_list</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">artifact_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">payload</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Persist a list of artifacts (e.g., JSONL). Returns path or key."""</span>
+        <span class="o">...</span></div>
+</div>
+
+
+
+<span class="c1"># ── Analog persistence — completion feedback loop ────────────────────────────</span>
+
+<span class="nd">@runtime_checkable</span>
+<div class="viewcode-block" id="AnalogPersister">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.AnalogPersister">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AnalogPersister</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Write completed ActivityCase records to the backing analog store.</span>
+
+<span class="sd">    Called by ``CompletionFeedbackWriter`` after a successful</span>
+<span class="sd">    ``record_completion()`` call.  Concrete implementations live in</span>
+<span class="sd">    ``stages/completion_feedback.py`` (``CsvAnalogPersister``).</span>
+
+<span class="sd">    The contract is intentionally narrow — a single ``append`` method —</span>
+<span class="sd">    to keep the persistence surface minimal, testable, and easy to swap.</span>
+<span class="sd">    Implementations must be idempotent: appending the same activity twice</span>
+<span class="sd">    (e.g. from a duplicate callback) must not corrupt the store.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="AnalogPersister.append">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.AnalogPersister.append">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">append</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Persist one completed ActivityCase to the backing store."""</span>
+        <span class="o">...</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="NoOpAnalogPersister">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.NoOpAnalogPersister">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">NoOpAnalogPersister</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Test stub and safe default — accepts writes silently.</span>
+
+<span class="sd">    ``appended`` accumulates all received activities and is inspectable in</span>
+<span class="sd">    tests to verify what was written without touching the filesystem.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="NoOpAnalogPersister.appended">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.NoOpAnalogPersister.appended">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">appended</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span></div>
+
+
+<div class="viewcode-block" id="NoOpAnalogPersister.append">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.NoOpAnalogPersister.append">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">append</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># noqa: D102</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">appended</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">activity</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="c1"># ── Configuration dataclasses ─────────────────────────────────────────────────</span>
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="OutageOrchestratorConfig">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.OutageOrchestratorConfig">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">OutageOrchestratorConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Top-level orchestrator configuration.</span>
+
+<span class="sd">    Controls which intermediate artifacts are persisted, whether validation</span>
+<span class="sd">    errors halt the run, and key thresholds that apply across multiple stages.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="OutageOrchestratorConfig.persist_intermediate_artifacts">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.OutageOrchestratorConfig.persist_intermediate_artifacts">[docs]</a>
+    <span class="n">persist_intermediate_artifacts</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<span class="w">    </span><span class="sd">"""Write each stage output to the ArtifactStore before passing downstream."""</span>
+
+<div class="viewcode-block" id="OutageOrchestratorConfig.stop_on_validation_error">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.OutageOrchestratorConfig.stop_on_validation_error">[docs]</a>
+    <span class="n">stop_on_validation_error</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<span class="w">    </span><span class="sd">"""Halt the run if any stage output fails schema validation. If False,</span>
+<span class="sd">    the error is logged and the run continues with the invalid artifact."""</span>
+
+<div class="viewcode-block" id="OutageOrchestratorConfig.run_label">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.OutageOrchestratorConfig.run_label">[docs]</a>
+    <span class="n">run_label</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<span class="w">    </span><span class="sd">"""Optional human-readable label appended to the run_id for traceability."""</span>
+
+<div class="viewcode-block" id="OutageOrchestratorConfig.unknown_abbreviation_rate_warning">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.OutageOrchestratorConfig.unknown_abbreviation_rate_warning">[docs]</a>
+    <span class="n">unknown_abbreviation_rate_warning</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.25</span></div>
+
+<span class="w">    </span><span class="sd">"""Orchestrator-level analyst-review gate. If a stage reports an</span>
+<span class="sd">    unknown_abbreviation_rate above this value, the orchestrator forces</span>
+<span class="sd">    analyst_review. (Stage G keeps its own copy on RecommendationConfig for its</span>
+<span class="sd">    internal flagging; this one drives the orchestrator's review hook.)"""</span>
+
+    <span class="c1"># NOTE: per-stage thresholds such as near_critical_float_threshold_hours</span>
+    <span class="c1"># (insertion_point_determiner) and monte_carlo_runs (ScheduleImpactConfig)</span>
+    <span class="c1"># are NOT configured here — setting them on the orchestrator had no effect</span>
+    <span class="c1"># because each stage reads its own config, yet the run manifest reported</span>
+    <span class="c1"># them as the pipeline config.  Configure them on the relevant stage.</span>
+
+<div class="viewcode-block" id="OutageOrchestratorConfig.extra">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.OutageOrchestratorConfig.extra">[docs]</a>
+    <span class="n">extra</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span></div>
+
+<span class="w">    </span><span class="sd">"""Reserved for future configuration without breaking the dataclass interface."""</span></div>
+
+
+
+<span class="c1"># NOTE: Per-stage configuration lives with each stage (RecommendationConfig,</span>
+<span class="c1"># ScheduleImpactConfig, HistoricalAnalogConfig, …) and is what the stages</span>
+<span class="c1"># actually read.  Earlier revisions duplicated those here</span>
+<span class="c1"># (KGTimelineBuilderConfig, TemporalChainScorerConfig,</span>
+<span class="c1"># HistoricalAnalogRetrieverConfig, ScheduleImpactAssessorConfig,</span>
+<span class="c1"># InsertionOptionGeneratorConfig); those copies were never consumed and their</span>
+<span class="c1"># defaults had already drifted from the real per-stage configs, so they were</span>
+<span class="c1"># removed to avoid implying the orchestrator configures the stages.</span>
+
+
+<span class="c1"># ── Concrete no-op / file-backed implementations ─────────────────────────────</span>
+
+<div class="viewcode-block" id="NoOpSchemaValidator">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.NoOpSchemaValidator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">NoOpSchemaValidator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Pass-through validator for bootstrapping and unit tests.</span>
+
+<span class="sd">    Every artifact passes validation. Logs a debug message per call.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="NoOpSchemaValidator.validate_artifact">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.NoOpSchemaValidator.validate_artifact">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_artifact</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">artifact_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">payload</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"NoOpSchemaValidator: skipping validation for </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">artifact_name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">"ok"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">"issues"</span><span class="p">:</span> <span class="p">[]}</span></div>
+
+
+<div class="viewcode-block" id="NoOpSchemaValidator.validate_run_bundle">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.NoOpSchemaValidator.validate_run_bundle">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_run_bundle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"NoOpSchemaValidator: skipping run-bundle validation"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">"ok"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">"issues"</span><span class="p">:</span> <span class="p">[]}</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="FileArtifactStore">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.FileArtifactStore">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FileArtifactStore</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Persists artifacts as JSON files under {root_dir}/{run_id}/{artifact_name}.json.</span>
+
+<span class="sd">    Drop-in replacement for FileArtifactStore from dackar.RCA.orchestrators —</span>
+<span class="sd">    identical interface, no dependency on the RCA package.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="FileArtifactStore.root_dir">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.FileArtifactStore.root_dir">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">root_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">root_dir</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="FileArtifactStore.save">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.FileArtifactStore.save">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">artifact_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">payload</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">out_dir</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">root_dir</span> <span class="o">/</span> <span class="n">run_id</span>
+        <span class="n">out_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">out_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">artifact_name</span><span class="si">}</span><span class="s2">.json"</span>
+        <span class="n">path</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="nb">str</span><span class="p">))</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Artifact saved: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="FileArtifactStore.save_list">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/orchestrators/protocols/index.html#src.dackar.outage.orchestrators.protocols.FileArtifactStore.save_list">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save_list</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">artifact_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">payload</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">out_dir</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">root_dir</span> <span class="o">/</span> <span class="n">run_id</span>
+        <span class="n">out_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">out_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">artifact_name</span><span class="si">}</span><span class="s2">.jsonl"</span>
+        <span class="k">with</span> <span class="n">path</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">"w"</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">payload</span><span class="p">:</span>
+                <span class="n">fh</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span> <span class="o">+</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Artifact list saved: </span><span class="si">%s</span><span class="s2"> (</span><span class="si">%d</span><span class="s2"> records)"</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">))</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
