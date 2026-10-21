@@ -291,6 +291,19 @@ class RecommendationSynthesizer:
             return _DEFER
 
         if _policy.is_fail_closed(intake_result, schedule_impact_assessment):
+            # Defense-in-depth (PR#78 [7], option A): Stage F now owns the
+            # recommendation and only recommends defer/escalate under fail-closed,
+            # so by the time we reach here with a non-defer/non-escalate primary
+            # option, Stage F has produced an inconsistent recommendation.  We
+            # still fail closed (ESCALATE), but warn — this branch should be
+            # unreachable in normal operation; if it fires it flags an upstream
+            # Stage F regression.
+            LOGGER.warning(
+                "Stage G: fail-closed decision reached with primary option_type=%r "
+                "(expected defer/escalate from Stage F). Escalating; check Stage F "
+                "recommendation logic.",
+                option_type,
+            )
             return _ESCALATE
 
         # MONITOR: no historical support + non-critical → watch, no immediate action

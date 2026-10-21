@@ -275,7 +275,13 @@ class InsertionOptionGenerator:
         cp_drag = (
             schedule_impact_assessment.get("cp_impact", {}).get("cp_drag_hours", 0.0) or 0.0
         )
-        if cp_drag > self.config.escalate_if_cp_drag_exceeds_hours:
+        # PR#78 [7] (option A): under the fail-closed regulatory/LCO/CP policy
+        # Stage F must own the recommendation, so an escalate option must always
+        # be available to recommend — not only when CP drag exceeds the
+        # threshold.  Generate it whenever fail-closed OR the drag threshold is
+        # crossed.  (Shared policy with Stage G via outage.policy.)
+        fail_closed = _policy.is_fail_closed(intake_result, schedule_impact_assessment)
+        if fail_closed or cp_drag > self.config.escalate_if_cp_drag_exceeds_hours:
             candidates.append(self._generate_escalate(
                 emergent_activity, schedule_impact_assessment, intake_result=intake_result
             ))
@@ -391,8 +397,26 @@ class InsertionOptionGenerator:
             )
             options = [fallback]
 
-        # Select recommended option: top feasible + regulatory-cleared
-        recommended_id = self._select_recommended(options)
+        # PR#78 [7] (Change 2b): under fail-closed the recommendation must be a
+        # defer/escalate option (Change 2).  _rank_options caps at max_options, so
+        # if enough feasible+cleared options rank ahead, the escalate option built
+        # above could be truncated out of `options`, leaving nothing valid to
+        # recommend.  Guarantee one survives: if no defer/escalate option is left,
+        # re-append the escalate candidate (already costed/cleared/scored in the
+        # candidate pass) so `options` and `recommended_option_id` stay consistent.
+        if fail_closed and not any(
+            o.get("option_type") in (_DEFER, _ESCALATE) for o in options
+        ):
+            escalate = next(
+                (c for c in candidates if c.get("option_type") == _ESCALATE), None
+            )
+            if escalate is not None and escalate not in options:
+                options.append(escalate)
+
+        # Select recommended option: under fail-closed, only defer/escalate are
+        # recommendable (Change 2), so decision_status in Stage G derives from the
+        # recommended option type and cannot contradict primary_recommendation.
+        recommended_id = self._select_recommended(options, fail_closed=fail_closed)
 
         summary = self._build_ranking_summary(options)
 
@@ -405,7 +429,7 @@ class InsertionOptionGenerator:
             "recommendation_confidence": self._recommendation_confidence(
                 options, recommended_id, historical_analogs
             ),
-            "min_cost_option_id": self._min_cost_option_id(options),
+            "min_cost_option_id": self._min_cost_option_id(options, fail_closed=fail_closed),
             "ranking_summary": summary,
             "provenance": {
                 "generated_by": self.__class__.__name__,
@@ -995,11 +1019,18 @@ class InsertionOptionGenerator:
             decision_delay_hours=decision_delay,
         )
 
-    def _min_cost_option_id(self, options: List[JsonDict]) -> Optional[str]:
+    def _min_cost_option_id(
+        self, options: List[JsonDict], fail_closed: bool = False
+    ) -> Optional[str]:
         """Return the option_id of the feasible + cleared option with lowest total_cost_usd.
 
         Returns None when no feasible options carry a cost_estimate.
+
+        Under ``fail_closed`` (PR#78 [7], edge C) the eligible set is restricted
+        to defer/escalate, matching the recommendation — the cheapest *compliant*
+        option, not a cheap insert_now that could never be recommended.
         """
+        allowed = {_DEFER, _ESCALATE} if fail_closed else None
         # Fail-closed defaults (False), consistent with _select_recommended and
         # Stage G's _select_primary_option; option_id check folded in.
         eligible = [
@@ -1008,6 +1039,7 @@ class InsertionOptionGenerator:
             and o.get("regulatory_cleared", False)
             and isinstance(o.get("cost_estimate"), dict)
             and o.get("option_id")
+            and (allowed is None or o.get("option_type") in allowed)
         ]
         if not eligible:
             return None
@@ -1113,15 +1145,26 @@ class InsertionOptionGenerator:
 
         return sorted_options[: self.config.max_options]
 
-    def _select_recommended(self, options: List[JsonDict]) -> Optional[str]:
+    def _select_recommended(
+        self, options: List[JsonDict], fail_closed: bool = False
+    ) -> Optional[str]:
         """Return the option_id of the top-ranked feasible + regulatory-cleared option.
 
         Returns None if no such option exists (maps to INCONCLUSIVE in Stage G).
         Missing feasible/regulatory_cleared default to False (fail closed),
         consistent with Stage G's _select_primary_option (PR#78 [9]).
+
+        When ``fail_closed`` (PR#78 [7], option A), only ``defer_to_post_outage``
+        and ``escalate_to_management`` are recommendable — never an action option
+        such as insert_now/parallel.  This makes Stage G's decision_status (which
+        derives from the recommended option type) consistent with
+        primary_recommendation: a fail-closed run can only yield DEFER or ESCALATE.
         """
+        allowed = {_DEFER, _ESCALATE} if fail_closed else None
         for option in options:
             if option.get("feasible", False) and option.get("regulatory_cleared", False):
+                if allowed is not None and option.get("option_type") not in allowed:
+                    continue
                 # Skip malformed options with no option_id rather than KeyError.
                 oid = option.get("option_id")
                 if oid:
