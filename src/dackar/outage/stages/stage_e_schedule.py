@@ -134,6 +134,11 @@ class ScheduleImpactConfig:
     monte_carlo_runs: int = 1000
     """Number of Monte Carlo simulation samples."""
 
+    random_seed: Optional[int] = None
+    """Seed for the Monte Carlo RNG. When None, a seed is derived from the
+    run_id so repeated assess() calls on the same run are reproducible (audit
+    replay / regression tests). Set an explicit int to pin it."""
+
     max_displaced_tasks_reported: int = 20
     """Maximum displaced tasks to surface in the artifact."""
 
@@ -331,19 +336,46 @@ class ScheduleImpactAssessor:
         float_analysis = self._compute_float_analysis(
             schedule_network, insertion_point, duration_for_float
         )
-        # Pass lead_hours to Monte Carlo so each scenario includes the permit
-        # overhead in the effective activity duration fed to the CPM engine.
-        sim_result = self._run_monte_carlo(
-            schedule_network, insertion_point, duration_dist,
-            permit_lead_hours=lead_hours,
+        # I8: when the duration distribution is unknown (no p50 / distribution_type
+        # "unknown"), skip the Monte Carlo entirely.  Previously the sampler
+        # clamped an unknown duration to a 0.1 h floor, so cp_drag was driven
+        # only by permit lead time and reported as if it were a real estimate.
+        # Instead report a null cp_impact with an explicit flag so Stage G and
+        # the analyst know CP impact could not be computed.
+        dist_type = duration_dist.get("distribution_type")
+        duration_unknown = (
+            duration_dist.get("p50_hours") is None or dist_type == "unknown"
         )
-        cp_metrics = self._compute_cp_metrics(
-            sim_result,
-            schedule_network.baseline_cp_hours,
-            locked_baseline_cp_hours=schedule_network.locked_baseline_cp_hours,
-            locked_baseline_start=schedule_network.locked_baseline_start,
-            working_start=schedule_network.working_start,
-        )
+        mc_seed = self._resolve_seed(run_id)
+        if duration_unknown:
+            LOGGER.warning(
+                "Stage E (run=%s): duration distribution unknown (type=%s, p50=None); "
+                "skipping Monte Carlo and reporting null cp_impact.",
+                run_id, dist_type,
+            )
+            cp_metrics = {
+                "baseline_cp_hours": schedule_network.baseline_cp_hours,
+                "estimated_new_cp_hours": None,
+                "cp_drag_hours": None,
+                "cp_sensitivity_score": None,
+                "p80_cp_hours": None,
+                "p90_cp_hours": None,
+                "cp_impact_unavailable": True,
+                "cp_impact_unavailable_reason": "duration_distribution_unknown",
+            }
+        else:
+            sim_result = self._run_monte_carlo(
+                schedule_network, insertion_point, duration_dist,
+                permit_lead_hours=lead_hours,
+                seed=mc_seed,
+            )
+            cp_metrics = self._compute_cp_metrics(
+                sim_result,
+                schedule_network.baseline_cp_hours,
+                locked_baseline_cp_hours=schedule_network.locked_baseline_cp_hours,
+                locked_baseline_start=schedule_network.locked_baseline_start,
+                working_start=schedule_network.working_start,
+            )
         displaced = self._identify_displaced_tasks(
             schedule_network, insertion_point, duration_for_float
         )
@@ -382,9 +414,15 @@ class ScheduleImpactAssessor:
             "confidence": confidence,
             "notes": (
                 [
+                    "cp_impact unavailable: the duration distribution was unknown, "
+                    "so the Monte Carlo was skipped (no duration estimate to sample)."
+                ]
+                if cp_metrics.get("cp_impact_unavailable")
+                else [
                     f"cp_impact metrics derived from "
                     f"{self.config.monte_carlo_runs}-run lognormal Monte Carlo "
-                    "simulation (LOGOS Pert CPM engine, BaseCPMmodel pattern)."
+                    f"simulation of a '{duration_dist.get('distribution_type')}' "
+                    "duration estimate (LOGOS Pert CPM engine, BaseCPMmodel pattern)."
                 ]
                 if self.config.monte_carlo_runs >= 10
                 else [
@@ -398,6 +436,7 @@ class ScheduleImpactAssessor:
                 "run_id": run_id,
                 "schedule_graph_version": None,
                 "monte_carlo_runs": self.config.monte_carlo_runs,
+                "random_seed": mc_seed,
             },
         }
 
@@ -640,6 +679,15 @@ class ScheduleImpactAssessor:
             else None
         )
 
+        # I7: when there is no successor (insertion after a sink), fall back to
+        # the emergent task's OWN slack in the modified network.  Otherwise a
+        # zero-slack sink insertion is misreported as non_critical even though it
+        # extends the project (cp_drag > 0).
+        if remaining_float_after is None:
+            emergent_act_mod = modified_pert.task_to_activity.get(emergent_task_id)
+            if emergent_act_mod and emergent_act_mod in modified_pert.infoDict:
+                remaining_float_after = modified_pert.infoDict[emergent_act_mod].get("slack")
+
         is_cp_impact = (
             remaining_float_after is not None
             and remaining_float_after <= _FLOAT_EPSILON
@@ -668,6 +716,17 @@ class ScheduleImpactAssessor:
             "criticality_label": criticality_label,
         }
 
+    @staticmethod
+    def _resolve_seed_from_config(config_seed: Optional[int], run_id: str) -> int:
+        """Return the MC seed: config value if set, else derived from run_id."""
+        if config_seed is not None:
+            return int(config_seed)
+        import zlib
+        return zlib.crc32((run_id or "").encode("utf-8")) & 0xFFFFFFFF
+
+    def _resolve_seed(self, run_id: str) -> int:
+        return self._resolve_seed_from_config(self.config.random_seed, run_id)
+
     def _run_monte_carlo(
         self,
         schedule_network: _ScheduleNetwork,
@@ -675,6 +734,7 @@ class ScheduleImpactAssessor:
         duration_dist: JsonDict,
         *,
         permit_lead_hours: float = 0.0,
+        seed: Optional[int] = None,
     ) -> _SimResult:
         """Run Monte Carlo simulation for probabilistic CP impact.
 
@@ -724,7 +784,7 @@ class ScheduleImpactAssessor:
             pert, emergent_task_id, seed_dur, after_task_id, before_task_id
         )
 
-        sampler = self._build_duration_sampler(duration_dist, permit_lead_hours)
+        sampler = self._build_duration_sampler(duration_dist, permit_lead_hours, seed=seed)
 
         project_durations: List[float] = []
         on_cp_count = 0
@@ -846,6 +906,7 @@ class ScheduleImpactAssessor:
         self,
         duration_dist: JsonDict,
         permit_lead_hours: float = 0.0,
+        seed: Optional[int] = None,
     ) -> Callable[[], float]:
         """Return a callable that draws one lognormal sample (hours) per call.
 
@@ -886,7 +947,9 @@ class ScheduleImpactAssessor:
             sigma = 0.10
 
         sigma = max(sigma, 0.01)  # safety floor against degenerate inputs
-        rng = np.random.default_rng()
+        # Seed the RNG so audit replay and regression tests are reproducible
+        # (I6).  seed is derived from run_id by the caller when not configured.
+        rng = np.random.default_rng(seed)
 
         def _sample() -> float:
             raw = rng.lognormal(mean=mu, sigma=sigma)
@@ -1142,6 +1205,7 @@ class ScheduleImpactAssessor:
                 if available < needed:
                     conflicts.append({
                         "resource_type": "crew",
+                        "conflict_type": "crew_unavailable",
                         "skill_type": skill,
                         "required": needed,
                         "available": available,
@@ -1427,7 +1491,13 @@ class ScheduleImpactAssessor:
         else:
             schedule_completeness = 0.5
 
-        mc_convergence = min(1.0, self.config.monte_carlo_runs / 500.0)
+        # When monte_carlo_runs < 10 the deterministic 3-scenario proxy ran, not
+        # a real MC, so convergence credit reflects the 3 scenarios actually used
+        # rather than the configured (unused) run count.
+        effective_runs = (
+            self.config.monte_carlo_runs if self.config.monte_carlo_runs >= 10 else 3
+        )
+        mc_convergence = min(1.0, effective_runs / 500.0)
 
         return round(
             0.60 * tier_score

@@ -145,8 +145,8 @@
     "cp_impact": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["baseline_cp_hours", "estimated_new_cp_hours", "cp_drag_hours"],
-      "description": "Critical path impact metrics. Produced by CriticalPathRiskAnalyzer.",
+      "required": ["baseline_cp_hours"],
+      "description": "Critical path impact metrics. Produced by CriticalPathRiskAnalyzer. estimated_new_cp_hours / cp_drag_hours are null when CP impact could not be computed (cp_impact_unavailable).",
       "properties": {
         "baseline_cp_hours": {
           "type": "number",
@@ -154,13 +154,21 @@
           "description": "Baseline critical path duration for this schedule version."
         },
         "estimated_new_cp_hours": {
-          "type": "number",
+          "type": ["number", "null"],
           "minimum": 0,
-          "description": "Estimated new critical path duration after inserting the emergent activity at p50 duration."
+          "description": "Estimated new critical path duration after inserting the emergent activity at p50 duration. Null when cp_impact_unavailable."
         },
         "cp_drag_hours": {
-          "type": "number",
-          "description": "Expected increase in project duration attributable to this insertion. 0 if non-critical."
+          "type": ["number", "null"],
+          "description": "Expected increase in project duration attributable to this insertion. 0 if non-critical, null when cp_impact_unavailable."
+        },
+        "cp_impact_unavailable": {
+          "type": "boolean",
+          "description": "True when CP impact could not be computed (e.g. the duration distribution was unknown, so the Monte Carlo was skipped)."
+        },
+        "cp_impact_unavailable_reason": {
+          "type": ["string", "null"],
+          "description": "Why CP impact is unavailable, e.g. 'duration_distribution_unknown'."
         },
         "cp_sensitivity_score": {
           "type": ["number", "null"],
@@ -247,7 +255,7 @@
           },
           "conflict_type": {
             "type": "string",
-            "enum": ["unavailable", "overloaded", "certification_required", "fatigue_limit", "other"]
+            "enum": ["unavailable", "overloaded", "certification_required", "fatigue_limit", "crew_unavailable", "other"]
           },
           "skill_type": { "type": ["string", "null"] },
           "required": { "type": "number" },
