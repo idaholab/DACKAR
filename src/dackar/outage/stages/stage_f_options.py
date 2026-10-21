@@ -54,6 +54,13 @@ _PARALLEL = "parallel_execution"
 _SCOPE_REDUCTION = "scope_reduction"
 _ESCALATE = "escalate_to_management"
 
+# Option types whose value depends on a computed critical-path impact. When
+# cp_impact is unavailable (unknown duration) their confidence is capped so a
+# spurious 0-drag estimate cannot make them rank as a cheap, confident choice
+# (PR#77 [0]).
+_CP_DEPENDENT_OPTION_TYPES = frozenset({_INSERT_NOW, _PARALLEL, _CONTINGENCY})
+_CP_UNAVAILABLE_CONFIDENCE_CAP = 0.40
+
 # Scoring weights
 _W_CP_IMPACT = 0.35
 _W_CONFIDENCE = 0.15
@@ -318,6 +325,25 @@ class InsertionOptionGenerator:
             option["cost_estimate"] = self._compute_option_cost(
                 option, p50=p50, p80=p80, crew_count=crew_count
             )
+
+        # PR#77 [0]: when Stage E could not compute CP impact (unknown duration →
+        # cp_impact_unavailable), the cp_drag_hours the option builders read as
+        # `or 0.0` is NOT a real zero.  Lower the confidence of CP-dependent
+        # options and note it, so a 0-drag/low-cost "insert now" does not rank as
+        # a confident cheap choice.  Stage G separately blocks PROCEED/MONITOR and
+        # forces analyst review in this case.
+        cp_unavailable = bool(
+            (schedule_impact_assessment.get("cp_impact") or {}).get("cp_impact_unavailable")
+        )
+        if cp_unavailable:
+            for option in candidates:
+                if option.get("option_type") in _CP_DEPENDENT_OPTION_TYPES:
+                    option["confidence"] = min(
+                        float(option.get("confidence") or 0.0), _CP_UNAVAILABLE_CONFIDENCE_CAP
+                    )
+                    note = (" Critical-path impact could not be computed "
+                            "(unknown duration); schedule risk is unquantified.")
+                    option["rationale"] = (option.get("rationale") or "") + note
 
         # Score and rank (cost normalisation uses all candidates)
         max_cost = max(

@@ -54,6 +54,7 @@ _FLAG_LOW_CONFIDENCE = "low_confidence_recommendation"
 _FLAG_LOW_ANALOGS = "low_analog_count"
 _FLAG_TEMPORAL_CONTRADICTION = "temporal_contradiction_detected"
 _FLAG_CP_IMPACT = "critical_path_impact"
+_FLAG_CP_UNAVAILABLE = "cp_impact_unavailable"
 _FLAG_HIGH_ABBR_RATE = "high_unknown_abbreviation_rate"
 _FLAG_FALLBACK = "fallback_distribution_used"
 _FLAG_DISPLACED_REGULATORY = "displaced_regulatory_tasks"
@@ -273,17 +274,26 @@ class RecommendationSynthesizer:
         if option_type == "escalate_to_management":
             return _ESCALATE
 
-        # ── Fail-closed regulatory / LCO gate (B4) ────────────────────────────
-        # In this domain a missing or contradictory regulatory signal must never
-        # produce a permissive outcome.  While an LCO action-level clock is
-        # expired/critical/urgent/unknown, or any regulatory constraint is
-        # present, the decision may not be PROCEED or MONITOR — it escalates for
-        # licensing review.  DEFER is still allowed (and re-checked below) so a
-        # deferral to a compliant window remains available.
+        # ── Fail-closed regulatory / LCO / CP-impact gate (B4; PR#77 [0]) ─────
+        # In this domain a missing or contradictory signal must never produce a
+        # permissive outcome.  While an LCO action-level clock is
+        # expired/critical/urgent/unknown, any regulatory constraint is present,
+        # OR critical-path impact could not be computed (Stage E set
+        # cp_impact_unavailable because the duration distribution was unknown),
+        # the decision may not be PROCEED or MONITOR — it escalates for review.
+        # "Couldn't compute CP impact" must not read as "no CP impact": the old
+        # `cp_drag or 0.0` made an unknown look like a safe zero.  DEFER is still
+        # allowed (and re-checked below).
         lco_status: str = (intake_result.get("lco_clock_status") or "").lower()
         has_regulatory: bool = bool(intake_result.get("has_regulatory_constraint"))
+        cp_impact_unavailable: bool = bool(
+            ((schedule_impact_assessment or {}).get("cp_impact") or {})
+            .get("cp_impact_unavailable")
+        )
         fail_closed = (
-            lco_status in _LCO_FAIL_CLOSED_STATUSES or has_regulatory
+            lco_status in _LCO_FAIL_CLOSED_STATUSES
+            or has_regulatory
+            or cp_impact_unavailable
         )
 
         if option_type == "defer_to_post_outage":
@@ -378,6 +388,10 @@ class RecommendationSynthesizer:
         float_analysis = schedule_impact.get("float_analysis") or {}
         if float_analysis.get("criticality_label") == "critical":
             flags.append(_FLAG_CP_IMPACT)
+
+        # CP impact could not be computed (Stage E: unknown duration distribution)
+        if (schedule_impact.get("cp_impact") or {}).get("cp_impact_unavailable"):
+            flags.append(_FLAG_CP_UNAVAILABLE)
 
         # High unknown abbreviation rate
         abbr_rate = float(intake_result.get("unknown_abbreviation_rate") or 0.0)
@@ -867,6 +881,12 @@ class RecommendationSynthesizer:
         # contradictions each warrant review even when the decision is PROCEED.
         if _FLAG_CP_IMPACT in attention_flags:
             reasons.append("critical-path impact flagged — verify schedule risk before acting")
+        # PR#77 [0]: CP impact could not be computed — don't let it read as zero.
+        if _FLAG_CP_UNAVAILABLE in attention_flags:
+            reasons.append(
+                "critical-path impact could not be computed (unknown duration) — "
+                "schedule risk is unquantified; analyst review required"
+            )
         if _FLAG_DISPLACED_REGULATORY in attention_flags:
             reasons.append("insertion displaces a regulatory-constrained task — review deferral limits")
         if _FLAG_TEMPORAL_CONTRADICTION in attention_flags:
