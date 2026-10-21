@@ -37,6 +37,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from dackar.outage import policy as _policy
+
 LOGGER = logging.getLogger(__name__)
 
 JsonDict = Dict[str, Any]
@@ -65,10 +67,9 @@ _FLAG_LCO_CLOCK_CRITICAL = "lco_action_level_critical"
 # LCO clock statuses that require immediate attention
 _LCO_URGENT_STATUSES = {"expired", "critical", "urgent"}
 
-# LCO clock statuses that FAIL CLOSED: the decision may not be PROCEED or
-# MONITOR while the clock is in one of these states (unknown included — an
-# undetermined clock is treated as unsafe, not as "no constraint").
-_LCO_FAIL_CLOSED_STATUSES = {"expired", "critical", "urgent", "unknown"}
+# Fail-closed LCO policy is shared with Stage F via outage.policy so the two
+# stages cannot drift (the previous duplicate sets disagreed on "unknown").
+_LCO_FAIL_CLOSED_STATUSES = _policy.LCO_FAIL_CLOSED_STATUSES
 
 # Option types that map to PROCEED
 _PROCEED_OPTION_TYPES = {
@@ -251,20 +252,26 @@ class RecommendationSynthesizer:
         """Map the primary option and context to a decision_status enum value.
 
         Logic (evaluated in priority order):
-            INCONCLUSIVE — no feasible, regulatory-cleared option exists
+            INCONCLUSIVE — primary_option is None (no feasible, regulatory-cleared
+                           option exists)
             ESCALATE     — primary option type is escalate_to_management
             DEFER        — primary option type is defer_to_post_outage
+            ESCALATE     — FAIL-CLOSED GATE (outage.policy.is_fail_closed): any
+                           non-defer/non-escalate option escalates when an LCO
+                           clock is expired/critical/urgent/unknown, a regulatory
+                           constraint is present, or CP impact could not be
+                           computed (cp_impact_unavailable).  PROCEED/MONITOR are
+                           not permitted in those cases.
             MONITOR      — low confidence + no historical analogues + activity
                            is non-critical path (watch, but no action yet warranted)
             PROCEED      — primary option type is insert_now / contingency /
                            parallel / scope_reduction / pre_outage_staging
 
-        ``schedule_impact_assessment`` (N5 fix): criticality_label is now read
-        from ``schedule_impact_assessment["float_analysis"]["criticality_label"]``
-        rather than the non-existent ``insertion_options["schedule_summary"]``
-        field that Stage F never produces.  The parameter is optional and defaults
-        to None so existing call sites that have not yet been updated continue to
-        work; absence is treated as non_critical (permissive MONITOR condition).
+        ``schedule_impact_assessment`` (N5 fix): criticality_label is read from
+        ``schedule_impact_assessment["float_analysis"]["criticality_label"]``
+        (not the non-existent ``insertion_options["schedule_summary"]``).  It is
+        optional; when absent, criticality falls back to ``non_critical`` for the
+        MONITOR check and cp_impact_unavailable reads as False.
         """
         if primary_option is None:
             return _INCONCLUSIVE
@@ -275,33 +282,15 @@ class RecommendationSynthesizer:
             return _ESCALATE
 
         # ── Fail-closed regulatory / LCO / CP-impact gate (B4; PR#77 [0]) ─────
-        # In this domain a missing or contradictory signal must never produce a
-        # permissive outcome.  While an LCO action-level clock is
+        # Shared policy (outage.policy.is_fail_closed): while an LCO clock is
         # expired/critical/urgent/unknown, any regulatory constraint is present,
-        # OR critical-path impact could not be computed (Stage E set
-        # cp_impact_unavailable because the duration distribution was unknown),
-        # the decision may not be PROCEED or MONITOR — it escalates for review.
-        # "Couldn't compute CP impact" must not read as "no CP impact": the old
-        # `cp_drag or 0.0` made an unknown look like a safe zero.  DEFER is still
-        # allowed (and re-checked below).
-        lco_status: str = (intake_result.get("lco_clock_status") or "").lower()
-        has_regulatory: bool = bool(intake_result.get("has_regulatory_constraint"))
-        cp_impact_unavailable: bool = bool(
-            ((schedule_impact_assessment or {}).get("cp_impact") or {})
-            .get("cp_impact_unavailable")
-        )
-        fail_closed = (
-            lco_status in _LCO_FAIL_CLOSED_STATUSES
-            or has_regulatory
-            or cp_impact_unavailable
-        )
-
+        # OR critical-path impact could not be computed, the decision may not be
+        # PROCEED or MONITOR — it escalates for review.  DEFER is still allowed
+        # (and re-checked below).
         if option_type == "defer_to_post_outage":
             return _DEFER
 
-        if fail_closed:
-            # Any non-defer, non-escalate option under an active regulatory/LCO
-            # constraint escalates instead of proceeding or monitoring.
+        if _policy.is_fail_closed(intake_result, schedule_impact_assessment):
             return _ESCALATE
 
         # MONITOR: no historical support + non-critical → watch, no immediate action
@@ -483,9 +472,18 @@ class RecommendationSynthesizer:
                 "be identified. Analyst review required before proceeding."
             )
         elif decision_status == _ESCALATE:
+            # State the ACTUAL escalation cause rather than always blaming CP
+            # drag — this decision can now come from a regulatory/LCO/unknown-CP
+            # condition too (PR#78 [2]).
+            reason = _policy.escalation_reason(
+                intake_result or {},
+                schedule_impact,
+                option_type=(primary_option or {}).get("option_type"),
+                cp_drag_hours=cp_drag,
+            )
             conclusion = (
-                f"Escalate to management — CP drag of {cp_drag:.1f} h exceeds "
-                "the auto-escalation threshold. Schedule re-baseline decision required."
+                f"Escalate to management — {_policy.escalation_reason_text(reason)}. "
+                "Management review required before action."
             )
         elif decision_status == _DEFER:
             conclusion = (
@@ -853,13 +851,18 @@ class RecommendationSynthesizer:
 
         required=True when any of:
             - has_regulatory_constraint is True
+            - lco_clock_status is fail-closed (expired/critical/urgent/unknown)
+            - _FLAG_CP_IMPACT in attention_flags (critical-path impact)
+            - _FLAG_CP_UNAVAILABLE in attention_flags (CP impact not computable)
+            - _FLAG_DISPLACED_REGULATORY in attention_flags
+            - _FLAG_TEMPORAL_CONTRADICTION in attention_flags
             - decision_status is INCONCLUSIVE
             - duration distribution confidence_tier is low_confidence
             - _FLAG_FALLBACK is in attention_flags
             - _FLAG_HIGH_ABBR_RATE is in attention_flags (§6 exit criterion:
               NER entity extraction unreliable when unknown_abbreviation_rate
               exceeds RecommendationConfig.unknown_abbreviation_rate_warning)
-            - no feasible + regulatory-cleared option exists
+            - no feasible + regulatory-cleared option exists (fail-closed defaults)
 
         reason: brief string summarising why review is required.
         reviewer_decision initialised to None (populated by the analyst UI).
@@ -917,10 +920,11 @@ class RecommendationSynthesizer:
                 "verify component and failure-mode identification before acting"
             )
 
-        # No feasible + cleared option
+        # No feasible + cleared option (fail-closed defaults, consistent with
+        # _select_primary_option / _select_recommended — PR#78 [9]).
         feasible_cleared = [
             o for o in insertion_options.get("options", [])
-            if o.get("feasible", True) and o.get("regulatory_cleared", True)
+            if o.get("feasible", False) and o.get("regulatory_cleared", False)
         ]
         if not feasible_cleared:
             reasons.append("no feasible, regulatory-cleared option exists")
@@ -945,35 +949,26 @@ class RecommendationSynthesizer:
 
         schema_valid:                  always True here (schema validation runs
                                        in the orchestrator's _validate_and_persist).
-        all_regulatory_flags_resolved: True if every regulatory_flag entry has
-                                       a corresponding evidence_chain item that
-                                       supports=True, or if there are no flags.
+        all_regulatory_flags_resolved: fail-closed. When any regulatory flag is
+                                       present this is False at generation time —
+                                       a regulatory constraint is resolved only
+                                       by a human acknowledgement, which does not
+                                       exist yet in Stage G output
+                                       (analyst_review.reviewer_decision is still
+                                       None; it is populated later by the analyst
+                                       UI). True only when there are no flags.
         minimum_evidence_met:          True if len(evidence_chain) >= 1 with at
                                        least one supports=True entry.
         fallback_used:                 from historical_analogs.retrieval_summary.
         """
-        # Regulatory flags resolved: EACH flag must be individually acknowledged
-        # by a supporting evidence item that references that specific flag's
-        # driver_id or driver_type (B5).  The previous logic treated all flags as
-        # resolved as soon as any schedule/temporal evidence existed
-        # (holistic_evidence or bool(supporting_sources)), so a regulatory
-        # constraint was auto-"resolved" without being addressed.  A flag that no
-        # evidence item references stays unresolved until a reviewer acknowledges
-        # it (analyst_review covers that path).
-        all_resolved: bool
-        if not regulatory_flags:
-            all_resolved = True
-        else:
-            supporting_refs = {
-                str(item.get("source_id"))
-                for item in evidence_chain
-                if item.get("supports")
-            }
-            def _flag_resolved(flag: JsonDict) -> bool:
-                keys = {str(flag.get("driver_id")), str(flag.get("driver_type"))}
-                keys.discard("None")
-                return bool(keys & supporting_refs)
-            all_resolved = all(_flag_resolved(f) for f in regulatory_flags)
+        # Regulatory flags are NOT auto-resolved by the presence of evidence
+        # (B5, PR#78 [3]): an earlier version matched evidence source_ids to
+        # driver ids, but no evidence item's source_id ever equals a driver_id,
+        # so it was always False in a confusing way.  The intended behaviour is
+        # simply fail-closed — while any regulatory flag exists the constraint is
+        # unresolved until a reviewer acknowledges it (analyst_review), and Stage
+        # G output always precedes that acknowledgement.  Compute it directly.
+        all_resolved: bool = not regulatory_flags
 
         minimum_evidence_met: bool = bool(evidence_chain) and any(
             item.get("supports") for item in evidence_chain

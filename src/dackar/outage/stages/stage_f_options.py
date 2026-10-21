@@ -41,6 +41,8 @@ from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from dackar.outage import policy as _policy
+
 LOGGER = logging.getLogger(__name__)
 
 JsonDict = Dict[str, Any]
@@ -89,10 +91,6 @@ _SCOPE_REDUCTION_PROHIBITED_TYPES = {
     "ts_surveillance",
     "license_basis_inspection",
 }
-
-# LCO clock states (from intake_result.lco_clock_status) that mean an action-level
-# clock is actively running — deferral is not feasible while any is in effect.
-_LCO_ACTIVE_STATUSES = {"expired", "critical", "urgent", "normal"}
 
 # Duration distribution confidence tier → confidence float
 _TIER_TO_CONFIDENCE: Dict[str, float] = {
@@ -369,17 +367,29 @@ class InsertionOptionGenerator:
                 "Stage F (run=%s): no options survived ranking — emitting escalate fallback.",
                 run_id,
             )
-            options = [self._generate_escalate(
+            # Run the fallback through the SAME clearance / cost / score steps as
+            # every other candidate.  _make_option pre-creates
+            # regulatory_cleared / risk_score / cost_estimate as None, so
+            # setdefault() would be a no-op and the option would ship with None
+            # values — failing schema validation and making _select_recommended
+            # return INCONCLUSIVE instead of the escalation this block promises
+            # (PR#78 [0]).
+            fallback = self._generate_escalate(
                 emergent_activity, schedule_impact_assessment, intake_result=intake_result
-            )]
-            for option in options:
-                option.setdefault("regulatory_cleared", True)
-                option.setdefault("regulatory_block_reason", None)
-                option.setdefault("risk_score", 1.0)
-                option.setdefault(
-                    "cost_estimate",
-                    self._compute_option_cost(option, p50=p50, p80=p80, crew_count=crew_count),
-                )
+            )
+            cleared, block_reason = self._check_regulatory_clearance(
+                fallback, regulatory_drivers
+            )
+            fallback["regulatory_cleared"] = cleared
+            fallback["regulatory_block_reason"] = block_reason
+            fallback["cost_estimate"] = self._compute_option_cost(
+                fallback, p50=p50, p80=p80, crew_count=crew_count
+            )
+            fallback["risk_score"] = self._score_option(
+                fallback, schedule_impact_assessment, historical_analogs, causal_posture,
+                max_cost=max_cost,
+            )
+            options = [fallback]
 
         # Select recommended option: top feasible + regulatory-cleared
         recommended_id = self._select_recommended(options)
@@ -490,40 +500,41 @@ class InsertionOptionGenerator:
     ) -> JsonDict:
         """Generate the defer_to_post_outage option.
 
-        feasible=True for non-safety-related items; infeasible when the activity
-        is safety-critical or in an active LCO window (regulatory clearance is
-        checked separately by _check_regulatory_clearance).
+        feasible is driven by the LCO clock: infeasible when
+        ``intake_result.lco_clock_status`` is active (outage.policy.is_lco_active,
+        i.e. expired/critical/urgent/normal/unknown), or when
+        ``intake_result.has_regulatory_constraint`` is set with a running clock.
+        Regulatory clearance is checked separately by _check_regulatory_clearance.
+        (A safety-classification gate is NOT applied — no producer emits a
+        safety_related / safety_classification field yet; see PR #78 [4].)
 
         cp_impact_hours=0.0 — deferral avoids all in-outage schedule impact.
         Confidence is inherently high (0.85) because the scheduling outcome is
         certain; the residual risk lies in the plant state during the deferral
         period, which is captured in causal_urgency during scoring.
         """
-        # I13: safety/LCO state is produced by Stage A and lives on intake_result;
+        # I13: LCO state is produced by Stage A on intake_result;
         # emergent_activity.json has additionalProperties:false and does not define
         # these fields, so reading them off emergent_activity always saw None and
-        # defer was always feasible.  Read from intake_result (fall back to
-        # emergent_activity only for backward compatibility).
-        is_safety_related: bool = bool(
-            intake_result.get("safety_related")
-            or intake_result.get("safety_classification") == "safety_related"
-            or emergent_activity.get("safety_related")
-        )
-        lco_status = (intake_result.get("lco_clock_status") or "").lower()
-        active_lco: bool = (
-            lco_status in _LCO_ACTIVE_STATUSES
-            or bool(intake_result.get("has_regulatory_constraint") and lco_status not in {"", "not_applicable"})
-            or bool(emergent_activity.get("active_lco"))
+        # defer was always feasible.  Read from intake_result.
+        # Deferral is not feasible while the LCO clock is running — shared policy
+        # (outage.policy) so Stage F and Stage G agree, including on "unknown"
+        # (running clock, no deadline supplied → unsafe).  This is the only
+        # signal any producer actually emits.
+        #
+        # NOTE: a safety-classification gate (block deferral of safety-related
+        # work) is NOT implemented here: neither Stage A nor emergent_activity.json
+        # produces a safety_related / safety_classification field, so reading one
+        # would be dead code that implies coverage we don't have.  Tracked as a
+        # follow-up (needs Stage A + schema support first) — see PR #78 [4].
+        active_lco: bool = _policy.is_lco_active(intake_result) or bool(
+            intake_result.get("has_regulatory_constraint")
+            and _policy.lco_status(intake_result) not in {"", "not_applicable"}
         )
 
-        feasible = not (is_safety_related or active_lco)
+        feasible = not active_lco
         infeasibility_reason: Optional[str] = None
-        if is_safety_related:
-            infeasibility_reason = (
-                "Activity is safety-related — deferral to post-outage is not permitted "
-                "without engineering disposition."
-            )
-        elif active_lco:
+        if active_lco:
             infeasibility_reason = (
                 "Active LCO entry is in effect — deferral cannot proceed until "
                 "the LCO condition is resolved."
@@ -989,19 +1000,21 @@ class InsertionOptionGenerator:
 
         Returns None when no feasible options carry a cost_estimate.
         """
+        # Fail-closed defaults (False), consistent with _select_recommended and
+        # Stage G's _select_primary_option; option_id check folded in.
         eligible = [
             o for o in options
-            if o.get("feasible", True)
-            and o.get("regulatory_cleared", True)
+            if o.get("feasible", False)
+            and o.get("regulatory_cleared", False)
             and isinstance(o.get("cost_estimate"), dict)
+            and o.get("option_id")
         ]
-        eligible = [o for o in eligible if o.get("option_id")]
         if not eligible:
             return None
         return min(
             eligible,
             key=lambda o: o["cost_estimate"].get("total_cost_usd", float("inf")),
-        ).get("option_id")
+        )["option_id"]
 
     def _score_option(
         self,
@@ -1104,9 +1117,11 @@ class InsertionOptionGenerator:
         """Return the option_id of the top-ranked feasible + regulatory-cleared option.
 
         Returns None if no such option exists (maps to INCONCLUSIVE in Stage G).
+        Missing feasible/regulatory_cleared default to False (fail closed),
+        consistent with Stage G's _select_primary_option (PR#78 [9]).
         """
         for option in options:
-            if option.get("feasible", True) and option.get("regulatory_cleared", True):
+            if option.get("feasible", False) and option.get("regulatory_cleared", False):
                 # Skip malformed options with no option_id rather than KeyError.
                 oid = option.get("option_id")
                 if oid:
