@@ -524,41 +524,46 @@ class InsertionOptionGenerator:
     ) -> JsonDict:
         """Generate the defer_to_post_outage option.
 
-        feasible is driven by the LCO clock: infeasible when
-        ``intake_result.lco_clock_status`` is active (outage.policy.is_lco_active,
-        i.e. expired/critical/urgent/normal/unknown), or when
-        ``intake_result.has_regulatory_constraint`` is set with a running clock.
+        feasible is driven by two gates, both read from intake_result (where
+        Stage A emits them; emergent_activity.json has additionalProperties:false
+        and does not define them):
+          * safety classification — ``intake_result.safety_classification ==
+            "safety_related"`` blocks deferral (engineering disposition required).
+          * LCO clock — infeasible when ``intake_result.lco_clock_status`` is
+            active (outage.policy.is_lco_active: expired/critical/urgent/normal/
+            unknown), or when ``has_regulatory_constraint`` is set with a running
+            clock.
         Regulatory clearance is checked separately by _check_regulatory_clearance.
-        (A safety-classification gate is NOT applied — no producer emits a
-        safety_related / safety_classification field yet; see PR #78 [4].)
 
         cp_impact_hours=0.0 — deferral avoids all in-outage schedule impact.
         Confidence is inherently high (0.85) because the scheduling outcome is
         certain; the residual risk lies in the plant state during the deferral
         period, which is captured in causal_urgency during scoring.
         """
-        # I13: LCO state is produced by Stage A on intake_result;
-        # emergent_activity.json has additionalProperties:false and does not define
-        # these fields, so reading them off emergent_activity always saw None and
-        # defer was always feasible.  Read from intake_result.
-        # Deferral is not feasible while the LCO clock is running — shared policy
-        # (outage.policy) so Stage F and Stage G agree, including on "unknown"
-        # (running clock, no deadline supplied → unsafe).  This is the only
-        # signal any producer actually emits.
-        #
-        # NOTE: a safety-classification gate (block deferral of safety-related
-        # work) is NOT implemented here: neither Stage A nor emergent_activity.json
-        # produces a safety_related / safety_classification field, so reading one
-        # would be dead code that implies coverage we don't have.  Tracked as a
-        # follow-up (needs Stage A + schema support first) — see PR #78 [4].
+        # PR#78 [4]: safety classification is now produced by Stage A on
+        # intake_result (carried through from the source record; defaults to
+        # "unknown").  safety_related work cannot be deferred out of the outage
+        # without engineering disposition.
+        is_safety_related: bool = (
+            intake_result.get("safety_classification") == "safety_related"
+        )
+        # I13: LCO state is produced by Stage A on intake_result.  Deferral is not
+        # feasible while the LCO clock is running — shared policy (outage.policy)
+        # so Stage F and Stage G agree, including on "unknown" (running clock, no
+        # deadline supplied → unsafe).
         active_lco: bool = _policy.is_lco_active(intake_result) or bool(
             intake_result.get("has_regulatory_constraint")
             and _policy.lco_status(intake_result) not in {"", "not_applicable"}
         )
 
-        feasible = not active_lco
+        feasible = not (is_safety_related or active_lco)
         infeasibility_reason: Optional[str] = None
-        if active_lco:
+        if is_safety_related:
+            infeasibility_reason = (
+                "Activity is safety-related — deferral to post-outage is not "
+                "permitted without engineering disposition."
+            )
+        elif active_lco:
             infeasibility_reason = (
                 "Active LCO entry is in effect — deferral cannot proceed until "
                 "the LCO condition is resolved."
