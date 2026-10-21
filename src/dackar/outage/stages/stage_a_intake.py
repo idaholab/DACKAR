@@ -424,6 +424,13 @@ class ActivityIntakeProcessor:
             "emergence_type_rationale": emergence_rationale,
             "has_regulatory_constraint": has_regulatory,
             "regulatory_drivers": regulatory_drivers,
+            # Licensing safety classification carried through from the intake
+            # record (not NER-derived).  Defaults to "unknown" when the source
+            # record did not supply it, so downstream fail-closed logic has a
+            # definite value rather than a missing field.
+            "safety_classification": (
+                emergent_activity.get("safety_classification") or "unknown"
+            ),
             "execution_mode_flags": execution_flags,
             "normalized_description": normalized,
             "expanded_description": expanded if expanded != normalized else None,

@@ -41,6 +41,8 @@ from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from dackar.outage import policy as _policy
+
 LOGGER = logging.getLogger(__name__)
 
 JsonDict = Dict[str, Any]
@@ -53,6 +55,13 @@ _CONTINGENCY = "add_contingency_buffer"
 _PARALLEL = "parallel_execution"
 _SCOPE_REDUCTION = "scope_reduction"
 _ESCALATE = "escalate_to_management"
+
+# Option types whose value depends on a computed critical-path impact. When
+# cp_impact is unavailable (unknown duration) their confidence is capped so a
+# spurious 0-drag estimate cannot make them rank as a cheap, confident choice
+# (PR#77 [0]).
+_CP_DEPENDENT_OPTION_TYPES = frozenset({_INSERT_NOW, _PARALLEL, _CONTINGENCY})
+_CP_UNAVAILABLE_CONFIDENCE_CAP = 0.40
 
 # Scoring weights
 _W_CP_IMPACT = 0.35
@@ -266,7 +275,13 @@ class InsertionOptionGenerator:
         cp_drag = (
             schedule_impact_assessment.get("cp_impact", {}).get("cp_drag_hours", 0.0) or 0.0
         )
-        if cp_drag > self.config.escalate_if_cp_drag_exceeds_hours:
+        # PR#78 [7] (option A): under the fail-closed regulatory/LCO/CP policy
+        # Stage F must own the recommendation, so an escalate option must always
+        # be available to recommend — not only when CP drag exceeds the
+        # threshold.  Generate it whenever fail-closed OR the drag threshold is
+        # crossed.  (Shared policy with Stage G via outage.policy.)
+        fail_closed = _policy.is_fail_closed(intake_result, schedule_impact_assessment)
+        if fail_closed or cp_drag > self.config.escalate_if_cp_drag_exceeds_hours:
             candidates.append(self._generate_escalate(
                 emergent_activity, schedule_impact_assessment, intake_result=intake_result
             ))
@@ -315,6 +330,25 @@ class InsertionOptionGenerator:
                 option, p50=p50, p80=p80, crew_count=crew_count
             )
 
+        # PR#77 [0]: when Stage E could not compute CP impact (unknown duration →
+        # cp_impact_unavailable), the cp_drag_hours the option builders read as
+        # `or 0.0` is NOT a real zero.  Lower the confidence of CP-dependent
+        # options and note it, so a 0-drag/low-cost "insert now" does not rank as
+        # a confident cheap choice.  Stage G separately blocks PROCEED/MONITOR and
+        # forces analyst review in this case.
+        cp_unavailable = bool(
+            (schedule_impact_assessment.get("cp_impact") or {}).get("cp_impact_unavailable")
+        )
+        if cp_unavailable:
+            for option in candidates:
+                if option.get("option_type") in _CP_DEPENDENT_OPTION_TYPES:
+                    option["confidence"] = min(
+                        float(option.get("confidence") or 0.0), _CP_UNAVAILABLE_CONFIDENCE_CAP
+                    )
+                    note = (" Critical-path impact could not be computed "
+                            "(unknown duration); schedule risk is unquantified.")
+                    option["rationale"] = (option.get("rationale") or "") + note
+
         # Score and rank (cost normalisation uses all candidates)
         max_cost = max(
             (o["cost_estimate"]["total_cost_usd"] for o in candidates
@@ -329,8 +363,60 @@ class InsertionOptionGenerator:
 
         options = self._rank_options(candidates)
 
-        # Select recommended option: top feasible + regulatory-cleared
-        recommended_id = self._select_recommended(options)
+        # I16: the schema requires at least one option (minItems: 1).  If ranking
+        # filtered everything out (e.g. all options infeasible with
+        # include_infeasible_options=False), fall back to an escalate option so a
+        # valid artifact is always produced and Stage G sees an explicit escalation
+        # rather than an empty list.
+        if not options:
+            LOGGER.warning(
+                "Stage F (run=%s): no options survived ranking — emitting escalate fallback.",
+                run_id,
+            )
+            # Run the fallback through the SAME clearance / cost / score steps as
+            # every other candidate.  _make_option pre-creates
+            # regulatory_cleared / risk_score / cost_estimate as None, so
+            # setdefault() would be a no-op and the option would ship with None
+            # values — failing schema validation and making _select_recommended
+            # return INCONCLUSIVE instead of the escalation this block promises
+            # (PR#78 [0]).
+            fallback = self._generate_escalate(
+                emergent_activity, schedule_impact_assessment, intake_result=intake_result
+            )
+            cleared, block_reason = self._check_regulatory_clearance(
+                fallback, regulatory_drivers
+            )
+            fallback["regulatory_cleared"] = cleared
+            fallback["regulatory_block_reason"] = block_reason
+            fallback["cost_estimate"] = self._compute_option_cost(
+                fallback, p50=p50, p80=p80, crew_count=crew_count
+            )
+            fallback["risk_score"] = self._score_option(
+                fallback, schedule_impact_assessment, historical_analogs, causal_posture,
+                max_cost=max_cost,
+            )
+            options = [fallback]
+
+        # PR#78 [7] (Change 2b): under fail-closed the recommendation must be a
+        # defer/escalate option (Change 2).  _rank_options caps at max_options, so
+        # if enough feasible+cleared options rank ahead, the escalate option built
+        # above could be truncated out of `options`, leaving nothing valid to
+        # recommend.  Guarantee one survives: if no defer/escalate option is left,
+        # re-append the escalate candidate (already costed/cleared/scored in the
+        # candidate pass) so `options` and `recommended_option_id` stay consistent.
+        if fail_closed and not any(
+            o.get("option_type") in (_DEFER, _ESCALATE) for o in options
+        ):
+            escalate = next(
+                (c for c in candidates if c.get("option_type") == _ESCALATE), None
+            )
+            if escalate is not None and escalate not in options:
+                options.append(escalate)
+
+        # Select recommended option: under fail-closed, only defer/escalate are
+        # recommendable (Change 2), so decision_status in Stage G derives from the
+        # recommended option type and cannot contradict primary_recommendation.
+        recommended_id = self._select_recommended(options, fail_closed=fail_closed)
 
         summary = self._build_ranking_summary(options)
 
@@ -343,7 +429,7 @@ class InsertionOptionGenerator:
             "recommendation_confidence": self._recommendation_confidence(
                 options, recommended_id, historical_analogs
             ),
-            "min_cost_option_id": self._min_cost_option_id(options),
+            "min_cost_option_id": self._min_cost_option_id(options, fail_closed=fail_closed),
             "ranking_summary": summary,
             "provenance": {
                 "generated_by": self.__class__.__name__,
@@ -392,7 +478,7 @@ class InsertionOptionGenerator:
         feasible = len(hard_conflicts) == 0
         infeasibility_reason: Optional[str] = None
         if not feasible:
-            skills = ", ".join(c.get("skill_required", "?") for c in hard_conflicts)
+            skills = ", ".join(c.get("skill_type", "?") for c in hard_conflicts)
             infeasibility_reason = (
                 f"Crew unavailable for required skill(s): {skills}. "
                 "Resolve crew conflict before inserting."
@@ -438,27 +524,44 @@ class InsertionOptionGenerator:
     ) -> JsonDict:
         """Generate the defer_to_post_outage option.
 
-        feasible=True for non-safety-related items; infeasible when the activity
-        is safety-critical or in an active LCO window (regulatory clearance is
-        checked separately by _check_regulatory_clearance).
+        feasible is driven by two gates, both read from intake_result (where
+        Stage A emits them; emergent_activity.json has additionalProperties:false
+        and does not define them):
+          * safety classification — ``intake_result.safety_classification ==
+            "safety_related"`` blocks deferral (engineering disposition required).
+          * LCO clock — infeasible when ``intake_result.lco_clock_status`` is
+            active (outage.policy.is_lco_active: expired/critical/urgent/normal/
+            unknown), or when ``has_regulatory_constraint`` is set with a running
+            clock.
+        Regulatory clearance is checked separately by _check_regulatory_clearance.
 
         cp_impact_hours=0.0 — deferral avoids all in-outage schedule impact.
         Confidence is inherently high (0.85) because the scheduling outcome is
         certain; the residual risk lies in the plant state during the deferral
         period, which is captured in causal_urgency during scoring.
         """
-        is_safety_related: bool = bool(
-            emergent_activity.get("safety_related")
-            or emergent_activity.get("safety_classification") == "safety_related"
+        # PR#78 [4]: safety classification is now produced by Stage A on
+        # intake_result (carried through from the source record; defaults to
+        # "unknown").  safety_related work cannot be deferred out of the outage
+        # without engineering disposition.
+        is_safety_related: bool = (
+            intake_result.get("safety_classification") == "safety_related"
         )
-        active_lco: bool = bool(emergent_activity.get("active_lco"))
+        # I13: LCO state is produced by Stage A on intake_result.  Deferral is not
+        # feasible while the LCO clock is running — shared policy (outage.policy)
+        # so Stage F and Stage G agree, including on "unknown" (running clock, no
+        # deadline supplied → unsafe).
+        active_lco: bool = _policy.is_lco_active(intake_result) or bool(
+            intake_result.get("has_regulatory_constraint")
+            and _policy.lco_status(intake_result) not in {"", "not_applicable"}
+        )
 
         feasible = not (is_safety_related or active_lco)
         infeasibility_reason: Optional[str] = None
         if is_safety_related:
             infeasibility_reason = (
-                "Activity is safety-related — deferral to post-outage is not permitted "
-                "without engineering disposition."
+                "Activity is safety-related — deferral to post-outage is not "
+                "permitted without engineering disposition."
             )
         elif active_lco:
             infeasibility_reason = (
@@ -632,7 +735,7 @@ class InsertionOptionGenerator:
         feasible = len(hard_crew_conflicts) == 0
         infeasibility_reason: Optional[str] = None
         if not feasible:
-            skills = ", ".join(c.get("skill_required", "?") for c in hard_crew_conflicts)
+            skills = ", ".join(c.get("skill_type", "?") for c in hard_crew_conflicts)
             infeasibility_reason = (
                 f"Crew conflict on required skill(s): {skills} prevents parallel execution."
             )
@@ -830,9 +933,14 @@ class InsertionOptionGenerator:
                 )
 
         elif option_type == _SCOPE_REDUCTION:
+            # Block scope reduction for an explicit prohibited type OR for any
+            # driver that prohibits deferral (B5): a defer_prohibited NRC/CAP/
+            # hold-point commitment requires the full committed scope, so reducing
+            # it is as non-compliant as deferring it.
             blocking = [
                 d for d in regulatory_drivers
                 if d.get("driver_type") in _SCOPE_REDUCTION_PROHIBITED_TYPES
+                or d.get("defer_prohibited", False)
             ]
             if blocking:
                 driver_types = ", ".join(
@@ -916,16 +1024,27 @@ class InsertionOptionGenerator:
             decision_delay_hours=decision_delay,
         )
 
-    def _min_cost_option_id(self, options: List[JsonDict]) -> Optional[str]:
+    def _min_cost_option_id(
+        self, options: List[JsonDict], fail_closed: bool = False
+    ) -> Optional[str]:
         """Return the option_id of the feasible + cleared option with lowest total_cost_usd.
 
         Returns None when no feasible options carry a cost_estimate.
+
+        Under ``fail_closed`` (PR#78 [7], edge C) the eligible set is restricted
+        to defer/escalate, matching the recommendation — the cheapest *compliant*
+        option, not a cheap insert_now that could never be recommended.
         """
+        allowed = {_DEFER, _ESCALATE} if fail_closed else None
+        # Fail-closed defaults (False), consistent with _select_recommended and
+        # Stage G's _select_primary_option; option_id check folded in.
         eligible = [
             o for o in options
-            if o.get("feasible", True)
-            and o.get("regulatory_cleared", True)
+            if o.get("feasible", False)
+            and o.get("regulatory_cleared", False)
             and isinstance(o.get("cost_estimate"), dict)
+            and o.get("option_id")
+            and (allowed is None or o.get("option_type") in allowed)
         ]
         if not eligible:
             return None
@@ -1031,14 +1150,30 @@ class InsertionOptionGenerator:
 
         return sorted_options[: self.config.max_options]
 
-    def _select_recommended(self, options: List[JsonDict]) -> Optional[str]:
+    def _select_recommended(
+        self, options: List[JsonDict], fail_closed: bool = False
+    ) -> Optional[str]:
         """Return the option_id of the top-ranked feasible + regulatory-cleared option.
 
         Returns None if no such option exists (maps to INCONCLUSIVE in Stage G).
+        Missing feasible/regulatory_cleared default to False (fail closed),
+        consistent with Stage G's _select_primary_option (PR#78 [9]).
+
+        When ``fail_closed`` (PR#78 [7], option A), only ``defer_to_post_outage``
+        and ``escalate_to_management`` are recommendable — never an action option
+        such as insert_now/parallel.  This makes Stage G's decision_status (which
+        derives from the recommended option type) consistent with
+        primary_recommendation: a fail-closed run can only yield DEFER or ESCALATE.
         """
+        allowed = {_DEFER, _ESCALATE} if fail_closed else None
         for option in options:
-            if option.get("feasible", True) and option.get("regulatory_cleared", True):
-                return option["option_id"]
+            if option.get("feasible", False) and option.get("regulatory_cleared", False):
+                if allowed is not None and option.get("option_type") not in allowed:
+                    continue
+                # Skip malformed options with no option_id rather than KeyError.
+                oid = option.get("option_id")
+                if oid:
+                    return oid
         return None
 
     def _recommendation_confidence(
