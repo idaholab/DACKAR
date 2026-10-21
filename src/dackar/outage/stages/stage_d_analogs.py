@@ -99,11 +99,10 @@ def _make_activity_case(
     outage_phase: Optional[str] = None,
     is_emergent: bool = True,
     planned_duration_hours: Optional[float] = None,
-    # Gap 3 execution mode flags — extracted by Stage A, passed through here
-    # so ContextSimilarityScorer can weight analogues with matching conditions
-    # higher.  Must be explicitly set (not left unset) because ActivityCase is
-    # built via __new__ without __init__, so unset fields return None rather
-    # than the dataclass default of False, causing the scorer to skip them.
+    # Gap 3 execution mode flags — extracted by Stage A, passed through here so
+    # ContextSimilarityScorer can weight analogues with matching conditions
+    # higher.  Set explicitly (not left to the dataclass default) so the query's
+    # flags reflect the intake record rather than silently defaulting to False.
     has_rp_hold: bool = False,
     requires_scaffold: bool = False,
     has_clearance: bool = False,
@@ -112,17 +111,37 @@ def _make_activity_case(
 ) -> Any:
     """Construct an ActivityCase from free-form inputs.
 
-    ActivityCase is imported from outage_uncertainty.domain.activity.  If the
-    import fails, returns a lightweight _DictActivityCase stand-in that exposes
-    the same attribute interface so all downstream scorers still work.
+    ActivityCase is imported from outage_uncertainty.domain.activity and
+    constructed normally (not via ``__new__``), so every field the similarity
+    engine reads is present.  If the import fails, returns a lightweight
+    _DictActivityCase stand-in with the same attribute interface.
+
+    Field mapping notes:
+        * ``component_id`` and ``system_id`` are NOT ActivityCase fields; they
+          are stashed in ``metadata`` (and ``system_id`` is also copied to the
+          real ``system_name`` field) so scorers that look them up still work.
+        * ``extra_fields`` keys ``activity_id``, ``outage_id`` and ``metadata``
+          are consumed specially: ``activity_id``/``outage_id`` populate the
+          required constructor args (defaulting to ``"QUERY"`` / ``""``) and
+          ``metadata`` seeds the metadata dict; any other extra keys are set as
+          attributes.
 
     Args:
-        description: Cleaned/expanded text description.
+        description: Cleaned/expanded text description (sets raw_description and
+            cleaned_description).
+        component_family, task_family, discipline: classification labels.
+        component_id, system_id: canonical ids; stashed in metadata (system_id
+            also → system_name).
+        plant_id: plant identifier.
+        outage_phase: outage phase label.
+        is_emergent: whether the activity is emergent (default True for a query).
+        planned_duration_hours: planned duration, when known.
         has_rp_hold: Radiation protection hold detected in description (Stage A).
         requires_scaffold: Scaffolding required (Stage A).
         has_clearance: Electrical/mechanical clearance required (Stage A).
         is_vendor_supported: Vendor/OEM involvement detected (Stage A).
-        extra_fields: Any additional ActivityCase fields to set (e.g. metadata).
+        extra_fields: Additional fields; activity_id / outage_id / metadata are
+            treated specially (see above), others set as attributes.
 
     Returns:
         ActivityCase (or _DictActivityCase fallback) ready for similarity scoring.
@@ -408,7 +427,9 @@ class HistoricalAnalogRetriever:
             _stamp_topology(qac, schedule_context)
 
         candidates = self._retrieve_candidates(query, qac)
-        analogs, candidates_below_threshold = self._score_and_filter(query, candidates, qac)
+        analogs, candidates_below_threshold, compare_failures = self._score_and_filter(
+            query, candidates, qac
+        )
 
         # ── Layer 1: structural affinity re-ranking ──────────────────────────
         if schedule_context is not None and self.config.schedule_context_rerank_weight > 0:
@@ -439,7 +460,8 @@ class HistoricalAnalogRetriever:
         # the same tier that drove the confidence assessment.
         distribution["confidence_tier"] = confidence_tier
         retrieval_summary = self._build_retrieval_summary(
-            analogs, fallback_used, candidates_below_threshold
+            analogs, fallback_used, candidates_below_threshold,
+            compare_failures=compare_failures,
         )
 
         return {
@@ -582,7 +604,7 @@ class HistoricalAnalogRetriever:
 
     def _score_and_filter(
         self, query: JsonDict, candidates: List[Any], qac: Any
-    ) -> Tuple[List[JsonDict], int]:
+    ) -> Tuple[List[JsonDict], int, int]:
         """Score each candidate with the weighted composite similarity and filter.
 
         Composite score (3 components):
@@ -602,10 +624,13 @@ class HistoricalAnalogRetriever:
             4. Convert SimilarityMatch + ActivityCase → analog dict
 
         Returns:
-            (analogs, candidates_below_threshold) where candidates_below_threshold
-            is the count of scored candidates whose similarity score was below
-            config.similarity_threshold (N12: exposed in retrieval_summary for
-            production monitoring of retrieval quality).
+            (analogs, candidates_below_threshold, compare_failures) where
+            candidates_below_threshold is the count of scored candidates whose
+            similarity score was below config.similarity_threshold (N12: exposed
+            in retrieval_summary for production monitoring), and compare_failures
+            is the count of SimilarityEngine.compare() calls that raised.  Both
+            are returned (not stored on self) so a shared retriever cannot leak
+            one call's counts into the next call's artifact.
 
         Reuse:
             SimilarityEngine from outage_uncertainty.retrieval.similarity_engine
@@ -613,7 +638,7 @@ class HistoricalAnalogRetriever:
             (read-only imports, no modification).
         """
         if not candidates:
-            return [], 0
+            return [], 0, 0
 
         query_activity = qac
 
@@ -646,23 +671,18 @@ class HistoricalAnalogRetriever:
                     "Stage D: %d of %d SimilarityEngine.compare() calls failed",
                     compare_failures, len(candidates),
                 )
-            # Record for the retrieval summary (surfaced in provenance so a
-            # silent scoring failure is visible rather than looking like
-            # 'no analogs').
-            self._last_compare_failures = compare_failures
         else:
             # No engine injected — assign uniform score 0.5 as placeholder.
             # candidates_below_threshold = 0 in this path: scores are synthetic,
             # not real threshold rejections.
-            self._last_compare_failures = 0
             LOGGER.warning("Stage D: similarity_engine not injected — using placeholder scores")
             return [
                 _activity_to_analog(c, 0.50, {}, relevance_weight=1.0)
                 for c in candidates[: self.config.top_k]
-            ], 0
+            ], 0, 0
 
         if not matches:
-            return [], 0
+            return [], 0, compare_failures
 
         # N12: count candidates below threshold before any selection step.
         n_below_threshold: int = sum(
@@ -704,7 +724,7 @@ class HistoricalAnalogRetriever:
             analogs.append(analog)
 
         LOGGER.debug("Stage D: %d analogs after scoring and filtering", len(analogs))
-        return analogs, n_below_threshold
+        return analogs, n_below_threshold, compare_failures
 
     def _rerank_by_schedule_context(
         self,
@@ -1089,6 +1109,7 @@ class HistoricalAnalogRetriever:
         analogs: List[JsonDict],
         fallback_used: bool,
         candidates_below_threshold: int = 0,
+        compare_failures: int = 0,
     ) -> JsonDict:
         """Compute analog_count, outages_represented, plants_represented.
 
@@ -1097,6 +1118,12 @@ class HistoricalAnalogRetriever:
         ``config.similarity_threshold``.  A high value relative to total candidates
         signals that the threshold may be too strict for the current retrieval index
         and should be reviewed before production deployment.
+
+        ``compare_failures`` (passed in from _score_and_filter, not read off
+        self) is the count of SimilarityEngine.compare() calls that raised during
+        this retrieval — surfaced so a scoring failure is visible rather than
+        looking like 'no analogs', without leaking across calls on a shared
+        retriever.
         """
         analog_count = len(analogs)
         outage_ids = {a["outage_id"] for a in analogs if a.get("outage_id")}
@@ -1113,7 +1140,7 @@ class HistoricalAnalogRetriever:
             "best_similarity_score": best_score,
             "fallback_used": fallback_used,
             "candidates_below_threshold": candidates_below_threshold,
-            "compare_failures": getattr(self, "_last_compare_failures", 0),
+            "compare_failures": compare_failures,
         }
 
     # ── Distribution fitting helpers ──────────────────────────────────────────
