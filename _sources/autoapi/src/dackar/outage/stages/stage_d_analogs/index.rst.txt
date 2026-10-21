@@ -141,16 +141,40 @@ Module Contents
 
    Construct an ActivityCase from free-form inputs.
 
-   ActivityCase is imported from outage_uncertainty.domain.activity.  If the
-   import fails, returns a lightweight _DictActivityCase stand-in that exposes
-   the same attribute interface so all downstream scorers still work.
+   ActivityCase is imported from outage_uncertainty.domain.activity and
+   constructed normally (not via ``__new__``), so every field the similarity
+   engine reads is present.  If the import fails, returns a lightweight
+   _DictActivityCase stand-in with the same attribute interface.
 
-   :param description: Cleaned/expanded text description.
+   Field mapping notes:
+       * ``component_id`` and ``system_id`` are NOT ActivityCase fields; they
+         are stashed in ``metadata`` (and ``system_id`` is also copied to the
+         real ``system_name`` field) so scorers that look them up still work.
+       * ``extra_fields`` keys ``activity_id``, ``outage_id`` and ``metadata``
+         are consumed specially: ``activity_id``/``outage_id`` populate the
+         required constructor args (defaulting to ``"QUERY"`` / ``""``) and
+         ``metadata`` seeds the metadata dict; any other extra keys are set as
+         attributes.
+
+   :param description: Cleaned/expanded text description (sets raw_description and
+                       cleaned_description).
+   :param component_family: classification labels.
+   :param task_family: classification labels.
+   :param discipline: classification labels.
+   :param component_id: canonical ids; stashed in metadata (system_id
+                        also → system_name).
+   :param system_id: canonical ids; stashed in metadata (system_id
+                     also → system_name).
+   :param plant_id: plant identifier.
+   :param outage_phase: outage phase label.
+   :param is_emergent: whether the activity is emergent (default True for a query).
+   :param planned_duration_hours: planned duration, when known.
    :param has_rp_hold: Radiation protection hold detected in description (Stage A).
    :param requires_scaffold: Scaffolding required (Stage A).
    :param has_clearance: Electrical/mechanical clearance required (Stage A).
    :param is_vendor_supported: Vendor/OEM involvement detected (Stage A).
-   :param extra_fields: Any additional ActivityCase fields to set (e.g. metadata).
+   :param extra_fields: Additional fields; activity_id / outage_id / metadata are
+                        treated specially (see above), others set as attributes.
 
    :returns: ActivityCase (or _DictActivityCase fallback) ready for similarity scoring.
 
@@ -235,6 +259,25 @@ Module Contents
       Wired into the injected OutlierHandler.iqr_multiplier at construction time.
       Standard Tukey value is 1.5; increase to 3.0 for a more permissive fence
       (fewer outliers removed) on small or heavily right-skewed pools.
+
+
+   .. py:attribute:: prior_p80_inflation
+      :type:  float
+      :value: 1.3
+
+
+      P80/P50 multiplier for the single-analog and planned-duration priors.
+      With ≤1 analog there is no spread to fit, so the tail is approximated by
+      inflating the point estimate; 1.30 ≈ a 30% P80 overrun allowance.
+
+
+   .. py:attribute:: prior_p90_inflation
+      :type:  float
+      :value: 1.5
+
+
+      P90/P50 multiplier for the single-analog and planned-duration priors
+      (≈ a 50% P90 overrun allowance). See prior_p80_inflation.
 
 
    .. py:attribute:: lexical_weight
@@ -433,10 +476,13 @@ Module Contents
           3. Filter matches below config.similarity_threshold
           4. Convert SimilarityMatch + ActivityCase → analog dict
 
-      :returns: (analogs, candidates_below_threshold) where candidates_below_threshold
-                is the count of scored candidates whose similarity score was below
-                config.similarity_threshold (N12: exposed in retrieval_summary for
-                production monitoring of retrieval quality).
+      :returns: (analogs, candidates_below_threshold, compare_failures) where
+                candidates_below_threshold is the count of scored candidates whose
+                similarity score was below config.similarity_threshold (N12: exposed
+                in retrieval_summary for production monitoring), and compare_failures
+                is the count of SimilarityEngine.compare() calls that raised.  Both
+                are returned (not stored on self) so a shared retriever cannot leak
+                one call's counts into the next call's artifact.
 
       Reuse:
           SimilarityEngine from outage_uncertainty.retrieval.similarity_engine
@@ -570,7 +616,7 @@ Module Contents
 
 
 
-   .. py:method:: _build_retrieval_summary(analogs, fallback_used, candidates_below_threshold = 0)
+   .. py:method:: _build_retrieval_summary(analogs, fallback_used, candidates_below_threshold = 0, compare_failures = 0)
 
       Compute analog_count, outages_represented, plants_represented.
 
@@ -579,6 +625,12 @@ Module Contents
       ``config.similarity_threshold``.  A high value relative to total candidates
       signals that the threshold may be too strict for the current retrieval index
       and should be reviewed before production deployment.
+
+      ``compare_failures`` (passed in from _score_and_filter, not read off
+      self) is the count of SimilarityEngine.compare() calls that raised during
+      this retrieval — surfaced so a scoring failure is visible rather than
+      looking like 'no analogs', without leaking across calls on a shared
+      retriever.
 
 
 
@@ -625,6 +677,11 @@ Module Contents
 
    Extract per-dimension scores from a SimilarityMatch.
 
+   SimilarityMatch stores dimensions as ``lexical_score`` / ``semantic_score``
+   / ``context_score`` / ``dependency_score``; reading the bare names (as the
+   previous code did) always returned ``{}``.  The output keeps the short
+   dimension names used by the historical_analogs similarity_breakdown.
+
 
 .. py:function:: _activity_to_analog(activity, score, breakdown, *, relevance_weight = 1.0)
 
@@ -645,9 +702,13 @@ Module Contents
    non-zero score automatically — no additional code changes required.
 
 
-.. py:function:: _tukey_filter(indexed, durations)
+.. py:function:: _tukey_filter(indexed, durations, iqr_factor = 1.5)
 
    Fallback Tukey IQR fence when OutlierHandler is not injected.
+
+   ``iqr_factor`` is the IQR multiplier for the upper fence (default 1.5);
+   callers pass ``config.outlier_iqr_factor`` so the fallback honours the same
+   setting as the primary OutlierHandler path.
 
    Uses the same linear-interpolation (Type-7) quartile method as
    ``OutlierHandler._iqr`` (``np.percentile``) so that the fence value is
@@ -685,6 +746,14 @@ Module Contents
 .. py:function:: _distribution_to_dict(dist, sample_size)
 
    Convert a DurationDistribution object to a Stage D schema dict.
+
+   When the distribution carries a disruption-driven mixture (extended samples
+   with mixture_weight > 0), the reported p80/p90 are the MIXTURE percentiles
+   (``parameters["mixture_p80"]`` / ``mixture_p90``) rather than the routine-only
+   tail.  Otherwise the artifact would report routine-only p80/p90 while mean/std
+   (and the Stage E Monte Carlo sampler) are computed from the full mixture — an
+   internal contradiction (review I5).  The routine-only tail is preserved under
+   ``parameters`` for reference.
 
 
 .. py:function:: _estimate_to_dict(estimate, sample_size)

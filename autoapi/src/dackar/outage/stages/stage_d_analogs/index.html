@@ -232,7 +232,7 @@ calls to retrieve() on the same instance cannot overwrite each other’s state.<
 <tr class="row-odd"><td><p><a class="reference internal" href="#src.dackar.outage.stages.stage_d_analogs._stamp_topology" title="src.dackar.outage.stages.stage_d_analogs._stamp_topology"><code class="xref py py-obj docutils literal notranslate"><span class="pre">_stamp_topology</span></code></a>(query_activity_case, schedule_context)</p></td>
 <td><p>Stamp predecessor_ids / successor_ids onto the query ActivityCase.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#src.dackar.outage.stages.stage_d_analogs._tukey_filter" title="src.dackar.outage.stages.stage_d_analogs._tukey_filter"><code class="xref py py-obj docutils literal notranslate"><span class="pre">_tukey_filter</span></code></a>(indexed, durations)</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#src.dackar.outage.stages.stage_d_analogs._tukey_filter" title="src.dackar.outage.stages.stage_d_analogs._tukey_filter"><code class="xref py py-obj docutils literal notranslate"><span class="pre">_tukey_filter</span></code></a>(indexed, durations[, iqr_factor])</p></td>
 <td><p>Fallback Tukey IQR fence when OutlierHandler is not injected.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#src.dackar.outage.stages.stage_d_analogs._active_execution_flags" title="src.dackar.outage.stages.stage_d_analogs._active_execution_flags"><code class="xref py py-obj docutils literal notranslate"><span class="pre">_active_execution_flags</span></code></a>(query_activity)</p></td>
@@ -313,27 +313,45 @@ on each match, so a full SimilarityMatch import is not required.</p>
 <dt class="sig sig-object py" id="src.dackar.outage.stages.stage_d_analogs._make_activity_case">
 <span class="sig-prename descclassname"><span class="pre">src.dackar.outage.stages.stage_d_analogs.</span></span><span class="sig-name descname"><span class="pre">_make_activity_case</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">description</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">component_family</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_family</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">discipline</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">component_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">system_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plant_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">outage_phase</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_emergent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">planned_duration_hours</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">has_rp_hold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">requires_scaffold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">has_clearance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_vendor_supported</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">extra_fields</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_d_analogs.html#_make_activity_case"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_d_analogs._make_activity_case" title="Link to this definition">¶</a></dt>
 <dd><p>Construct an ActivityCase from free-form inputs.</p>
-<p>ActivityCase is imported from outage_uncertainty.domain.activity.  If the
-import fails, returns a lightweight _DictActivityCase stand-in that exposes
-the same attribute interface so all downstream scorers still work.</p>
+<p>ActivityCase is imported from outage_uncertainty.domain.activity and
+constructed normally (not via <code class="docutils literal notranslate"><span class="pre">__new__</span></code>), so every field the similarity
+engine reads is present.  If the import fails, returns a lightweight
+_DictActivityCase stand-in with the same attribute interface.</p>
+<dl class="simple">
+<dt>Field mapping notes:</dt><dd><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">component_id</span></code> and <code class="docutils literal notranslate"><span class="pre">system_id</span></code> are NOT ActivityCase fields; they
+are stashed in <code class="docutils literal notranslate"><span class="pre">metadata</span></code> (and <code class="docutils literal notranslate"><span class="pre">system_id</span></code> is also copied to the
+real <code class="docutils literal notranslate"><span class="pre">system_name</span></code> field) so scorers that look them up still work.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">extra_fields</span></code> keys <code class="docutils literal notranslate"><span class="pre">activity_id</span></code>, <code class="docutils literal notranslate"><span class="pre">outage_id</span></code> and <code class="docutils literal notranslate"><span class="pre">metadata</span></code>
+are consumed specially: <code class="docutils literal notranslate"><span class="pre">activity_id</span></code>/<code class="docutils literal notranslate"><span class="pre">outage_id</span></code> populate the
+required constructor args (defaulting to <code class="docutils literal notranslate"><span class="pre">&quot;QUERY&quot;</span></code> / <code class="docutils literal notranslate"><span class="pre">&quot;&quot;</span></code>) and
+<code class="docutils literal notranslate"><span class="pre">metadata</span></code> seeds the metadata dict; any other extra keys are set as
+attributes.</p></li>
+</ul>
+</dd>
+</dl>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>description</strong> (<em>str</em>) – Cleaned/expanded text description.</p></li>
+<li><p><strong>description</strong> (<em>str</em>) – Cleaned/expanded text description (sets raw_description and
+cleaned_description).</p></li>
+<li><p><strong>component_family</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – classification labels.</p></li>
+<li><p><strong>task_family</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – classification labels.</p></li>
+<li><p><strong>discipline</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – classification labels.</p></li>
+<li><p><strong>component_id</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – canonical ids; stashed in metadata (system_id
+also → system_name).</p></li>
+<li><p><strong>system_id</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – canonical ids; stashed in metadata (system_id
+also → system_name).</p></li>
+<li><p><strong>plant_id</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – plant identifier.</p></li>
+<li><p><strong>outage_phase</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – outage phase label.</p></li>
+<li><p><strong>is_emergent</strong> (<em>bool</em>) – whether the activity is emergent (default True for a query).</p></li>
+<li><p><strong>planned_duration_hours</strong> (<em>Optional</em><em>[</em><em>float</em><em>]</em>) – planned duration, when known.</p></li>
 <li><p><strong>has_rp_hold</strong> (<em>bool</em>) – Radiation protection hold detected in description (Stage A).</p></li>
 <li><p><strong>requires_scaffold</strong> (<em>bool</em>) – Scaffolding required (Stage A).</p></li>
 <li><p><strong>has_clearance</strong> (<em>bool</em>) – Electrical/mechanical clearance required (Stage A).</p></li>
 <li><p><strong>is_vendor_supported</strong> (<em>bool</em>) – Vendor/OEM involvement detected (Stage A).</p></li>
-<li><p><strong>extra_fields</strong> (<em>Optional</em><em>[</em><em>Dict</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em><em>]</em>) – Any additional ActivityCase fields to set (e.g. metadata).</p></li>
-<li><p><strong>component_family</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>)</p></li>
-<li><p><strong>task_family</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>)</p></li>
-<li><p><strong>discipline</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>)</p></li>
-<li><p><strong>component_id</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>)</p></li>
-<li><p><strong>system_id</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>)</p></li>
-<li><p><strong>plant_id</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>)</p></li>
-<li><p><strong>outage_phase</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>)</p></li>
-<li><p><strong>is_emergent</strong> (<em>bool</em>)</p></li>
-<li><p><strong>planned_duration_hours</strong> (<em>Optional</em><em>[</em><em>float</em><em>]</em>)</p></li>
+<li><p><strong>extra_fields</strong> (<em>Optional</em><em>[</em><em>Dict</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em><em>]</em>) – Additional fields; activity_id / outage_id / metadata are
+treated specially (see above), others set as attributes.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
@@ -435,6 +453,21 @@ solely due to this gate).  Set to 0 to disable.</p>
 Wired into the injected OutlierHandler.iqr_multiplier at construction time.
 Standard Tukey value is 1.5; increase to 3.0 for a more permissive fence
 (fewer outliers removed) on small or heavily right-skewed pools.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.dackar.outage.stages.stage_d_analogs.HistoricalAnalogConfig.prior_p80_inflation">
+<span class="sig-name descname"><span class="pre">prior_p80_inflation</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.3</span></span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_d_analogs.html#HistoricalAnalogConfig.prior_p80_inflation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_d_analogs.HistoricalAnalogConfig.prior_p80_inflation" title="Link to this definition">¶</a></dt>
+<dd><p>P80/P50 multiplier for the single-analog and planned-duration priors.
+With ≤1 analog there is no spread to fit, so the tail is approximated by
+inflating the point estimate; 1.30 ≈ a 30% P80 overrun allowance.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.dackar.outage.stages.stage_d_analogs.HistoricalAnalogConfig.prior_p90_inflation">
+<span class="sig-name descname"><span class="pre">prior_p90_inflation</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.5</span></span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_d_analogs.html#HistoricalAnalogConfig.prior_p90_inflation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_d_analogs.HistoricalAnalogConfig.prior_p90_inflation" title="Link to this definition">¶</a></dt>
+<dd><p>P90/P50 multiplier for the single-analog and planned-duration priors
+(≈ a 50% P90 overrun allowance). See prior_p80_inflation.</p>
 </dd></dl>
 
 <dl class="py attribute">
@@ -601,7 +634,7 @@ JsonDict fields without modifying outage_uncertainty domain classes.</p>
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference internal" href="#src.dackar.outage.stages.stage_d_analogs.JsonDict" title="src.dackar.outage.stages.stage_d_analogs.JsonDict">JsonDict</a></p>
+<dd class="field-even"><p>Tuple[<a class="reference internal" href="#src.dackar.outage.stages.stage_d_analogs.JsonDict" title="src.dackar.outage.stages.stage_d_analogs.JsonDict">JsonDict</a>, Any]</p>
 </dd>
 </dl>
 </dd></dl>
@@ -663,10 +696,13 @@ context_weight are the authoritative sources for scoring behaviour.</p>
 </dl>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>(analogs, candidates_below_threshold) where candidates_below_threshold
-is the count of scored candidates whose similarity score was below
-config.similarity_threshold (N12: exposed in retrieval_summary for
-production monitoring of retrieval quality).</p>
+<dd class="field-odd"><p>(analogs, candidates_below_threshold, compare_failures) where
+candidates_below_threshold is the count of scored candidates whose
+similarity score was below config.similarity_threshold (N12: exposed
+in retrieval_summary for production monitoring), and compare_failures
+is the count of SimilarityEngine.compare() calls that raised.  Both
+are returned (not stored on self) so a shared retriever cannot leak
+one call’s counts into the next call’s artifact.</p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
 <dd class="field-even"><ul class="simple">
@@ -676,7 +712,7 @@ production monitoring of retrieval quality).</p>
 </ul>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>Tuple[List[<a class="reference internal" href="#src.dackar.outage.stages.stage_d_analogs.JsonDict" title="src.dackar.outage.stages.stage_d_analogs.JsonDict">JsonDict</a>], int]</p>
+<dd class="field-odd"><p>Tuple[List[<a class="reference internal" href="#src.dackar.outage.stages.stage_d_analogs.JsonDict" title="src.dackar.outage.stages.stage_d_analogs.JsonDict">JsonDict</a>], int, int]</p>
 </dd>
 </dl>
 <dl class="simple">
@@ -848,19 +884,25 @@ Disabled when the config threshold is 0.</p></li>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.dackar.outage.stages.stage_d_analogs.HistoricalAnalogRetriever._build_retrieval_summary">
-<span class="sig-name descname"><span class="pre">_build_retrieval_summary</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">analogs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fallback_used</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">candidates_below_threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_d_analogs.html#HistoricalAnalogRetriever._build_retrieval_summary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_d_analogs.HistoricalAnalogRetriever._build_retrieval_summary" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">_build_retrieval_summary</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">analogs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fallback_used</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">candidates_below_threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compare_failures</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_d_analogs.html#HistoricalAnalogRetriever._build_retrieval_summary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_d_analogs.HistoricalAnalogRetriever._build_retrieval_summary" title="Link to this definition">¶</a></dt>
 <dd><p>Compute analog_count, outages_represented, plants_represented.</p>
 <p>N12 fix: <code class="docutils literal notranslate"><span class="pre">candidates_below_threshold</span></code> records how many candidates were
 scored by the SimilarityEngine but rejected because their score was below
 <code class="docutils literal notranslate"><span class="pre">config.similarity_threshold</span></code>.  A high value relative to total candidates
 signals that the threshold may be too strict for the current retrieval index
 and should be reviewed before production deployment.</p>
+<p><code class="docutils literal notranslate"><span class="pre">compare_failures</span></code> (passed in from _score_and_filter, not read off
+self) is the count of SimilarityEngine.compare() calls that raised during
+this retrieval — surfaced so a scoring failure is visible rather than
+looking like ‘no analogs’, without leaking across calls on a shared
+retriever.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>analogs</strong> (<em>List</em><em>[</em><a class="reference internal" href="#src.dackar.outage.stages.stage_d_analogs.JsonDict" title="src.dackar.outage.stages.stage_d_analogs.JsonDict"><em>JsonDict</em></a><em>]</em>)</p></li>
 <li><p><strong>fallback_used</strong> (<em>bool</em>)</p></li>
 <li><p><strong>candidates_below_threshold</strong> (<em>int</em>)</p></li>
+<li><p><strong>compare_failures</strong> (<em>int</em>)</p></li>
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
@@ -940,6 +982,10 @@ duration stored in the query summary.</p>
 <dt class="sig sig-object py" id="src.dackar.outage.stages.stage_d_analogs._get_breakdown">
 <span class="sig-prename descclassname"><span class="pre">src.dackar.outage.stages.stage_d_analogs.</span></span><span class="sig-name descname"><span class="pre">_get_breakdown</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">match</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_d_analogs.html#_get_breakdown"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_d_analogs._get_breakdown" title="Link to this definition">¶</a></dt>
 <dd><p>Extract per-dimension scores from a SimilarityMatch.</p>
+<p>SimilarityMatch stores dimensions as <code class="docutils literal notranslate"><span class="pre">lexical_score</span></code> / <code class="docutils literal notranslate"><span class="pre">semantic_score</span></code>
+/ <code class="docutils literal notranslate"><span class="pre">context_score</span></code> / <code class="docutils literal notranslate"><span class="pre">dependency_score</span></code>; reading the bare names (as the
+previous code did) always returned <code class="docutils literal notranslate"><span class="pre">{}</span></code>.  The output keeps the short
+dimension names used by the historical_analogs similarity_breakdown.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>match</strong> (<em>Any</em>)</p>
@@ -995,8 +1041,11 @@ non-zero score automatically — no additional code changes required.</p>
 
 <dl class="py function">
 <dt class="sig sig-object py" id="src.dackar.outage.stages.stage_d_analogs._tukey_filter">
-<span class="sig-prename descclassname"><span class="pre">src.dackar.outage.stages.stage_d_analogs.</span></span><span class="sig-name descname"><span class="pre">_tukey_filter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">indexed</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">durations</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_d_analogs.html#_tukey_filter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_d_analogs._tukey_filter" title="Link to this definition">¶</a></dt>
+<span class="sig-prename descclassname"><span class="pre">src.dackar.outage.stages.stage_d_analogs.</span></span><span class="sig-name descname"><span class="pre">_tukey_filter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">indexed</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">durations</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">iqr_factor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.5</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_d_analogs.html#_tukey_filter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_d_analogs._tukey_filter" title="Link to this definition">¶</a></dt>
 <dd><p>Fallback Tukey IQR fence when OutlierHandler is not injected.</p>
+<p><code class="docutils literal notranslate"><span class="pre">iqr_factor</span></code> is the IQR multiplier for the upper fence (default 1.5);
+callers pass <code class="docutils literal notranslate"><span class="pre">config.outlier_iqr_factor</span></code> so the fallback honours the same
+setting as the primary OutlierHandler path.</p>
 <p>Uses the same linear-interpolation (Type-7) quartile method as
 <code class="docutils literal notranslate"><span class="pre">OutlierHandler._iqr</span></code> (<code class="docutils literal notranslate"><span class="pre">np.percentile</span></code>) so that the fence value is
 consistent with the primary path.  The previous nearest-rank approach
@@ -1011,6 +1060,7 @@ This matches the unweighted Q1/Q3 in <code class="docutils literal notranslate">
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>indexed</strong> (<em>List</em><em>[</em><em>Tuple</em><em>[</em><em>int</em><em>, </em><a class="reference internal" href="#src.dackar.outage.stages.stage_d_analogs.JsonDict" title="src.dackar.outage.stages.stage_d_analogs.JsonDict"><em>JsonDict</em></a><em>]</em><em>]</em>)</p></li>
 <li><p><strong>durations</strong> (<em>List</em><em>[</em><em>float</em><em>]</em>)</p></li>
+<li><p><strong>iqr_factor</strong> (<em>float</em>)</p></li>
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
@@ -1063,6 +1113,13 @@ IQR fence in <code class="docutils literal notranslate"><span class="pre">_remov
 <dt class="sig sig-object py" id="src.dackar.outage.stages.stage_d_analogs._distribution_to_dict">
 <span class="sig-prename descclassname"><span class="pre">src.dackar.outage.stages.stage_d_analogs.</span></span><span class="sig-name descname"><span class="pre">_distribution_to_dict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dist</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sample_size</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_d_analogs.html#_distribution_to_dict"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_d_analogs._distribution_to_dict" title="Link to this definition">¶</a></dt>
 <dd><p>Convert a DurationDistribution object to a Stage D schema dict.</p>
+<p>When the distribution carries a disruption-driven mixture (extended samples
+with mixture_weight &gt; 0), the reported p80/p90 are the MIXTURE percentiles
+(<code class="docutils literal notranslate"><span class="pre">parameters[&quot;mixture_p80&quot;]</span></code> / <code class="docutils literal notranslate"><span class="pre">mixture_p90</span></code>) rather than the routine-only
+tail.  Otherwise the artifact would report routine-only p80/p90 while mean/std
+(and the Stage E Monte Carlo sampler) are computed from the full mixture — an
+internal contradiction (review I5).  The routine-only tail is preserved under
+<code class="docutils literal notranslate"><span class="pre">parameters</span></code> for reference.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">

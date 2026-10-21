@@ -211,11 +211,10 @@
     <span class="n">outage_phase</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">is_emergent</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="n">planned_duration_hours</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="c1"># Gap 3 execution mode flags — extracted by Stage A, passed through here</span>
-    <span class="c1"># so ContextSimilarityScorer can weight analogues with matching conditions</span>
-    <span class="c1"># higher.  Must be explicitly set (not left unset) because ActivityCase is</span>
-    <span class="c1"># built via __new__ without __init__, so unset fields return None rather</span>
-    <span class="c1"># than the dataclass default of False, causing the scorer to skip them.</span>
+    <span class="c1"># Gap 3 execution mode flags — extracted by Stage A, passed through here so</span>
+    <span class="c1"># ContextSimilarityScorer can weight analogues with matching conditions</span>
+    <span class="c1"># higher.  Set explicitly (not left to the dataclass default) so the query's</span>
+    <span class="c1"># flags reflect the intake record rather than silently defaulting to False.</span>
     <span class="n">has_rp_hold</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">requires_scaffold</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">has_clearance</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
@@ -224,29 +223,60 @@
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Construct an ActivityCase from free-form inputs.</span>
 
-<span class="sd">    ActivityCase is imported from outage_uncertainty.domain.activity.  If the</span>
-<span class="sd">    import fails, returns a lightweight _DictActivityCase stand-in that exposes</span>
-<span class="sd">    the same attribute interface so all downstream scorers still work.</span>
+<span class="sd">    ActivityCase is imported from outage_uncertainty.domain.activity and</span>
+<span class="sd">    constructed normally (not via ``__new__``), so every field the similarity</span>
+<span class="sd">    engine reads is present.  If the import fails, returns a lightweight</span>
+<span class="sd">    _DictActivityCase stand-in with the same attribute interface.</span>
+
+<span class="sd">    Field mapping notes:</span>
+<span class="sd">        * ``component_id`` and ``system_id`` are NOT ActivityCase fields; they</span>
+<span class="sd">          are stashed in ``metadata`` (and ``system_id`` is also copied to the</span>
+<span class="sd">          real ``system_name`` field) so scorers that look them up still work.</span>
+<span class="sd">        * ``extra_fields`` keys ``activity_id``, ``outage_id`` and ``metadata``</span>
+<span class="sd">          are consumed specially: ``activity_id``/``outage_id`` populate the</span>
+<span class="sd">          required constructor args (defaulting to ``"QUERY"`` / ``""``) and</span>
+<span class="sd">          ``metadata`` seeds the metadata dict; any other extra keys are set as</span>
+<span class="sd">          attributes.</span>
 
 <span class="sd">    Args:</span>
-<span class="sd">        description: Cleaned/expanded text description.</span>
+<span class="sd">        description: Cleaned/expanded text description (sets raw_description and</span>
+<span class="sd">            cleaned_description).</span>
+<span class="sd">        component_family, task_family, discipline: classification labels.</span>
+<span class="sd">        component_id, system_id: canonical ids; stashed in metadata (system_id</span>
+<span class="sd">            also → system_name).</span>
+<span class="sd">        plant_id: plant identifier.</span>
+<span class="sd">        outage_phase: outage phase label.</span>
+<span class="sd">        is_emergent: whether the activity is emergent (default True for a query).</span>
+<span class="sd">        planned_duration_hours: planned duration, when known.</span>
 <span class="sd">        has_rp_hold: Radiation protection hold detected in description (Stage A).</span>
 <span class="sd">        requires_scaffold: Scaffolding required (Stage A).</span>
 <span class="sd">        has_clearance: Electrical/mechanical clearance required (Stage A).</span>
 <span class="sd">        is_vendor_supported: Vendor/OEM involvement detected (Stage A).</span>
-<span class="sd">        extra_fields: Any additional ActivityCase fields to set (e.g. metadata).</span>
+<span class="sd">        extra_fields: Additional fields; activity_id / outage_id / metadata are</span>
+<span class="sd">            treated specially (see above), others set as attributes.</span>
 
 <span class="sd">    Returns:</span>
 <span class="sd">        ActivityCase (or _DictActivityCase fallback) ready for similarity scoring.</span>
 <span class="sd">    """</span>
-    <span class="n">fields</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">extra</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">extra_fields</span> <span class="ow">or</span> <span class="p">{})</span>
+    <span class="c1"># component_id / system_id are not ActivityCase fields; stash them in</span>
+    <span class="c1"># metadata so scorers that look them up still find them while the object is</span>
+    <span class="c1"># constructed normally (not via __new__).</span>
+    <span class="n">metadata</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">extra</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{})</span>
+    <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"features"</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="k">if</span> <span class="n">component_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">metadata</span><span class="p">[</span><span class="s2">"component_id"</span><span class="p">]</span> <span class="o">=</span> <span class="n">component_id</span>
+    <span class="k">if</span> <span class="n">system_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">metadata</span><span class="p">[</span><span class="s2">"system_id"</span><span class="p">]</span> <span class="o">=</span> <span class="n">system_id</span>
+
+    <span class="c1"># Fields that map directly onto ActivityCase dataclass attributes.</span>
+    <span class="n">field_values</span> <span class="o">=</span> <span class="p">{</span>
         <span class="s2">"raw_description"</span><span class="p">:</span> <span class="n">description</span><span class="p">,</span>
         <span class="s2">"cleaned_description"</span><span class="p">:</span> <span class="n">description</span><span class="p">,</span>
         <span class="s2">"component_family"</span><span class="p">:</span> <span class="n">component_family</span><span class="p">,</span>
         <span class="s2">"task_family"</span><span class="p">:</span> <span class="n">task_family</span><span class="p">,</span>
         <span class="s2">"discipline"</span><span class="p">:</span> <span class="n">discipline</span><span class="p">,</span>
-        <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">component_id</span><span class="p">,</span>
-        <span class="s2">"system_id"</span><span class="p">:</span> <span class="n">system_id</span><span class="p">,</span>
+        <span class="s2">"system_name"</span><span class="p">:</span> <span class="n">system_id</span><span class="p">,</span>
         <span class="s2">"plant_id"</span><span class="p">:</span> <span class="n">plant_id</span><span class="p">,</span>
         <span class="s2">"outage_phase"</span><span class="p">:</span> <span class="n">outage_phase</span><span class="p">,</span>
         <span class="s2">"is_emergent"</span><span class="p">:</span> <span class="n">is_emergent</span><span class="p">,</span>
@@ -255,20 +285,34 @@
         <span class="s2">"requires_scaffold"</span><span class="p">:</span> <span class="n">requires_scaffold</span><span class="p">,</span>
         <span class="s2">"has_clearance"</span><span class="p">:</span> <span class="n">has_clearance</span><span class="p">,</span>
         <span class="s2">"is_vendor_supported"</span><span class="p">:</span> <span class="n">is_vendor_supported</span><span class="p">,</span>
-        <span class="o">**</span><span class="p">(</span><span class="n">extra_fields</span> <span class="ow">or</span> <span class="p">{}),</span>
     <span class="p">}</span>
 
     <span class="k">try</span><span class="p">:</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage.outage_uncertainty.domain.activity</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActivityCase</span>
-        <span class="n">activity</span> <span class="o">=</span> <span class="n">ActivityCase</span><span class="o">.</span><span class="fm">__new__</span><span class="p">(</span><span class="n">ActivityCase</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">fields</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">activity</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
-            <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
-                <span class="k">pass</span>
+        <span class="c1"># Construct normally with required identifiers populated, so every field</span>
+        <span class="c1"># the similarity engine reads (activity_id, outage_id, metadata, …) is</span>
+        <span class="c1"># present rather than raising AttributeError on access.</span>
+        <span class="n">activity</span> <span class="o">=</span> <span class="n">ActivityCase</span><span class="p">(</span>
+            <span class="n">activity_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">extra</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"activity_id"</span><span class="p">,</span> <span class="s2">"QUERY"</span><span class="p">)),</span>
+            <span class="n">outage_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">extra</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"outage_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)),</span>
+            <span class="n">plant_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">plant_id</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">),</span>
+            <span class="n">metadata</span><span class="o">=</span><span class="n">metadata</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">field_values</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"plant_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>  <span class="c1"># already set via constructor</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">field_values</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="n">activity</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">extra</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>          <span class="c1"># any remaining explicit extras</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="n">activity</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">activity</span>
     <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">_DictActivityCase</span><span class="p">(</span><span class="n">fields</span><span class="p">)</span></div>
+        <span class="n">fallback_fields</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="o">**</span><span class="n">field_values</span><span class="p">,</span>
+            <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">component_id</span><span class="p">,</span>
+            <span class="s2">"system_id"</span><span class="p">:</span> <span class="n">system_id</span><span class="p">,</span>
+            <span class="s2">"metadata"</span><span class="p">:</span> <span class="n">metadata</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">extra</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="k">return</span> <span class="n">_DictActivityCase</span><span class="p">(</span><span class="n">fallback_fields</span><span class="p">)</span></div>
 
 
 
@@ -362,6 +406,21 @@
 <span class="sd">    Wired into the injected OutlierHandler.iqr_multiplier at construction time.</span>
 <span class="sd">    Standard Tukey value is 1.5; increase to 3.0 for a more permissive fence</span>
 <span class="sd">    (fewer outliers removed) on small or heavily right-skewed pools."""</span>
+
+<div class="viewcode-block" id="HistoricalAnalogConfig.prior_p80_inflation">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_d_analogs/index.html#src.dackar.outage.stages.stage_d_analogs.HistoricalAnalogConfig.prior_p80_inflation">[docs]</a>
+    <span class="n">prior_p80_inflation</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.30</span></div>
+
+<span class="w">    </span><span class="sd">"""P80/P50 multiplier for the single-analog and planned-duration priors.</span>
+<span class="sd">    With ≤1 analog there is no spread to fit, so the tail is approximated by</span>
+<span class="sd">    inflating the point estimate; 1.30 ≈ a 30% P80 overrun allowance."""</span>
+
+<div class="viewcode-block" id="HistoricalAnalogConfig.prior_p90_inflation">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_d_analogs/index.html#src.dackar.outage.stages.stage_d_analogs.HistoricalAnalogConfig.prior_p90_inflation">[docs]</a>
+    <span class="n">prior_p90_inflation</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.50</span></div>
+
+<span class="w">    </span><span class="sd">"""P90/P50 multiplier for the single-analog and planned-duration priors</span>
+<span class="sd">    (≈ a 50% P90 overrun allowance). See prior_p80_inflation."""</span>
 
 <div class="viewcode-block" id="HistoricalAnalogConfig.lexical_weight">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_d_analogs/index.html#src.dackar.outage.stages.stage_d_analogs.HistoricalAnalogConfig.lexical_weight">[docs]</a>
@@ -560,7 +619,9 @@
             <span class="n">_stamp_topology</span><span class="p">(</span><span class="n">qac</span><span class="p">,</span> <span class="n">schedule_context</span><span class="p">)</span>
 
         <span class="n">candidates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_retrieve_candidates</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">qac</span><span class="p">)</span>
-        <span class="n">analogs</span><span class="p">,</span> <span class="n">candidates_below_threshold</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_and_filter</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">candidates</span><span class="p">,</span> <span class="n">qac</span><span class="p">)</span>
+        <span class="n">analogs</span><span class="p">,</span> <span class="n">candidates_below_threshold</span><span class="p">,</span> <span class="n">compare_failures</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_and_filter</span><span class="p">(</span>
+            <span class="n">query</span><span class="p">,</span> <span class="n">candidates</span><span class="p">,</span> <span class="n">qac</span>
+        <span class="p">)</span>
 
         <span class="c1"># ── Layer 1: structural affinity re-ranking ──────────────────────────</span>
         <span class="k">if</span> <span class="n">schedule_context</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">schedule_context_rerank_weight</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
@@ -591,7 +652,8 @@
         <span class="c1"># the same tier that drove the confidence assessment.</span>
         <span class="n">distribution</span><span class="p">[</span><span class="s2">"confidence_tier"</span><span class="p">]</span> <span class="o">=</span> <span class="n">confidence_tier</span>
         <span class="n">retrieval_summary</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_retrieval_summary</span><span class="p">(</span>
-            <span class="n">analogs</span><span class="p">,</span> <span class="n">fallback_used</span><span class="p">,</span> <span class="n">candidates_below_threshold</span>
+            <span class="n">analogs</span><span class="p">,</span> <span class="n">fallback_used</span><span class="p">,</span> <span class="n">candidates_below_threshold</span><span class="p">,</span>
+            <span class="n">compare_failures</span><span class="o">=</span><span class="n">compare_failures</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="k">return</span> <span class="p">{</span>
@@ -617,7 +679,7 @@
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_d_analogs/index.html#src.dackar.outage.stages.stage_d_analogs.HistoricalAnalogRetriever._build_query">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">_build_query</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">emergent_activity</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span> <span class="n">intake_result</span><span class="p">:</span> <span class="n">JsonDict</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">"""Assemble the retrieval query from intake result fields.</span>
 
 <span class="sd">        Constructs an ActivityCase for the similarity scorers and returns it</span>
@@ -743,7 +805,7 @@
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_d_analogs/index.html#src.dackar.outage.stages.stage_d_analogs.HistoricalAnalogRetriever._score_and_filter">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">_score_and_filter</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span> <span class="n">candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">qac</span><span class="p">:</span> <span class="n">Any</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="nb">int</span><span class="p">]:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">"""Score each candidate with the weighted composite similarity and filter.</span>
 
 <span class="sd">        Composite score (3 components):</span>
@@ -763,10 +825,13 @@
 <span class="sd">            4. Convert SimilarityMatch + ActivityCase → analog dict</span>
 
 <span class="sd">        Returns:</span>
-<span class="sd">            (analogs, candidates_below_threshold) where candidates_below_threshold</span>
-<span class="sd">            is the count of scored candidates whose similarity score was below</span>
-<span class="sd">            config.similarity_threshold (N12: exposed in retrieval_summary for</span>
-<span class="sd">            production monitoring of retrieval quality).</span>
+<span class="sd">            (analogs, candidates_below_threshold, compare_failures) where</span>
+<span class="sd">            candidates_below_threshold is the count of scored candidates whose</span>
+<span class="sd">            similarity score was below config.similarity_threshold (N12: exposed</span>
+<span class="sd">            in retrieval_summary for production monitoring), and compare_failures</span>
+<span class="sd">            is the count of SimilarityEngine.compare() calls that raised.  Both</span>
+<span class="sd">            are returned (not stored on self) so a shared retriever cannot leak</span>
+<span class="sd">            one call's counts into the next call's artifact.</span>
 
 <span class="sd">        Reuse:</span>
 <span class="sd">            SimilarityEngine from outage_uncertainty.retrieval.similarity_engine</span>
@@ -774,22 +839,39 @@
 <span class="sd">            (read-only imports, no modification).</span>
 <span class="sd">        """</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">candidates</span><span class="p">:</span>
-            <span class="k">return</span> <span class="p">[],</span> <span class="mi">0</span>
+            <span class="k">return</span> <span class="p">[],</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>
 
         <span class="n">query_activity</span> <span class="o">=</span> <span class="n">qac</span>
 
         <span class="c1"># ── Scoring ───────────────────────────────────────────────────────────</span>
         <span class="n">matches</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="n">candidate_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># id(match) → ActivityCase</span>
+        <span class="c1"># Key by candidate_activity_id, not id(match): NeighborSelector.select()</span>
+        <span class="c1"># returns dataclasses.replace() COPIES, so the post-selection match</span>
+        <span class="c1"># objects have different id()s than the ones scored here — an id() map</span>
+        <span class="c1"># would miss every time (and Stage D would return zero analogs).</span>
+        <span class="n">candidate_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># candidate_activity_id → ActivityCase</span>
+        <span class="n">compare_failures</span> <span class="o">=</span> <span class="mi">0</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">similarity_engine</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">query_activity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">candidate</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
                 <span class="k">try</span><span class="p">:</span>
                     <span class="n">match</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">similarity_engine</span><span class="o">.</span><span class="n">compare</span><span class="p">(</span><span class="n">query_activity</span><span class="p">,</span> <span class="n">candidate</span><span class="p">)</span>
                     <span class="n">matches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">match</span><span class="p">)</span>
-                    <span class="n">candidate_map</span><span class="p">[</span><span class="nb">id</span><span class="p">(</span><span class="n">match</span><span class="p">)]</span> <span class="o">=</span> <span class="n">candidate</span>
+                    <span class="n">key</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">match</span><span class="p">,</span> <span class="s2">"candidate_activity_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">key</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">key</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">candidate</span><span class="p">,</span> <span class="s2">"activity_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">id</span><span class="p">(</span><span class="n">candidate</span><span class="p">)</span>
+                    <span class="n">candidate_map</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">candidate</span>
                 <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
-                    <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"SimilarityEngine.compare() failed for a candidate"</span><span class="p">)</span>
+                    <span class="n">compare_failures</span> <span class="o">+=</span> <span class="mi">1</span>
+                    <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                        <span class="s2">"SimilarityEngine.compare() failed for a candidate"</span><span class="p">,</span>
+                        <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="p">)</span>
+            <span class="k">if</span> <span class="n">compare_failures</span><span class="p">:</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">"Stage D: </span><span class="si">%d</span><span class="s2"> of </span><span class="si">%d</span><span class="s2"> SimilarityEngine.compare() calls failed"</span><span class="p">,</span>
+                    <span class="n">compare_failures</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">candidates</span><span class="p">),</span>
+                <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="c1"># No engine injected — assign uniform score 0.5 as placeholder.</span>
             <span class="c1"># candidates_below_threshold = 0 in this path: scores are synthetic,</span>
@@ -798,10 +880,10 @@
             <span class="k">return</span> <span class="p">[</span>
                 <span class="n">_activity_to_analog</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="mf">0.50</span><span class="p">,</span> <span class="p">{},</span> <span class="n">relevance_weight</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
                 <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">[:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">top_k</span><span class="p">]</span>
-            <span class="p">],</span> <span class="mi">0</span>
+            <span class="p">],</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>
 
         <span class="k">if</span> <span class="ow">not</span> <span class="n">matches</span><span class="p">:</span>
-            <span class="k">return</span> <span class="p">[],</span> <span class="mi">0</span>
+            <span class="k">return</span> <span class="p">[],</span> <span class="mi">0</span><span class="p">,</span> <span class="n">compare_failures</span>
 
         <span class="c1"># N12: count candidates below threshold before any selection step.</span>
         <span class="n">n_below_threshold</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
@@ -833,7 +915,8 @@
             <span class="n">score</span> <span class="o">=</span> <span class="n">_get_score</span><span class="p">(</span><span class="n">match</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">score</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">similarity_threshold</span><span class="p">:</span>
                 <span class="k">continue</span>
-            <span class="n">candidate</span> <span class="o">=</span> <span class="n">candidate_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">id</span><span class="p">(</span><span class="n">match</span><span class="p">))</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">match</span><span class="p">,</span> <span class="s2">"candidate_activity_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">candidate</span> <span class="o">=</span> <span class="n">candidate_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">candidate</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">continue</span>
             <span class="n">breakdown</span> <span class="o">=</span> <span class="n">_get_breakdown</span><span class="p">(</span><span class="n">match</span><span class="p">)</span>
@@ -842,7 +925,7 @@
             <span class="n">analogs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">analog</span><span class="p">)</span>
 
         <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Stage D: </span><span class="si">%d</span><span class="s2"> analogs after scoring and filtering"</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">analogs</span><span class="p">))</span>
-        <span class="k">return</span> <span class="n">analogs</span><span class="p">,</span> <span class="n">n_below_threshold</span></div>
+        <span class="k">return</span> <span class="n">analogs</span><span class="p">,</span> <span class="n">n_below_threshold</span><span class="p">,</span> <span class="n">compare_failures</span></div>
 
 
 <div class="viewcode-block" id="HistoricalAnalogRetriever._rerank_by_schedule_context">
@@ -1043,7 +1126,9 @@
                     <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Stage D: outlier_handler.separate() failed; keeping all analogs"</span><span class="p">)</span>
                     <span class="n">kept_nd</span> <span class="o">=</span> <span class="n">nd_pairs</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">kept_nd</span><span class="p">,</span> <span class="n">outliers_removed</span> <span class="o">=</span> <span class="n">_tukey_filter</span><span class="p">(</span><span class="n">nd_pairs</span><span class="p">,</span> <span class="n">nd_durations</span><span class="p">)</span>
+                <span class="n">kept_nd</span><span class="p">,</span> <span class="n">outliers_removed</span> <span class="o">=</span> <span class="n">_tukey_filter</span><span class="p">(</span>
+                    <span class="n">nd_pairs</span><span class="p">,</span> <span class="n">nd_durations</span><span class="p">,</span> <span class="n">iqr_factor</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">outlier_iqr_factor</span>
+                <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">kept_nd</span> <span class="o">=</span> <span class="n">nd_pairs</span>
 
@@ -1122,8 +1207,8 @@
             <span class="k">return</span> <span class="p">{</span>
                 <span class="s2">"distribution_type"</span><span class="p">:</span> <span class="s2">"single_analog_prior"</span><span class="p">,</span>
                 <span class="s2">"p50_hours"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">single_dur</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
-                <span class="s2">"p80_hours"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">single_dur</span> <span class="o">*</span> <span class="mf">1.30</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
-                <span class="s2">"p90_hours"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">single_dur</span> <span class="o">*</span> <span class="mf">1.50</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+                <span class="s2">"p80_hours"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">single_dur</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">prior_p80_inflation</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+                <span class="s2">"p90_hours"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">single_dur</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">prior_p90_inflation</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
                 <span class="s2">"mean_hours"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">single_dur</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
                 <span class="s2">"std_hours"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
                 <span class="s2">"confidence_tier"</span><span class="p">:</span> <span class="n">_TIER_LOW_CONFIDENCE</span><span class="p">,</span>
@@ -1240,6 +1325,7 @@
         <span class="n">analogs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
         <span class="n">fallback_used</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
         <span class="n">candidates_below_threshold</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="n">compare_failures</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Compute analog_count, outages_represented, plants_represented.</span>
 
@@ -1248,6 +1334,12 @@
 <span class="sd">        ``config.similarity_threshold``.  A high value relative to total candidates</span>
 <span class="sd">        signals that the threshold may be too strict for the current retrieval index</span>
 <span class="sd">        and should be reviewed before production deployment.</span>
+
+<span class="sd">        ``compare_failures`` (passed in from _score_and_filter, not read off</span>
+<span class="sd">        self) is the count of SimilarityEngine.compare() calls that raised during</span>
+<span class="sd">        this retrieval — surfaced so a scoring failure is visible rather than</span>
+<span class="sd">        looking like 'no analogs', without leaking across calls on a shared</span>
+<span class="sd">        retriever.</span>
 <span class="sd">        """</span>
         <span class="n">analog_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">analogs</span><span class="p">)</span>
         <span class="n">outage_ids</span> <span class="o">=</span> <span class="p">{</span><span class="n">a</span><span class="p">[</span><span class="s2">"outage_id"</span><span class="p">]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">analogs</span> <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"outage_id"</span><span class="p">)}</span>
@@ -1264,6 +1356,7 @@
             <span class="s2">"best_similarity_score"</span><span class="p">:</span> <span class="n">best_score</span><span class="p">,</span>
             <span class="s2">"fallback_used"</span><span class="p">:</span> <span class="n">fallback_used</span><span class="p">,</span>
             <span class="s2">"candidates_below_threshold"</span><span class="p">:</span> <span class="n">candidates_below_threshold</span><span class="p">,</span>
+            <span class="s2">"compare_failures"</span><span class="p">:</span> <span class="n">compare_failures</span><span class="p">,</span>
         <span class="p">}</span></div>
 
 
@@ -1331,8 +1424,8 @@
             <span class="k">return</span> <span class="p">{</span>
                 <span class="s2">"distribution_type"</span><span class="p">:</span> <span class="s2">"point_prior"</span><span class="p">,</span>
                 <span class="s2">"p50_hours"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">planned</span><span class="p">),</span>
-                <span class="s2">"p80_hours"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">planned</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1.30</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
-                <span class="s2">"p90_hours"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">planned</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1.50</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+                <span class="s2">"p80_hours"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">planned</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">prior_p80_inflation</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+                <span class="s2">"p90_hours"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">planned</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">prior_p90_inflation</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
                 <span class="s2">"mean_hours"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">planned</span><span class="p">),</span>
                 <span class="s2">"std_hours"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
                 <span class="s2">"confidence_tier"</span><span class="p">:</span> <span class="n">_TIER_LOW_CONFIDENCE</span><span class="p">,</span>
@@ -1375,10 +1468,18 @@
 <div class="viewcode-block" id="_get_breakdown">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_d_analogs/index.html#src.dackar.outage.stages.stage_d_analogs._get_breakdown">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">_get_breakdown</span><span class="p">(</span><span class="n">match</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">"""Extract per-dimension scores from a SimilarityMatch."""</span>
+<span class="w">    </span><span class="sd">"""Extract per-dimension scores from a SimilarityMatch.</span>
+
+<span class="sd">    SimilarityMatch stores dimensions as ``lexical_score`` / ``semantic_score``</span>
+<span class="sd">    / ``context_score`` / ``dependency_score``; reading the bare names (as the</span>
+<span class="sd">    previous code did) always returned ``{}``.  The output keeps the short</span>
+<span class="sd">    dimension names used by the historical_analogs similarity_breakdown.</span>
+<span class="sd">    """</span>
     <span class="n">breakdown</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="k">for</span> <span class="n">dim</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"lexical"</span><span class="p">,</span> <span class="s2">"semantic"</span><span class="p">,</span> <span class="s2">"context"</span><span class="p">,</span> <span class="s2">"dependency"</span><span class="p">):</span>
-        <span class="n">val</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">match</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">match</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">dim</span><span class="si">}</span><span class="s2">_score"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">val</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">val</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">match</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>  <span class="c1"># tolerate short-named sources</span>
         <span class="k">if</span> <span class="n">val</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">breakdown</span><span class="p">[</span><span class="n">dim</span><span class="p">]</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">val</span><span class="p">),</span> <span class="mi">4</span><span class="p">)</span>
@@ -1458,8 +1559,13 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_tukey_filter</span><span class="p">(</span>
     <span class="n">indexed</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">JsonDict</span><span class="p">]],</span>
     <span class="n">durations</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="n">iqr_factor</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.5</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">JsonDict</span><span class="p">]],</span> <span class="nb">int</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">"""Fallback Tukey IQR fence when OutlierHandler is not injected.</span>
+
+<span class="sd">    ``iqr_factor`` is the IQR multiplier for the upper fence (default 1.5);</span>
+<span class="sd">    callers pass ``config.outlier_iqr_factor`` so the fallback honours the same</span>
+<span class="sd">    setting as the primary OutlierHandler path.</span>
 
 <span class="sd">    Uses the same linear-interpolation (Type-7) quartile method as</span>
 <span class="sd">    ``OutlierHandler._iqr`` (``np.percentile``) so that the fence value is</span>
@@ -1487,7 +1593,7 @@
     <span class="n">q1</span> <span class="o">=</span> <span class="n">_interp</span><span class="p">(</span><span class="mf">0.25</span><span class="p">)</span>
     <span class="n">q3</span> <span class="o">=</span> <span class="n">_interp</span><span class="p">(</span><span class="mf">0.75</span><span class="p">)</span>
     <span class="n">iqr</span> <span class="o">=</span> <span class="n">q3</span> <span class="o">-</span> <span class="n">q1</span>
-    <span class="n">upper</span> <span class="o">=</span> <span class="n">q3</span> <span class="o">+</span> <span class="mf">1.5</span> <span class="o">*</span> <span class="n">iqr</span>
+    <span class="n">upper</span> <span class="o">=</span> <span class="n">q3</span> <span class="o">+</span> <span class="n">iqr_factor</span> <span class="o">*</span> <span class="n">iqr</span>
     <span class="n">kept</span> <span class="o">=</span> <span class="p">[(</span><span class="n">i</span><span class="p">,</span> <span class="n">a</span><span class="p">)</span> <span class="k">for</span> <span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">a</span><span class="p">),</span> <span class="n">d</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">indexed</span><span class="p">,</span> <span class="n">durations</span><span class="p">)</span> <span class="k">if</span> <span class="n">d</span> <span class="o">&lt;=</span> <span class="n">upper</span><span class="p">]</span>
     <span class="k">return</span> <span class="n">kept</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">indexed</span><span class="p">)</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">kept</span><span class="p">)</span></div>
 
@@ -1540,16 +1646,36 @@
 <div class="viewcode-block" id="_distribution_to_dict">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_d_analogs/index.html#src.dackar.outage.stages.stage_d_analogs._distribution_to_dict">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">_distribution_to_dict</span><span class="p">(</span><span class="n">dist</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">sample_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Convert a DurationDistribution object to a Stage D schema dict."""</span>
+<span class="w">    </span><span class="sd">"""Convert a DurationDistribution object to a Stage D schema dict.</span>
+
+<span class="sd">    When the distribution carries a disruption-driven mixture (extended samples</span>
+<span class="sd">    with mixture_weight &gt; 0), the reported p80/p90 are the MIXTURE percentiles</span>
+<span class="sd">    (``parameters["mixture_p80"]`` / ``mixture_p90``) rather than the routine-only</span>
+<span class="sd">    tail.  Otherwise the artifact would report routine-only p80/p90 while mean/std</span>
+<span class="sd">    (and the Stage E Monte Carlo sampler) are computed from the full mixture — an</span>
+<span class="sd">    internal contradiction (review I5).  The routine-only tail is preserved under</span>
+<span class="sd">    ``parameters`` for reference.</span>
+<span class="sd">    """</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_g</span><span class="p">(</span><span class="n">attr</span><span class="p">):</span>
         <span class="n">v</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">attr</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
         <span class="k">return</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span> <span class="k">if</span> <span class="n">v</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
 
-    <span class="k">return</span> <span class="p">{</span>
+    <span class="n">params</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="s2">"parameters"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">has_mixture</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="nb">bool</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="s2">"extended_samples"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+        <span class="ow">and</span> <span class="nb">float</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="s2">"mixture_weight"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">0.0</span>
+    <span class="p">)</span>
+    <span class="n">mix_p80</span> <span class="o">=</span> <span class="n">params</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mixture_p80"</span><span class="p">)</span>
+    <span class="n">mix_p90</span> <span class="o">=</span> <span class="n">params</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mixture_p90"</span><span class="p">)</span>
+
+    <span class="n">p80</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">mix_p80</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span> <span class="k">if</span> <span class="p">(</span><span class="n">has_mixture</span> <span class="ow">and</span> <span class="n">mix_p80</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span> <span class="k">else</span> <span class="n">_g</span><span class="p">(</span><span class="s2">"p80"</span><span class="p">)</span>
+    <span class="n">p90</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">mix_p90</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span> <span class="k">if</span> <span class="p">(</span><span class="n">has_mixture</span> <span class="ow">and</span> <span class="n">mix_p90</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span> <span class="k">else</span> <span class="n">_g</span><span class="p">(</span><span class="s2">"p90"</span><span class="p">)</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="p">{</span>
         <span class="s2">"distribution_type"</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="s2">"distribution_type"</span><span class="p">,</span> <span class="s2">"empirical"</span><span class="p">),</span>
         <span class="s2">"p50_hours"</span><span class="p">:</span> <span class="n">_g</span><span class="p">(</span><span class="s2">"p50"</span><span class="p">),</span>
-        <span class="s2">"p80_hours"</span><span class="p">:</span> <span class="n">_g</span><span class="p">(</span><span class="s2">"p80"</span><span class="p">),</span>
-        <span class="s2">"p90_hours"</span><span class="p">:</span> <span class="n">_g</span><span class="p">(</span><span class="s2">"p90"</span><span class="p">),</span>
+        <span class="s2">"p80_hours"</span><span class="p">:</span> <span class="n">p80</span><span class="p">,</span>
+        <span class="s2">"p90_hours"</span><span class="p">:</span> <span class="n">p90</span><span class="p">,</span>
         <span class="s2">"mean_hours"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">dist</span><span class="o">.</span><span class="n">mean</span><span class="p">(),</span> <span class="mi">2</span><span class="p">),</span>
         <span class="s2">"std_hours"</span><span class="p">:</span> <span class="p">(</span>
             <span class="nb">round</span><span class="p">(</span><span class="n">dist</span><span class="o">.</span><span class="n">variance</span><span class="p">()</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
@@ -1558,7 +1684,12 @@
         <span class="p">),</span>
         <span class="s2">"confidence_tier"</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="s2">"confidence_tier"</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
         <span class="s2">"sample_size"</span><span class="p">:</span> <span class="n">sample_size</span><span class="p">,</span>
-    <span class="p">}</span></div>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="n">has_mixture</span><span class="p">:</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">"routine_p80_hours"</span><span class="p">]</span> <span class="o">=</span> <span class="n">_g</span><span class="p">(</span><span class="s2">"p80"</span><span class="p">)</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">"routine_p90_hours"</span><span class="p">]</span> <span class="o">=</span> <span class="n">_g</span><span class="p">(</span><span class="s2">"p90"</span><span class="p">)</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">"mixture_weight"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">dist</span><span class="o">.</span><span class="n">mixture_weight</span><span class="p">),</span> <span class="mi">4</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">result</span></div>
 
 
 
