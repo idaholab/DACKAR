@@ -1,0 +1,110 @@
+src.dackar.outage.policy
+========================
+
+.. py:module:: src.dackar.outage.policy
+
+.. autoapi-nested-parse::
+
+   Shared regulatory / LCO decision policy for the outage pipeline.
+
+   Stage F (option feasibility) and Stage G (decision status) both reason about the
+   LCO action-level clock and regulatory constraints.  Previously each stage kept
+   its own copy of the relevant LCO-status sets, and the two drifted — the cause of
+   the ``unknown`` → DEFER gap (an undetermined clock was treated as safe in Stage
+   F but unsafe in Stage G).  This module is the single source of truth for that
+   policy so the two stages cannot disagree.
+
+   LCO clock status vocabulary (produced by Stage A ``lco_clock_status``):
+       not_applicable  no LCO in effect.
+       normal          clock running, deadline beyond the current shift (known).
+       urgent          clock running, action needed this shift.
+       critical        clock running, immediate action required.
+       expired         action-level deadline already passed.
+       unknown         clock running but the deadline was NOT supplied.
+
+   Two distinct policy questions, two distinct sets:
+
+   * LCO_ACTIVE_STATUSES — the clock is actively running, so deferring the work out
+     of this outage is NOT feasible.  Includes ``normal`` (a known future deadline
+     still forbids deferral) and ``unknown`` (running clock, treat as unsafe).
+
+   * LCO_FAIL_CLOSED_STATUSES — the decision must fail closed: no PROCEED or
+     MONITOR, escalate for review instead.  Excludes ``normal`` (a known,
+     non-imminent deadline does not by itself force escalation) but includes
+     ``unknown`` (an undetermined deadline is treated as unsafe).
+
+   ``unknown`` is deliberately in BOTH: a running clock with no supplied deadline
+   is the conservative/unsafe case for either question.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.outage.policy.LCO_ACTIVE_STATUSES
+   src.dackar.outage.policy.LCO_FAIL_CLOSED_STATUSES
+   src.dackar.outage.policy.ESCALATION_REASON_TEXT
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.outage.policy.lco_status
+   src.dackar.outage.policy.is_lco_active
+   src.dackar.outage.policy.is_fail_closed
+   src.dackar.outage.policy.escalation_reason
+   src.dackar.outage.policy.escalation_reason_text
+
+
+Module Contents
+---------------
+
+.. py:data:: LCO_ACTIVE_STATUSES
+
+.. py:data:: LCO_FAIL_CLOSED_STATUSES
+
+.. py:function:: lco_status(intake_result)
+
+   Return the normalised (lower-case) lco_clock_status, or '' when absent.
+
+
+.. py:function:: is_lco_active(intake_result)
+
+   True when the LCO clock is running (deferral not feasible).
+
+
+.. py:function:: is_fail_closed(intake_result, schedule_impact = None)
+
+   True when the decision must fail closed (escalate, never PROCEED/MONITOR).
+
+   Fail-closed conditions:
+     * the LCO action-level clock is in a fail-closed status
+       (expired/critical/urgent/unknown), OR
+     * any regulatory constraint is present, OR
+     * critical-path impact could not be computed (Stage E set
+       ``cp_impact.cp_impact_unavailable`` because the duration was unknown) —
+       "couldn't compute CP impact" must not read as "no CP impact".
+
+
+.. py:function:: escalation_reason(intake_result, schedule_impact = None, *, option_type = None, cp_drag_hours = None, cp_escalate_threshold_hours = None, no_options = False)
+
+   Return a machine code naming WHY a decision escalated.
+
+   Checked in the same priority order the decision uses, so the executive
+   summary can state the actual cause instead of always blaming CP drag:
+       no_options | regulatory_constraint | lco_clock_<status> |
+       cp_impact_unavailable | cp_drag_threshold | escalate_option | unknown
+
+
+.. py:data:: ESCALATION_REASON_TEXT
+   :type:  Mapping[str, str]
+
+.. py:function:: escalation_reason_text(reason, lco_status_value = '')
+
+   Map an escalation_reason code to a human-readable clause.
+
+

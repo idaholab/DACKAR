@@ -124,6 +124,8 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage</span><span class="w"> </span><span class="kn">import</span> <span class="n">policy</span> <span class="k">as</span> <span class="n">_policy</span>
+
 <div class="viewcode-block" id="LOGGER">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.LOGGER">[docs]</a>
 <span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
@@ -162,6 +164,19 @@
 <div class="viewcode-block" id="_ESCALATE">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._ESCALATE">[docs]</a>
 <span class="n">_ESCALATE</span> <span class="o">=</span> <span class="s2">"escalate_to_management"</span></div>
+
+
+<span class="c1"># Option types whose value depends on a computed critical-path impact. When</span>
+<span class="c1"># cp_impact is unavailable (unknown duration) their confidence is capped so a</span>
+<span class="c1"># spurious 0-drag estimate cannot make them rank as a cheap, confident choice</span>
+<span class="c1"># (PR#77 [0]).</span>
+<div class="viewcode-block" id="_CP_DEPENDENT_OPTION_TYPES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._CP_DEPENDENT_OPTION_TYPES">[docs]</a>
+<span class="n">_CP_DEPENDENT_OPTION_TYPES</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="n">_INSERT_NOW</span><span class="p">,</span> <span class="n">_PARALLEL</span><span class="p">,</span> <span class="n">_CONTINGENCY</span><span class="p">})</span></div>
+
+<div class="viewcode-block" id="_CP_UNAVAILABLE_CONFIDENCE_CAP">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options._CP_UNAVAILABLE_CONFIDENCE_CAP">[docs]</a>
+<span class="n">_CP_UNAVAILABLE_CONFIDENCE_CAP</span> <span class="o">=</span> <span class="mf">0.40</span></div>
 
 
 <span class="c1"># Scoring weights</span>
@@ -461,7 +476,13 @@
         <span class="n">cp_drag</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">schedule_impact_assessment</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_drag_hours"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span>
         <span class="p">)</span>
-        <span class="k">if</span> <span class="n">cp_drag</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">escalate_if_cp_drag_exceeds_hours</span><span class="p">:</span>
+        <span class="c1"># PR#78 [7] (option A): under the fail-closed regulatory/LCO/CP policy</span>
+        <span class="c1"># Stage F must own the recommendation, so an escalate option must always</span>
+        <span class="c1"># be available to recommend — not only when CP drag exceeds the</span>
+        <span class="c1"># threshold.  Generate it whenever fail-closed OR the drag threshold is</span>
+        <span class="c1"># crossed.  (Shared policy with Stage G via outage.policy.)</span>
+        <span class="n">fail_closed</span> <span class="o">=</span> <span class="n">_policy</span><span class="o">.</span><span class="n">is_fail_closed</span><span class="p">(</span><span class="n">intake_result</span><span class="p">,</span> <span class="n">schedule_impact_assessment</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">fail_closed</span> <span class="ow">or</span> <span class="n">cp_drag</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">escalate_if_cp_drag_exceeds_hours</span><span class="p">:</span>
             <span class="n">candidates</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_generate_escalate</span><span class="p">(</span>
                 <span class="n">emergent_activity</span><span class="p">,</span> <span class="n">schedule_impact_assessment</span><span class="p">,</span> <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span>
             <span class="p">))</span>
@@ -510,6 +531,25 @@
                 <span class="n">option</span><span class="p">,</span> <span class="n">p50</span><span class="o">=</span><span class="n">p50</span><span class="p">,</span> <span class="n">p80</span><span class="o">=</span><span class="n">p80</span><span class="p">,</span> <span class="n">crew_count</span><span class="o">=</span><span class="n">crew_count</span>
             <span class="p">)</span>
 
+        <span class="c1"># PR#77 [0]: when Stage E could not compute CP impact (unknown duration →</span>
+        <span class="c1"># cp_impact_unavailable), the cp_drag_hours the option builders read as</span>
+        <span class="c1"># `or 0.0` is NOT a real zero.  Lower the confidence of CP-dependent</span>
+        <span class="c1"># options and note it, so a 0-drag/low-cost "insert now" does not rank as</span>
+        <span class="c1"># a confident cheap choice.  Stage G separately blocks PROCEED/MONITOR and</span>
+        <span class="c1"># forces analyst review in this case.</span>
+        <span class="n">cp_unavailable</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">schedule_impact_assessment</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact_unavailable"</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">cp_unavailable</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">option</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">_CP_DEPENDENT_OPTION_TYPES</span><span class="p">:</span>
+                    <span class="n">option</span><span class="p">[</span><span class="s2">"confidence"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span>
+                        <span class="nb">float</span><span class="p">(</span><span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">_CP_UNAVAILABLE_CONFIDENCE_CAP</span>
+                    <span class="p">)</span>
+                    <span class="n">note</span> <span class="o">=</span> <span class="p">(</span><span class="s2">" Critical-path impact could not be computed "</span>
+                            <span class="s2">"(unknown duration); schedule risk is unquantified."</span><span class="p">)</span>
+                    <span class="n">option</span><span class="p">[</span><span class="s2">"rationale"</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rationale"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span> <span class="o">+</span> <span class="n">note</span>
+
         <span class="c1"># Score and rank (cost normalisation uses all candidates)</span>
         <span class="n">max_cost</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
             <span class="p">(</span><span class="n">o</span><span class="p">[</span><span class="s2">"cost_estimate"</span><span class="p">][</span><span class="s2">"total_cost_usd"</span><span class="p">]</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">candidates</span>
@@ -524,8 +564,60 @@
 
         <span class="n">options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rank_options</span><span class="p">(</span><span class="n">candidates</span><span class="p">)</span>
 
-        <span class="c1"># Select recommended option: top feasible + regulatory-cleared</span>
-        <span class="n">recommended_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_select_recommended</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
+        <span class="c1"># I16: the schema requires at least one option (minItems: 1).  If ranking</span>
+        <span class="c1"># filtered everything out (e.g. all options infeasible with</span>
+        <span class="c1"># include_infeasible_options=False), fall back to an escalate option so a</span>
+        <span class="c1"># valid artifact is always produced and Stage G sees an explicit escalation</span>
+        <span class="c1"># rather than an empty list.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">options</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Stage F (run=</span><span class="si">%s</span><span class="s2">): no options survived ranking — emitting escalate fallback."</span><span class="p">,</span>
+                <span class="n">run_id</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="c1"># Run the fallback through the SAME clearance / cost / score steps as</span>
+            <span class="c1"># every other candidate.  _make_option pre-creates</span>
+            <span class="c1"># regulatory_cleared / risk_score / cost_estimate as None, so</span>
+            <span class="c1"># setdefault() would be a no-op and the option would ship with None</span>
+            <span class="c1"># values — failing schema validation and making _select_recommended</span>
+            <span class="c1"># return INCONCLUSIVE instead of the escalation this block promises</span>
+            <span class="c1"># (PR#78 [0]).</span>
+            <span class="n">fallback</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_escalate</span><span class="p">(</span>
+                <span class="n">emergent_activity</span><span class="p">,</span> <span class="n">schedule_impact_assessment</span><span class="p">,</span> <span class="n">intake_result</span><span class="o">=</span><span class="n">intake_result</span>
+            <span class="p">)</span>
+            <span class="n">cleared</span><span class="p">,</span> <span class="n">block_reason</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_regulatory_clearance</span><span class="p">(</span>
+                <span class="n">fallback</span><span class="p">,</span> <span class="n">regulatory_drivers</span>
+            <span class="p">)</span>
+            <span class="n">fallback</span><span class="p">[</span><span class="s2">"regulatory_cleared"</span><span class="p">]</span> <span class="o">=</span> <span class="n">cleared</span>
+            <span class="n">fallback</span><span class="p">[</span><span class="s2">"regulatory_block_reason"</span><span class="p">]</span> <span class="o">=</span> <span class="n">block_reason</span>
+            <span class="n">fallback</span><span class="p">[</span><span class="s2">"cost_estimate"</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_option_cost</span><span class="p">(</span>
+                <span class="n">fallback</span><span class="p">,</span> <span class="n">p50</span><span class="o">=</span><span class="n">p50</span><span class="p">,</span> <span class="n">p80</span><span class="o">=</span><span class="n">p80</span><span class="p">,</span> <span class="n">crew_count</span><span class="o">=</span><span class="n">crew_count</span>
+            <span class="p">)</span>
+            <span class="n">fallback</span><span class="p">[</span><span class="s2">"risk_score"</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_option</span><span class="p">(</span>
+                <span class="n">fallback</span><span class="p">,</span> <span class="n">schedule_impact_assessment</span><span class="p">,</span> <span class="n">historical_analogs</span><span class="p">,</span> <span class="n">causal_posture</span><span class="p">,</span>
+                <span class="n">max_cost</span><span class="o">=</span><span class="n">max_cost</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">options</span> <span class="o">=</span> <span class="p">[</span><span class="n">fallback</span><span class="p">]</span>
+
+        <span class="c1"># PR#78 [7] (Change 2b): under fail-closed the recommendation must be a</span>
+        <span class="c1"># defer/escalate option (Change 2).  _rank_options caps at max_options, so</span>
+        <span class="c1"># if enough feasible+cleared options rank ahead, the escalate option built</span>
+        <span class="c1"># above could be truncated out of `options`, leaving nothing valid to</span>
+        <span class="c1"># recommend.  Guarantee one survives: if no defer/escalate option is left,</span>
+        <span class="c1"># re-append the escalate candidate (already costed/cleared/scored in the</span>
+        <span class="c1"># candidate pass) so `options` and `recommended_option_id` stay consistent.</span>
+        <span class="k">if</span> <span class="n">fail_closed</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span>
+            <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="p">(</span><span class="n">_DEFER</span><span class="p">,</span> <span class="n">_ESCALATE</span><span class="p">)</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">options</span>
+        <span class="p">):</span>
+            <span class="n">escalate</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_type"</span><span class="p">)</span> <span class="o">==</span> <span class="n">_ESCALATE</span><span class="p">),</span> <span class="kc">None</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">escalate</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">escalate</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">options</span><span class="p">:</span>
+                <span class="n">options</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">escalate</span><span class="p">)</span>
+
+        <span class="c1"># Select recommended option: under fail-closed, only defer/escalate are</span>
+        <span class="c1"># recommendable (Change 2), so decision_status in Stage G derives from the</span>
+        <span class="c1"># recommended option type and cannot contradict primary_recommendation.</span>
+        <span class="n">recommended_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_select_recommended</span><span class="p">(</span><span class="n">options</span><span class="p">,</span> <span class="n">fail_closed</span><span class="o">=</span><span class="n">fail_closed</span><span class="p">)</span>
 
         <span class="n">summary</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_ranking_summary</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
 
@@ -538,7 +630,7 @@
             <span class="s2">"recommendation_confidence"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_recommendation_confidence</span><span class="p">(</span>
                 <span class="n">options</span><span class="p">,</span> <span class="n">recommended_id</span><span class="p">,</span> <span class="n">historical_analogs</span>
             <span class="p">),</span>
-            <span class="s2">"min_cost_option_id"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_min_cost_option_id</span><span class="p">(</span><span class="n">options</span><span class="p">),</span>
+            <span class="s2">"min_cost_option_id"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_min_cost_option_id</span><span class="p">(</span><span class="n">options</span><span class="p">,</span> <span class="n">fail_closed</span><span class="o">=</span><span class="n">fail_closed</span><span class="p">),</span>
             <span class="s2">"ranking_summary"</span><span class="p">:</span> <span class="n">summary</span><span class="p">,</span>
             <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
                 <span class="s2">"generated_by"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
@@ -590,7 +682,7 @@
         <span class="n">feasible</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">hard_conflicts</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
         <span class="n">infeasibility_reason</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">feasible</span><span class="p">:</span>
-            <span class="n">skills</span> <span class="o">=</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"skill_required"</span><span class="p">,</span> <span class="s2">"?"</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">hard_conflicts</span><span class="p">)</span>
+            <span class="n">skills</span> <span class="o">=</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"skill_type"</span><span class="p">,</span> <span class="s2">"?"</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">hard_conflicts</span><span class="p">)</span>
             <span class="n">infeasibility_reason</span> <span class="o">=</span> <span class="p">(</span>
                 <span class="sa">f</span><span class="s2">"Crew unavailable for required skill(s): </span><span class="si">{</span><span class="n">skills</span><span class="si">}</span><span class="s2">. "</span>
                 <span class="s2">"Resolve crew conflict before inserting."</span>
@@ -639,27 +731,44 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Generate the defer_to_post_outage option.</span>
 
-<span class="sd">        feasible=True for non-safety-related items; infeasible when the activity</span>
-<span class="sd">        is safety-critical or in an active LCO window (regulatory clearance is</span>
-<span class="sd">        checked separately by _check_regulatory_clearance).</span>
+<span class="sd">        feasible is driven by two gates, both read from intake_result (where</span>
+<span class="sd">        Stage A emits them; emergent_activity.json has additionalProperties:false</span>
+<span class="sd">        and does not define them):</span>
+<span class="sd">          * safety classification — ``intake_result.safety_classification ==</span>
+<span class="sd">            "safety_related"`` blocks deferral (engineering disposition required).</span>
+<span class="sd">          * LCO clock — infeasible when ``intake_result.lco_clock_status`` is</span>
+<span class="sd">            active (outage.policy.is_lco_active: expired/critical/urgent/normal/</span>
+<span class="sd">            unknown), or when ``has_regulatory_constraint`` is set with a running</span>
+<span class="sd">            clock.</span>
+<span class="sd">        Regulatory clearance is checked separately by _check_regulatory_clearance.</span>
 
 <span class="sd">        cp_impact_hours=0.0 — deferral avoids all in-outage schedule impact.</span>
 <span class="sd">        Confidence is inherently high (0.85) because the scheduling outcome is</span>
 <span class="sd">        certain; the residual risk lies in the plant state during the deferral</span>
 <span class="sd">        period, which is captured in causal_urgency during scoring.</span>
 <span class="sd">        """</span>
-        <span class="n">is_safety_related</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span>
-            <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"safety_related"</span><span class="p">)</span>
-            <span class="ow">or</span> <span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"safety_classification"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"safety_related"</span>
+        <span class="c1"># PR#78 [4]: safety classification is now produced by Stage A on</span>
+        <span class="c1"># intake_result (carried through from the source record; defaults to</span>
+        <span class="c1"># "unknown").  safety_related work cannot be deferred out of the outage</span>
+        <span class="c1"># without engineering disposition.</span>
+        <span class="n">is_safety_related</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"safety_classification"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"safety_related"</span>
         <span class="p">)</span>
-        <span class="n">active_lco</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">emergent_activity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"active_lco"</span><span class="p">))</span>
+        <span class="c1"># I13: LCO state is produced by Stage A on intake_result.  Deferral is not</span>
+        <span class="c1"># feasible while the LCO clock is running — shared policy (outage.policy)</span>
+        <span class="c1"># so Stage F and Stage G agree, including on "unknown" (running clock, no</span>
+        <span class="c1"># deadline supplied → unsafe).</span>
+        <span class="n">active_lco</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">_policy</span><span class="o">.</span><span class="n">is_lco_active</span><span class="p">(</span><span class="n">intake_result</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">bool</span><span class="p">(</span>
+            <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_regulatory_constraint"</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">_policy</span><span class="o">.</span><span class="n">lco_status</span><span class="p">(</span><span class="n">intake_result</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">""</span><span class="p">,</span> <span class="s2">"not_applicable"</span><span class="p">}</span>
+        <span class="p">)</span>
 
         <span class="n">feasible</span> <span class="o">=</span> <span class="ow">not</span> <span class="p">(</span><span class="n">is_safety_related</span> <span class="ow">or</span> <span class="n">active_lco</span><span class="p">)</span>
         <span class="n">infeasibility_reason</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="n">is_safety_related</span><span class="p">:</span>
             <span class="n">infeasibility_reason</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="s2">"Activity is safety-related — deferral to post-outage is not permitted "</span>
-                <span class="s2">"without engineering disposition."</span>
+                <span class="s2">"Activity is safety-related — deferral to post-outage is not "</span>
+                <span class="s2">"permitted without engineering disposition."</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="n">active_lco</span><span class="p">:</span>
             <span class="n">infeasibility_reason</span> <span class="o">=</span> <span class="p">(</span>
@@ -839,7 +948,7 @@
         <span class="n">feasible</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">hard_crew_conflicts</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
         <span class="n">infeasibility_reason</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">feasible</span><span class="p">:</span>
-            <span class="n">skills</span> <span class="o">=</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"skill_required"</span><span class="p">,</span> <span class="s2">"?"</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">hard_crew_conflicts</span><span class="p">)</span>
+            <span class="n">skills</span> <span class="o">=</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"skill_type"</span><span class="p">,</span> <span class="s2">"?"</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">hard_crew_conflicts</span><span class="p">)</span>
             <span class="n">infeasibility_reason</span> <span class="o">=</span> <span class="p">(</span>
                 <span class="sa">f</span><span class="s2">"Crew conflict on required skill(s): </span><span class="si">{</span><span class="n">skills</span><span class="si">}</span><span class="s2"> prevents parallel execution."</span>
             <span class="p">)</span>
@@ -1046,9 +1155,14 @@
                 <span class="p">)</span>
 
         <span class="k">elif</span> <span class="n">option_type</span> <span class="o">==</span> <span class="n">_SCOPE_REDUCTION</span><span class="p">:</span>
+            <span class="c1"># Block scope reduction for an explicit prohibited type OR for any</span>
+            <span class="c1"># driver that prohibits deferral (B5): a defer_prohibited NRC/CAP/</span>
+            <span class="c1"># hold-point commitment requires the full committed scope, so reducing</span>
+            <span class="c1"># it is as non-compliant as deferring it.</span>
             <span class="n">blocking</span> <span class="o">=</span> <span class="p">[</span>
                 <span class="n">d</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">regulatory_drivers</span>
                 <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"driver_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">_SCOPE_REDUCTION_PROHIBITED_TYPES</span>
+                <span class="ow">or</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"defer_prohibited"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
             <span class="p">]</span>
             <span class="k">if</span> <span class="n">blocking</span><span class="p">:</span>
                 <span class="n">driver_types</span> <span class="o">=</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
@@ -1141,16 +1255,27 @@
 
 <div class="viewcode-block" id="InsertionOptionGenerator._min_cost_option_id">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._min_cost_option_id">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_min_cost_option_id</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_min_cost_option_id</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="n">fail_closed</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">"""Return the option_id of the feasible + cleared option with lowest total_cost_usd.</span>
 
 <span class="sd">        Returns None when no feasible options carry a cost_estimate.</span>
+
+<span class="sd">        Under ``fail_closed`` (PR#78 [7], edge C) the eligible set is restricted</span>
+<span class="sd">        to defer/escalate, matching the recommendation — the cheapest *compliant*</span>
+<span class="sd">        option, not a cheap insert_now that could never be recommended.</span>
 <span class="sd">        """</span>
+        <span class="n">allowed</span> <span class="o">=</span> <span class="p">{</span><span class="n">_DEFER</span><span class="p">,</span> <span class="n">_ESCALATE</span><span class="p">}</span> <span class="k">if</span> <span class="n">fail_closed</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="c1"># Fail-closed defaults (False), consistent with _select_recommended and</span>
+        <span class="c1"># Stage G's _select_primary_option; option_id check folded in.</span>
         <span class="n">eligible</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">o</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">options</span>
-            <span class="k">if</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
-            <span class="ow">and</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
             <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cost_estimate"</span><span class="p">),</span> <span class="nb">dict</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_id"</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="p">(</span><span class="n">allowed</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">allowed</span><span class="p">)</span>
         <span class="p">]</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">eligible</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
@@ -1265,14 +1390,30 @@
 
 <div class="viewcode-block" id="InsertionOptionGenerator._select_recommended">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_f_options/index.html#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._select_recommended">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_select_recommended</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_select_recommended</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="n">fail_closed</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">"""Return the option_id of the top-ranked feasible + regulatory-cleared option.</span>
 
 <span class="sd">        Returns None if no such option exists (maps to INCONCLUSIVE in Stage G).</span>
+<span class="sd">        Missing feasible/regulatory_cleared default to False (fail closed),</span>
+<span class="sd">        consistent with Stage G's _select_primary_option (PR#78 [9]).</span>
+
+<span class="sd">        When ``fail_closed`` (PR#78 [7], option A), only ``defer_to_post_outage``</span>
+<span class="sd">        and ``escalate_to_management`` are recommendable — never an action option</span>
+<span class="sd">        such as insert_now/parallel.  This makes Stage G's decision_status (which</span>
+<span class="sd">        derives from the recommended option type) consistent with</span>
+<span class="sd">        primary_recommendation: a fail-closed run can only yield DEFER or ESCALATE.</span>
 <span class="sd">        """</span>
+        <span class="n">allowed</span> <span class="o">=</span> <span class="p">{</span><span class="n">_DEFER</span><span class="p">,</span> <span class="n">_ESCALATE</span><span class="p">}</span> <span class="k">if</span> <span class="n">fail_closed</span> <span class="k">else</span> <span class="kc">None</span>
         <span class="k">for</span> <span class="n">option</span> <span class="ow">in</span> <span class="n">options</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span> <span class="ow">and</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
-                <span class="k">return</span> <span class="n">option</span><span class="p">[</span><span class="s2">"option_id"</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span> <span class="ow">and</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">allowed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_type"</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">allowed</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="c1"># Skip malformed options with no option_id rather than KeyError.</span>
+                <span class="n">oid</span> <span class="o">=</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_id"</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">oid</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">oid</span>
         <span class="k">return</span> <span class="kc">None</span></div>
 
 

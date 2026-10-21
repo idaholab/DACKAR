@@ -55,12 +55,14 @@ Attributes
    src.dackar.outage.stages.stage_g_recommendation._FLAG_LOW_ANALOGS
    src.dackar.outage.stages.stage_g_recommendation._FLAG_TEMPORAL_CONTRADICTION
    src.dackar.outage.stages.stage_g_recommendation._FLAG_CP_IMPACT
+   src.dackar.outage.stages.stage_g_recommendation._FLAG_CP_UNAVAILABLE
    src.dackar.outage.stages.stage_g_recommendation._FLAG_HIGH_ABBR_RATE
    src.dackar.outage.stages.stage_g_recommendation._FLAG_FALLBACK
    src.dackar.outage.stages.stage_g_recommendation._FLAG_DISPLACED_REGULATORY
    src.dackar.outage.stages.stage_g_recommendation._FLAG_LCO_EXPIRED
    src.dackar.outage.stages.stage_g_recommendation._FLAG_LCO_CLOCK_CRITICAL
    src.dackar.outage.stages.stage_g_recommendation._LCO_URGENT_STATUSES
+   src.dackar.outage.stages.stage_g_recommendation._LCO_FAIL_CLOSED_STATUSES
    src.dackar.outage.stages.stage_g_recommendation._PROCEED_OPTION_TYPES
 
 
@@ -128,6 +130,10 @@ Module Contents
    :value: 'critical_path_impact'
 
 
+.. py:data:: _FLAG_CP_UNAVAILABLE
+   :value: 'cp_impact_unavailable'
+
+
 .. py:data:: _FLAG_HIGH_ABBR_RATE
    :value: 'high_unknown_abbreviation_rate'
 
@@ -149,6 +155,8 @@ Module Contents
 
 
 .. py:data:: _LCO_URGENT_STATUSES
+
+.. py:data:: _LCO_FAIL_CLOSED_STATUSES
 
 .. py:data:: _PROCEED_OPTION_TYPES
 
@@ -216,8 +224,13 @@ Module Contents
 
       Retrieve the recommended option object from InsertionOptions.
 
-      Looks up insertion_options['recommended_option_id'] in the options list.
-      Returns None if recommended_option_id is None or not found.
+      Looks up insertion_options['recommended_option_id'] in the options list
+      and RE-VERIFIES it is both feasible and regulatory-cleared before
+      returning it (B5).  A pre-computed insertion_options bundle could point
+      recommended_option_id at a regulatory-blocked or infeasible option;
+      trusting it blindly produced e.g. a DEFER on a regulatory-blocked defer.
+      Missing feasible/regulatory_cleared default to False (fail closed), not
+      True.  Returns None (→ INCONCLUSIVE) when no valid option is found.
 
 
 
@@ -226,20 +239,26 @@ Module Contents
       Map the primary option and context to a decision_status enum value.
 
       Logic (evaluated in priority order):
-          INCONCLUSIVE — no feasible, regulatory-cleared option exists
+          INCONCLUSIVE — primary_option is None (no feasible, regulatory-cleared
+                         option exists)
           ESCALATE     — primary option type is escalate_to_management
           DEFER        — primary option type is defer_to_post_outage
+          ESCALATE     — FAIL-CLOSED GATE (outage.policy.is_fail_closed): any
+                         non-defer/non-escalate option escalates when an LCO
+                         clock is expired/critical/urgent/unknown, a regulatory
+                         constraint is present, or CP impact could not be
+                         computed (cp_impact_unavailable).  PROCEED/MONITOR are
+                         not permitted in those cases.
           MONITOR      — low confidence + no historical analogues + activity
                          is non-critical path (watch, but no action yet warranted)
           PROCEED      — primary option type is insert_now / contingency /
                          parallel / scope_reduction / pre_outage_staging
 
-      ``schedule_impact_assessment`` (N5 fix): criticality_label is now read
-      from ``schedule_impact_assessment["float_analysis"]["criticality_label"]``
-      rather than the non-existent ``insertion_options["schedule_summary"]``
-      field that Stage F never produces.  The parameter is optional and defaults
-      to None so existing call sites that have not yet been updated continue to
-      work; absence is treated as non_critical (permissive MONITOR condition).
+      ``schedule_impact_assessment`` (N5 fix): criticality_label is read from
+      ``schedule_impact_assessment["float_analysis"]["criticality_label"]``
+      (not the non-existent ``insertion_options["schedule_summary"]``).  It is
+      optional; when absent, criticality falls back to ``non_critical`` for the
+      MONITOR check and cp_impact_unavailable reads as False.
 
 
 
@@ -353,13 +372,18 @@ Module Contents
 
       required=True when any of:
           - has_regulatory_constraint is True
+          - lco_clock_status is fail-closed (expired/critical/urgent/unknown)
+          - _FLAG_CP_IMPACT in attention_flags (critical-path impact)
+          - _FLAG_CP_UNAVAILABLE in attention_flags (CP impact not computable)
+          - _FLAG_DISPLACED_REGULATORY in attention_flags
+          - _FLAG_TEMPORAL_CONTRADICTION in attention_flags
           - decision_status is INCONCLUSIVE
           - duration distribution confidence_tier is low_confidence
           - _FLAG_FALLBACK is in attention_flags
           - _FLAG_HIGH_ABBR_RATE is in attention_flags (§6 exit criterion:
             NER entity extraction unreliable when unknown_abbreviation_rate
             exceeds RecommendationConfig.unknown_abbreviation_rate_warning)
-          - no feasible + regulatory-cleared option exists
+          - no feasible + regulatory-cleared option exists (fail-closed defaults)
 
       reason: brief string summarising why review is required.
       reviewer_decision initialised to None (populated by the analyst UI).
@@ -372,9 +396,14 @@ Module Contents
 
       schema_valid:                  always True here (schema validation runs
                                      in the orchestrator's _validate_and_persist).
-      all_regulatory_flags_resolved: True if every regulatory_flag entry has
-                                     a corresponding evidence_chain item that
-                                     supports=True, or if there are no flags.
+      all_regulatory_flags_resolved: fail-closed. When any regulatory flag is
+                                     present this is False at generation time —
+                                     a regulatory constraint is resolved only
+                                     by a human acknowledgement, which does not
+                                     exist yet in Stage G output
+                                     (analyst_review.reviewer_decision is still
+                                     None; it is populated later by the analyst
+                                     UI). True only when there are no flags.
       minimum_evidence_met:          True if len(evidence_chain) >= 1 with at
                                      least one supports=True entry.
       fallback_used:                 from historical_analogs.retrieval_summary.

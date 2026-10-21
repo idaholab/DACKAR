@@ -189,6 +189,12 @@ causal_urgency  (0.20) — action options: 1 − urgency (urgency to act lowers<
 <tr class="row-odd"><td><p><a class="reference internal" href="#src.dackar.outage.stages.stage_f_options._ESCALATE" title="src.dackar.outage.stages.stage_f_options._ESCALATE"><code class="xref py py-obj docutils literal notranslate"><span class="pre">_ESCALATE</span></code></a></p></td>
 <td><p></p></td>
 </tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#src.dackar.outage.stages.stage_f_options._CP_DEPENDENT_OPTION_TYPES" title="src.dackar.outage.stages.stage_f_options._CP_DEPENDENT_OPTION_TYPES"><code class="xref py py-obj docutils literal notranslate"><span class="pre">_CP_DEPENDENT_OPTION_TYPES</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#src.dackar.outage.stages.stage_f_options._CP_UNAVAILABLE_CONFIDENCE_CAP" title="src.dackar.outage.stages.stage_f_options._CP_UNAVAILABLE_CONFIDENCE_CAP"><code class="xref py py-obj docutils literal notranslate"><span class="pre">_CP_UNAVAILABLE_CONFIDENCE_CAP</span></code></a></p></td>
+<td><p></p></td>
+</tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#src.dackar.outage.stages.stage_f_options._W_CP_IMPACT" title="src.dackar.outage.stages.stage_f_options._W_CP_IMPACT"><code class="xref py py-obj docutils literal notranslate"><span class="pre">_W_CP_IMPACT</span></code></a></p></td>
 <td><p></p></td>
 </tr>
@@ -299,6 +305,16 @@ causal_urgency  (0.20) — action options: 1 − urgency (urgency to act lowers<
 <dl class="py data">
 <dt class="sig sig-object py" id="src.dackar.outage.stages.stage_f_options._ESCALATE">
 <span class="sig-prename descclassname"><span class="pre">src.dackar.outage.stages.stage_f_options.</span></span><span class="sig-name descname"><span class="pre">_ESCALATE</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'escalate_to_management'</span></span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_f_options.html#_ESCALATE"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_f_options._ESCALATE" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="src.dackar.outage.stages.stage_f_options._CP_DEPENDENT_OPTION_TYPES">
+<span class="sig-prename descclassname"><span class="pre">src.dackar.outage.stages.stage_f_options.</span></span><span class="sig-name descname"><span class="pre">_CP_DEPENDENT_OPTION_TYPES</span></span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_f_options.html#_CP_DEPENDENT_OPTION_TYPES"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_f_options._CP_DEPENDENT_OPTION_TYPES" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="src.dackar.outage.stages.stage_f_options._CP_UNAVAILABLE_CONFIDENCE_CAP">
+<span class="sig-prename descclassname"><span class="pre">src.dackar.outage.stages.stage_f_options.</span></span><span class="sig-name descname"><span class="pre">_CP_UNAVAILABLE_CONFIDENCE_CAP</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.4</span></span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_f_options.html#_CP_UNAVAILABLE_CONFIDENCE_CAP"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_f_options._CP_UNAVAILABLE_CONFIDENCE_CAP" title="Link to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py data">
@@ -559,9 +575,20 @@ within the window and are noted in the rationale rather than blocking.</p>
 <dt class="sig sig-object py" id="src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._generate_defer">
 <span class="sig-name descname"><span class="pre">_generate_defer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">emergent_activity</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">intake_result</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">schedule_impact</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_f_options.html#InsertionOptionGenerator._generate_defer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._generate_defer" title="Link to this definition">¶</a></dt>
 <dd><p>Generate the defer_to_post_outage option.</p>
-<p>feasible=True for non-safety-related items; infeasible when the activity
-is safety-critical or in an active LCO window (regulatory clearance is
-checked separately by _check_regulatory_clearance).</p>
+<p>feasible is driven by two gates, both read from intake_result (where
+Stage A emits them; emergent_activity.json has additionalProperties:false
+and does not define them):</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>safety classification — <code class="docutils literal notranslate"><span class="pre">intake_result.safety_classification</span> <span class="pre">==</span>
+<span class="pre">&quot;safety_related&quot;</span></code> blocks deferral (engineering disposition required).</p></li>
+<li><p>LCO clock — infeasible when <code class="docutils literal notranslate"><span class="pre">intake_result.lco_clock_status</span></code> is
+active (outage.policy.is_lco_active: expired/critical/urgent/normal/
+unknown), or when <code class="docutils literal notranslate"><span class="pre">has_regulatory_constraint</span></code> is set with a running
+clock.</p></li>
+</ul>
+</div></blockquote>
+<p>Regulatory clearance is checked separately by _check_regulatory_clearance.</p>
 <p>cp_impact_hours=0.0 — deferral avoids all in-outage schedule impact.
 Confidence is inherently high (0.85) because the scheduling outcome is
 certain; the residual risk lies in the plant state during the deferral
@@ -775,12 +802,18 @@ parallel_execution                    → p50  (crash premium applied separately
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._min_cost_option_id">
-<span class="sig-name descname"><span class="pre">_min_cost_option_id</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">options</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_f_options.html#InsertionOptionGenerator._min_cost_option_id"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._min_cost_option_id" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">_min_cost_option_id</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">options</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fail_closed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_f_options.html#InsertionOptionGenerator._min_cost_option_id"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._min_cost_option_id" title="Link to this definition">¶</a></dt>
 <dd><p>Return the option_id of the feasible + cleared option with lowest total_cost_usd.</p>
 <p>Returns None when no feasible options carry a cost_estimate.</p>
+<p>Under <code class="docutils literal notranslate"><span class="pre">fail_closed</span></code> (PR#78 [7], edge C) the eligible set is restricted
+to defer/escalate, matching the recommendation — the cheapest <em>compliant</em>
+option, not a cheap insert_now that could never be recommended.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>options</strong> (<em>List</em><em>[</em><a class="reference internal" href="#src.dackar.outage.stages.stage_f_options.JsonDict" title="src.dackar.outage.stages.stage_f_options.JsonDict"><em>JsonDict</em></a><em>]</em>)</p>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>options</strong> (<em>List</em><em>[</em><a class="reference internal" href="#src.dackar.outage.stages.stage_f_options.JsonDict" title="src.dackar.outage.stages.stage_f_options.JsonDict"><em>JsonDict</em></a><em>]</em>)</p></li>
+<li><p><strong>fail_closed</strong> (<em>bool</em>)</p></li>
+</ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
 <dd class="field-even"><p>Optional[str]</p>
@@ -852,12 +885,22 @@ Infeasible options are pushed after regulatory-blocked ones.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._select_recommended">
-<span class="sig-name descname"><span class="pre">_select_recommended</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">options</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_f_options.html#InsertionOptionGenerator._select_recommended"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._select_recommended" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">_select_recommended</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">options</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fail_closed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/stage_f_options.html#InsertionOptionGenerator._select_recommended"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.stage_f_options.InsertionOptionGenerator._select_recommended" title="Link to this definition">¶</a></dt>
 <dd><p>Return the option_id of the top-ranked feasible + regulatory-cleared option.</p>
-<p>Returns None if no such option exists (maps to INCONCLUSIVE in Stage G).</p>
+<p>Returns None if no such option exists (maps to INCONCLUSIVE in Stage G).
+Missing feasible/regulatory_cleared default to False (fail closed),
+consistent with Stage G’s _select_primary_option (PR#78 [9]).</p>
+<p>When <code class="docutils literal notranslate"><span class="pre">fail_closed</span></code> (PR#78 [7], option A), only <code class="docutils literal notranslate"><span class="pre">defer_to_post_outage</span></code>
+and <code class="docutils literal notranslate"><span class="pre">escalate_to_management</span></code> are recommendable — never an action option
+such as insert_now/parallel.  This makes Stage G’s decision_status (which
+derives from the recommended option type) consistent with
+primary_recommendation: a fail-closed run can only yield DEFER or ESCALATE.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>options</strong> (<em>List</em><em>[</em><a class="reference internal" href="#src.dackar.outage.stages.stage_f_options.JsonDict" title="src.dackar.outage.stages.stage_f_options.JsonDict"><em>JsonDict</em></a><em>]</em>)</p>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>options</strong> (<em>List</em><em>[</em><a class="reference internal" href="#src.dackar.outage.stages.stage_f_options.JsonDict" title="src.dackar.outage.stages.stage_f_options.JsonDict"><em>JsonDict</em></a><em>]</em>)</p></li>
+<li><p><strong>fail_closed</strong> (<em>bool</em>)</p></li>
+</ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
 <dd class="field-even"><p>Optional[str]</p>

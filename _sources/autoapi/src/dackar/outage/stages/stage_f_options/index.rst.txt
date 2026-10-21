@@ -55,6 +55,8 @@ Attributes
    src.dackar.outage.stages.stage_f_options._PARALLEL
    src.dackar.outage.stages.stage_f_options._SCOPE_REDUCTION
    src.dackar.outage.stages.stage_f_options._ESCALATE
+   src.dackar.outage.stages.stage_f_options._CP_DEPENDENT_OPTION_TYPES
+   src.dackar.outage.stages.stage_f_options._CP_UNAVAILABLE_CONFIDENCE_CAP
    src.dackar.outage.stages.stage_f_options._W_CP_IMPACT
    src.dackar.outage.stages.stage_f_options._W_CONFIDENCE
    src.dackar.outage.stages.stage_f_options._W_RESOURCE
@@ -120,6 +122,12 @@ Module Contents
 
 .. py:data:: _ESCALATE
    :value: 'escalate_to_management'
+
+
+.. py:data:: _CP_DEPENDENT_OPTION_TYPES
+
+.. py:data:: _CP_UNAVAILABLE_CONFIDENCE_CAP
+   :value: 0.4
 
 
 .. py:data:: _W_CP_IMPACT
@@ -344,9 +352,16 @@ Module Contents
 
       Generate the defer_to_post_outage option.
 
-      feasible=True for non-safety-related items; infeasible when the activity
-      is safety-critical or in an active LCO window (regulatory clearance is
-      checked separately by _check_regulatory_clearance).
+      feasible is driven by two gates, both read from intake_result (where
+      Stage A emits them; emergent_activity.json has additionalProperties:false
+      and does not define them):
+        * safety classification — ``intake_result.safety_classification ==
+          "safety_related"`` blocks deferral (engineering disposition required).
+        * LCO clock — infeasible when ``intake_result.lco_clock_status`` is
+          active (outage.policy.is_lco_active: expired/critical/urgent/normal/
+          unknown), or when ``has_regulatory_constraint`` is set with a running
+          clock.
+      Regulatory clearance is checked separately by _check_regulatory_clearance.
 
       cp_impact_hours=0.0 — deferral avoids all in-outage schedule impact.
       Confidence is inherently high (0.85) because the scheduling outcome is
@@ -468,11 +483,15 @@ Module Contents
 
 
 
-   .. py:method:: _min_cost_option_id(options)
+   .. py:method:: _min_cost_option_id(options, fail_closed = False)
 
       Return the option_id of the feasible + cleared option with lowest total_cost_usd.
 
       Returns None when no feasible options carry a cost_estimate.
+
+      Under ``fail_closed`` (PR#78 [7], edge C) the eligible set is restricted
+      to defer/escalate, matching the recommendation — the cheapest *compliant*
+      option, not a cheap insert_now that could never be recommended.
 
 
 
@@ -517,11 +536,19 @@ Module Contents
 
 
 
-   .. py:method:: _select_recommended(options)
+   .. py:method:: _select_recommended(options, fail_closed = False)
 
       Return the option_id of the top-ranked feasible + regulatory-cleared option.
 
       Returns None if no such option exists (maps to INCONCLUSIVE in Stage G).
+      Missing feasible/regulatory_cleared default to False (fail closed),
+      consistent with Stage G's _select_primary_option (PR#78 [9]).
+
+      When ``fail_closed`` (PR#78 [7], option A), only ``defer_to_post_outage``
+      and ``escalate_to_management`` are recommendable — never an action option
+      such as insert_now/parallel.  This makes Stage G's decision_status (which
+      derives from the recommended option type) consistent with
+      primary_recommendation: a fail-closed run can only yield DEFER or ESCALATE.
 
 
 

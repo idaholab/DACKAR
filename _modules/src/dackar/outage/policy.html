@@ -1,0 +1,275 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.outage.policy &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../rca.html">Root Cause Analysis (RCA)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.outage.policy</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.outage.policy</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Shared regulatory / LCO decision policy for the outage pipeline.</span>
+
+<span class="sd">Stage F (option feasibility) and Stage G (decision status) both reason about the</span>
+<span class="sd">LCO action-level clock and regulatory constraints.  Previously each stage kept</span>
+<span class="sd">its own copy of the relevant LCO-status sets, and the two drifted — the cause of</span>
+<span class="sd">the ``unknown`` → DEFER gap (an undetermined clock was treated as safe in Stage</span>
+<span class="sd">F but unsafe in Stage G).  This module is the single source of truth for that</span>
+<span class="sd">policy so the two stages cannot disagree.</span>
+
+<span class="sd">LCO clock status vocabulary (produced by Stage A ``lco_clock_status``):</span>
+<span class="sd">    not_applicable  no LCO in effect.</span>
+<span class="sd">    normal          clock running, deadline beyond the current shift (known).</span>
+<span class="sd">    urgent          clock running, action needed this shift.</span>
+<span class="sd">    critical        clock running, immediate action required.</span>
+<span class="sd">    expired         action-level deadline already passed.</span>
+<span class="sd">    unknown         clock running but the deadline was NOT supplied.</span>
+
+<span class="sd">Two distinct policy questions, two distinct sets:</span>
+
+<span class="sd">* LCO_ACTIVE_STATUSES — the clock is actively running, so deferring the work out</span>
+<span class="sd">  of this outage is NOT feasible.  Includes ``normal`` (a known future deadline</span>
+<span class="sd">  still forbids deferral) and ``unknown`` (running clock, treat as unsafe).</span>
+
+<span class="sd">* LCO_FAIL_CLOSED_STATUSES — the decision must fail closed: no PROCEED or</span>
+<span class="sd">  MONITOR, escalate for review instead.  Excludes ``normal`` (a known,</span>
+<span class="sd">  non-imminent deadline does not by itself force escalation) but includes</span>
+<span class="sd">  ``unknown`` (an undetermined deadline is treated as unsafe).</span>
+
+<span class="sd">``unknown`` is deliberately in BOTH: a running clock with no supplied deadline</span>
+<span class="sd">is the conservative/unsafe case for either question.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="c1"># Clock is running → deferral out of the outage is not feasible.</span>
+<div class="viewcode-block" id="LCO_ACTIVE_STATUSES">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/outage/policy/index.html#src.dackar.outage.policy.LCO_ACTIVE_STATUSES">[docs]</a>
+<span class="n">LCO_ACTIVE_STATUSES</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">"expired"</span><span class="p">,</span> <span class="s2">"critical"</span><span class="p">,</span> <span class="s2">"urgent"</span><span class="p">,</span> <span class="s2">"normal"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">})</span></div>
+
+
+<span class="c1"># Decision must fail closed (no PROCEED/MONITOR; escalate) — excludes "normal".</span>
+<div class="viewcode-block" id="LCO_FAIL_CLOSED_STATUSES">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/outage/policy/index.html#src.dackar.outage.policy.LCO_FAIL_CLOSED_STATUSES">[docs]</a>
+<span class="n">LCO_FAIL_CLOSED_STATUSES</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">"expired"</span><span class="p">,</span> <span class="s2">"critical"</span><span class="p">,</span> <span class="s2">"urgent"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">})</span></div>
+
+
+
+<div class="viewcode-block" id="lco_status">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/outage/policy/index.html#src.dackar.outage.policy.lco_status">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lco_status</span><span class="p">(</span><span class="n">intake_result</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return the normalised (lower-case) lco_clock_status, or '' when absent."""</span>
+    <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"lco_clock_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="is_lco_active">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/outage/policy/index.html#src.dackar.outage.policy.is_lco_active">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">is_lco_active</span><span class="p">(</span><span class="n">intake_result</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""True when the LCO clock is running (deferral not feasible)."""</span>
+    <span class="k">return</span> <span class="n">lco_status</span><span class="p">(</span><span class="n">intake_result</span><span class="p">)</span> <span class="ow">in</span> <span class="n">LCO_ACTIVE_STATUSES</span></div>
+
+
+
+<div class="viewcode-block" id="is_fail_closed">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/outage/policy/index.html#src.dackar.outage.policy.is_fail_closed">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">is_fail_closed</span><span class="p">(</span>
+    <span class="n">intake_result</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="n">schedule_impact</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""True when the decision must fail closed (escalate, never PROCEED/MONITOR).</span>
+
+<span class="sd">    Fail-closed conditions:</span>
+<span class="sd">      * the LCO action-level clock is in a fail-closed status</span>
+<span class="sd">        (expired/critical/urgent/unknown), OR</span>
+<span class="sd">      * any regulatory constraint is present, OR</span>
+<span class="sd">      * critical-path impact could not be computed (Stage E set</span>
+<span class="sd">        ``cp_impact.cp_impact_unavailable`` because the duration was unknown) —</span>
+<span class="sd">        "couldn't compute CP impact" must not read as "no CP impact".</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">lco_status</span><span class="p">(</span><span class="n">intake_result</span><span class="p">)</span> <span class="ow">in</span> <span class="n">LCO_FAIL_CLOSED_STATUSES</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">if</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_regulatory_constraint"</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="n">cp</span> <span class="o">=</span> <span class="p">(</span><span class="n">schedule_impact</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="n">cp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact_unavailable"</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="kc">False</span></div>
+
+
+
+<div class="viewcode-block" id="escalation_reason">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/outage/policy/index.html#src.dackar.outage.policy.escalation_reason">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">escalation_reason</span><span class="p">(</span>
+    <span class="n">intake_result</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="n">schedule_impact</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">option_type</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">cp_drag_hours</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">cp_escalate_threshold_hours</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">no_options</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return a machine code naming WHY a decision escalated.</span>
+
+<span class="sd">    Checked in the same priority order the decision uses, so the executive</span>
+<span class="sd">    summary can state the actual cause instead of always blaming CP drag:</span>
+<span class="sd">        no_options | regulatory_constraint | lco_clock_&lt;status&gt; |</span>
+<span class="sd">        cp_impact_unavailable | cp_drag_threshold | escalate_option | unknown</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">no_options</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"no_options"</span>
+    <span class="k">if</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_regulatory_constraint"</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">"regulatory_constraint"</span>
+    <span class="n">status</span> <span class="o">=</span> <span class="n">lco_status</span><span class="p">(</span><span class="n">intake_result</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">status</span> <span class="ow">in</span> <span class="n">LCO_FAIL_CLOSED_STATUSES</span><span class="p">:</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">"lco_clock_</span><span class="si">{</span><span class="n">status</span><span class="si">}</span><span class="s2">"</span>
+    <span class="n">cp</span> <span class="o">=</span> <span class="p">(</span><span class="n">schedule_impact</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="n">cp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact_unavailable"</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">"cp_impact_unavailable"</span>
+    <span class="k">if</span> <span class="n">option_type</span> <span class="o">==</span> <span class="s2">"escalate_to_management"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"escalate_option"</span>
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="n">cp_drag_hours</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="ow">and</span> <span class="n">cp_escalate_threshold_hours</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="ow">and</span> <span class="n">cp_drag_hours</span> <span class="o">&gt;</span> <span class="n">cp_escalate_threshold_hours</span>
+    <span class="p">):</span>
+        <span class="k">return</span> <span class="s2">"cp_drag_threshold"</span>
+    <span class="k">return</span> <span class="s2">"unknown"</span></div>
+
+
+
+<span class="c1"># Human-readable escalation-reason sentences for the executive summary.</span>
+<div class="viewcode-block" id="ESCALATION_REASON_TEXT">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/outage/policy/index.html#src.dackar.outage.policy.ESCALATION_REASON_TEXT">[docs]</a>
+<span class="n">ESCALATION_REASON_TEXT</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"no_options"</span><span class="p">:</span> <span class="p">(</span>
+        <span class="s2">"no feasible, regulatory-cleared insertion option could be identified"</span>
+    <span class="p">),</span>
+    <span class="s2">"regulatory_constraint"</span><span class="p">:</span> <span class="p">(</span>
+        <span class="s2">"an active regulatory constraint requires licensing review before action"</span>
+    <span class="p">),</span>
+    <span class="s2">"cp_impact_unavailable"</span><span class="p">:</span> <span class="p">(</span>
+        <span class="s2">"critical-path impact could not be computed (unknown duration); schedule "</span>
+        <span class="s2">"risk is unquantified"</span>
+    <span class="p">),</span>
+    <span class="s2">"cp_drag_threshold"</span><span class="p">:</span> <span class="s2">"critical-path drag exceeds the auto-escalation threshold"</span><span class="p">,</span>
+    <span class="s2">"escalate_option"</span><span class="p">:</span> <span class="s2">"the recommended option is an explicit escalation"</span><span class="p">,</span>
+    <span class="s2">"unknown"</span><span class="p">:</span> <span class="s2">"management review is required"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="escalation_reason_text">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/outage/policy/index.html#src.dackar.outage.policy.escalation_reason_text">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">escalation_reason_text</span><span class="p">(</span><span class="n">reason</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">lco_status_value</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Map an escalation_reason code to a human-readable clause."""</span>
+    <span class="k">if</span> <span class="n">reason</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"lco_clock_"</span><span class="p">):</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="n">reason</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="s2">"lco_clock_"</span><span class="p">):]</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">"the LCO action-level clock is '</span><span class="si">{</span><span class="n">status</span><span class="si">}</span><span class="s2">' and requires licensing review"</span>
+    <span class="k">return</span> <span class="n">ESCALATION_REASON_TEXT</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">reason</span><span class="p">,</span> <span class="n">ESCALATION_REASON_TEXT</span><span class="p">[</span><span class="s2">"unknown"</span><span class="p">])</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

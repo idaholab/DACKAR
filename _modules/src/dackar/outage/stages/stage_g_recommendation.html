@@ -120,6 +120,8 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.outage</span><span class="w"> </span><span class="kn">import</span> <span class="n">policy</span> <span class="k">as</span> <span class="n">_policy</span>
+
 <div class="viewcode-block" id="LOGGER">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation.LOGGER">[docs]</a>
 <span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
@@ -173,6 +175,10 @@
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._FLAG_CP_IMPACT">[docs]</a>
 <span class="n">_FLAG_CP_IMPACT</span> <span class="o">=</span> <span class="s2">"critical_path_impact"</span></div>
 
+<div class="viewcode-block" id="_FLAG_CP_UNAVAILABLE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._FLAG_CP_UNAVAILABLE">[docs]</a>
+<span class="n">_FLAG_CP_UNAVAILABLE</span> <span class="o">=</span> <span class="s2">"cp_impact_unavailable"</span></div>
+
 <div class="viewcode-block" id="_FLAG_HIGH_ABBR_RATE">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._FLAG_HIGH_ABBR_RATE">[docs]</a>
 <span class="n">_FLAG_HIGH_ABBR_RATE</span> <span class="o">=</span> <span class="s2">"high_unknown_abbreviation_rate"</span></div>
@@ -199,6 +205,13 @@
 <div class="viewcode-block" id="_LCO_URGENT_STATUSES">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._LCO_URGENT_STATUSES">[docs]</a>
 <span class="n">_LCO_URGENT_STATUSES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"expired"</span><span class="p">,</span> <span class="s2">"critical"</span><span class="p">,</span> <span class="s2">"urgent"</span><span class="p">}</span></div>
+
+
+<span class="c1"># Fail-closed LCO policy is shared with Stage F via outage.policy so the two</span>
+<span class="c1"># stages cannot drift (the previous duplicate sets disagreed on "unknown").</span>
+<div class="viewcode-block" id="_LCO_FAIL_CLOSED_STATUSES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/stage_g_recommendation/index.html#src.dackar.outage.stages.stage_g_recommendation._LCO_FAIL_CLOSED_STATUSES">[docs]</a>
+<span class="n">_LCO_FAIL_CLOSED_STATUSES</span> <span class="o">=</span> <span class="n">_policy</span><span class="o">.</span><span class="n">LCO_FAIL_CLOSED_STATUSES</span></div>
 
 
 <span class="c1"># Option types that map to PROCEED</span>
@@ -374,15 +387,29 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_select_primary_option</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">insertion_options</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">"""Retrieve the recommended option object from InsertionOptions.</span>
 
-<span class="sd">        Looks up insertion_options['recommended_option_id'] in the options list.</span>
-<span class="sd">        Returns None if recommended_option_id is None or not found.</span>
+<span class="sd">        Looks up insertion_options['recommended_option_id'] in the options list</span>
+<span class="sd">        and RE-VERIFIES it is both feasible and regulatory-cleared before</span>
+<span class="sd">        returning it (B5).  A pre-computed insertion_options bundle could point</span>
+<span class="sd">        recommended_option_id at a regulatory-blocked or infeasible option;</span>
+<span class="sd">        trusting it blindly produced e.g. a DEFER on a regulatory-blocked defer.</span>
+<span class="sd">        Missing feasible/regulatory_cleared default to False (fail closed), not</span>
+<span class="sd">        True.  Returns None (→ INCONCLUSIVE) when no valid option is found.</span>
 <span class="sd">        """</span>
         <span class="n">recommended_id</span> <span class="o">=</span> <span class="n">insertion_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"recommended_option_id"</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">recommended_id</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
         <span class="k">for</span> <span class="n">option</span> <span class="ow">in</span> <span class="n">insertion_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"options"</span><span class="p">,</span> <span class="p">[]):</span>
             <span class="k">if</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_id"</span><span class="p">)</span> <span class="o">==</span> <span class="n">recommended_id</span><span class="p">:</span>
-                <span class="k">return</span> <span class="n">option</span>
+                <span class="k">if</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span> <span class="ow">and</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+                    <span class="k">return</span> <span class="n">option</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">"Stage G: recommended_option_id '</span><span class="si">%s</span><span class="s2">' is not feasible/regulatory-cleared "</span>
+                    <span class="s2">"(feasible=</span><span class="si">%s</span><span class="s2">, regulatory_cleared=</span><span class="si">%s</span><span class="s2">); treating as no valid recommendation."</span><span class="p">,</span>
+                    <span class="n">recommended_id</span><span class="p">,</span>
+                    <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">),</span>
+                    <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">),</span>
+                <span class="p">)</span>
+                <span class="k">return</span> <span class="kc">None</span>
         <span class="k">return</span> <span class="kc">None</span></div>
 
 
@@ -399,20 +426,26 @@
 <span class="w">        </span><span class="sd">"""Map the primary option and context to a decision_status enum value.</span>
 
 <span class="sd">        Logic (evaluated in priority order):</span>
-<span class="sd">            INCONCLUSIVE — no feasible, regulatory-cleared option exists</span>
+<span class="sd">            INCONCLUSIVE — primary_option is None (no feasible, regulatory-cleared</span>
+<span class="sd">                           option exists)</span>
 <span class="sd">            ESCALATE     — primary option type is escalate_to_management</span>
 <span class="sd">            DEFER        — primary option type is defer_to_post_outage</span>
+<span class="sd">            ESCALATE     — FAIL-CLOSED GATE (outage.policy.is_fail_closed): any</span>
+<span class="sd">                           non-defer/non-escalate option escalates when an LCO</span>
+<span class="sd">                           clock is expired/critical/urgent/unknown, a regulatory</span>
+<span class="sd">                           constraint is present, or CP impact could not be</span>
+<span class="sd">                           computed (cp_impact_unavailable).  PROCEED/MONITOR are</span>
+<span class="sd">                           not permitted in those cases.</span>
 <span class="sd">            MONITOR      — low confidence + no historical analogues + activity</span>
 <span class="sd">                           is non-critical path (watch, but no action yet warranted)</span>
 <span class="sd">            PROCEED      — primary option type is insert_now / contingency /</span>
 <span class="sd">                           parallel / scope_reduction / pre_outage_staging</span>
 
-<span class="sd">        ``schedule_impact_assessment`` (N5 fix): criticality_label is now read</span>
-<span class="sd">        from ``schedule_impact_assessment["float_analysis"]["criticality_label"]``</span>
-<span class="sd">        rather than the non-existent ``insertion_options["schedule_summary"]``</span>
-<span class="sd">        field that Stage F never produces.  The parameter is optional and defaults</span>
-<span class="sd">        to None so existing call sites that have not yet been updated continue to</span>
-<span class="sd">        work; absence is treated as non_critical (permissive MONITOR condition).</span>
+<span class="sd">        ``schedule_impact_assessment`` (N5 fix): criticality_label is read from</span>
+<span class="sd">        ``schedule_impact_assessment["float_analysis"]["criticality_label"]``</span>
+<span class="sd">        (not the non-existent ``insertion_options["schedule_summary"]``).  It is</span>
+<span class="sd">        optional; when absent, criticality falls back to ``non_critical`` for the</span>
+<span class="sd">        MONITOR check and cp_impact_unavailable reads as False.</span>
 <span class="sd">        """</span>
         <span class="k">if</span> <span class="n">primary_option</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">_INCONCLUSIVE</span>
@@ -422,8 +455,30 @@
         <span class="k">if</span> <span class="n">option_type</span> <span class="o">==</span> <span class="s2">"escalate_to_management"</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">_ESCALATE</span>
 
+        <span class="c1"># ── Fail-closed regulatory / LCO / CP-impact gate (B4; PR#77 [0]) ─────</span>
+        <span class="c1"># Shared policy (outage.policy.is_fail_closed): while an LCO clock is</span>
+        <span class="c1"># expired/critical/urgent/unknown, any regulatory constraint is present,</span>
+        <span class="c1"># OR critical-path impact could not be computed, the decision may not be</span>
+        <span class="c1"># PROCEED or MONITOR — it escalates for review.  DEFER is still allowed</span>
+        <span class="c1"># (and re-checked below).</span>
         <span class="k">if</span> <span class="n">option_type</span> <span class="o">==</span> <span class="s2">"defer_to_post_outage"</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">_DEFER</span>
+
+        <span class="k">if</span> <span class="n">_policy</span><span class="o">.</span><span class="n">is_fail_closed</span><span class="p">(</span><span class="n">intake_result</span><span class="p">,</span> <span class="n">schedule_impact_assessment</span><span class="p">):</span>
+            <span class="c1"># Defense-in-depth (PR#78 [7], option A): Stage F now owns the</span>
+            <span class="c1"># recommendation and only recommends defer/escalate under fail-closed,</span>
+            <span class="c1"># so by the time we reach here with a non-defer/non-escalate primary</span>
+            <span class="c1"># option, Stage F has produced an inconsistent recommendation.  We</span>
+            <span class="c1"># still fail closed (ESCALATE), but warn — this branch should be</span>
+            <span class="c1"># unreachable in normal operation; if it fires it flags an upstream</span>
+            <span class="c1"># Stage F regression.</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Stage G: fail-closed decision reached with primary option_type=</span><span class="si">%r</span><span class="s2"> "</span>
+                <span class="s2">"(expected defer/escalate from Stage F). Escalating; check Stage F "</span>
+                <span class="s2">"recommendation logic."</span><span class="p">,</span>
+                <span class="n">option_type</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">_ESCALATE</span>
 
         <span class="c1"># MONITOR: no historical support + non-critical → watch, no immediate action</span>
         <span class="c1"># Previous condition required cp_impact==0 AND analog_count==0 AND low_confidence</span>
@@ -512,6 +567,10 @@
         <span class="n">float_analysis</span> <span class="o">=</span> <span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"float_analysis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
         <span class="k">if</span> <span class="n">float_analysis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality_label"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"critical"</span><span class="p">:</span>
             <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_FLAG_CP_IMPACT</span><span class="p">)</span>
+
+        <span class="c1"># CP impact could not be computed (Stage E: unknown duration distribution)</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">schedule_impact</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cp_impact_unavailable"</span><span class="p">):</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_FLAG_CP_UNAVAILABLE</span><span class="p">)</span>
 
         <span class="c1"># High unknown abbreviation rate</span>
         <span class="n">abbr_rate</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"unknown_abbreviation_rate"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
@@ -609,9 +668,18 @@
                 <span class="s2">"be identified. Analyst review required before proceeding."</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="n">decision_status</span> <span class="o">==</span> <span class="n">_ESCALATE</span><span class="p">:</span>
+            <span class="c1"># State the ACTUAL escalation cause rather than always blaming CP</span>
+            <span class="c1"># drag — this decision can now come from a regulatory/LCO/unknown-CP</span>
+            <span class="c1"># condition too (PR#78 [2]).</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="n">_policy</span><span class="o">.</span><span class="n">escalation_reason</span><span class="p">(</span>
+                <span class="n">intake_result</span> <span class="ow">or</span> <span class="p">{},</span>
+                <span class="n">schedule_impact</span><span class="p">,</span>
+                <span class="n">option_type</span><span class="o">=</span><span class="p">(</span><span class="n">primary_option</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"option_type"</span><span class="p">),</span>
+                <span class="n">cp_drag_hours</span><span class="o">=</span><span class="n">cp_drag</span><span class="p">,</span>
+            <span class="p">)</span>
             <span class="n">conclusion</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="sa">f</span><span class="s2">"Escalate to management — CP drag of </span><span class="si">{</span><span class="n">cp_drag</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h exceeds "</span>
-                <span class="s2">"the auto-escalation threshold. Schedule re-baseline decision required."</span>
+                <span class="sa">f</span><span class="s2">"Escalate to management — </span><span class="si">{</span><span class="n">_policy</span><span class="o">.</span><span class="n">escalation_reason_text</span><span class="p">(</span><span class="n">reason</span><span class="p">)</span><span class="si">}</span><span class="s2">. "</span>
+                <span class="s2">"Management review required before action."</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="n">decision_status</span> <span class="o">==</span> <span class="n">_DEFER</span><span class="p">:</span>
             <span class="n">conclusion</span> <span class="o">=</span> <span class="p">(</span>
@@ -997,13 +1065,18 @@
 
 <span class="sd">        required=True when any of:</span>
 <span class="sd">            - has_regulatory_constraint is True</span>
+<span class="sd">            - lco_clock_status is fail-closed (expired/critical/urgent/unknown)</span>
+<span class="sd">            - _FLAG_CP_IMPACT in attention_flags (critical-path impact)</span>
+<span class="sd">            - _FLAG_CP_UNAVAILABLE in attention_flags (CP impact not computable)</span>
+<span class="sd">            - _FLAG_DISPLACED_REGULATORY in attention_flags</span>
+<span class="sd">            - _FLAG_TEMPORAL_CONTRADICTION in attention_flags</span>
 <span class="sd">            - decision_status is INCONCLUSIVE</span>
 <span class="sd">            - duration distribution confidence_tier is low_confidence</span>
 <span class="sd">            - _FLAG_FALLBACK is in attention_flags</span>
 <span class="sd">            - _FLAG_HIGH_ABBR_RATE is in attention_flags (§6 exit criterion:</span>
 <span class="sd">              NER entity extraction unreliable when unknown_abbreviation_rate</span>
 <span class="sd">              exceeds RecommendationConfig.unknown_abbreviation_rate_warning)</span>
-<span class="sd">            - no feasible + regulatory-cleared option exists</span>
+<span class="sd">            - no feasible + regulatory-cleared option exists (fail-closed defaults)</span>
 
 <span class="sd">        reason: brief string summarising why review is required.</span>
 <span class="sd">        reviewer_decision initialised to None (populated by the analyst UI).</span>
@@ -1012,6 +1085,29 @@
 
         <span class="k">if</span> <span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"has_regulatory_constraint"</span><span class="p">):</span>
             <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"regulatory constraint present — verify compliance before proceeding"</span><span class="p">)</span>
+
+        <span class="c1"># B4: an active LCO action-level clock (including an unknown clock) always</span>
+        <span class="c1"># requires review — these fail closed.</span>
+        <span class="n">lco_status</span> <span class="o">=</span> <span class="p">(</span><span class="n">intake_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"lco_clock_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">lco_status</span> <span class="ow">in</span> <span class="n">_LCO_FAIL_CLOSED_STATUSES</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"LCO action-level clock is '</span><span class="si">{</span><span class="n">lco_status</span><span class="si">}</span><span class="s2">' — licensing review required"</span>
+            <span class="p">)</span>
+
+        <span class="c1"># B4: critical-path impact, displaced regulatory tasks, and temporal</span>
+        <span class="c1"># contradictions each warrant review even when the decision is PROCEED.</span>
+        <span class="k">if</span> <span class="n">_FLAG_CP_IMPACT</span> <span class="ow">in</span> <span class="n">attention_flags</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"critical-path impact flagged — verify schedule risk before acting"</span><span class="p">)</span>
+        <span class="c1"># PR#77 [0]: CP impact could not be computed — don't let it read as zero.</span>
+        <span class="k">if</span> <span class="n">_FLAG_CP_UNAVAILABLE</span> <span class="ow">in</span> <span class="n">attention_flags</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="s2">"critical-path impact could not be computed (unknown duration) — "</span>
+                <span class="s2">"schedule risk is unquantified; analyst review required"</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">_FLAG_DISPLACED_REGULATORY</span> <span class="ow">in</span> <span class="n">attention_flags</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"insertion displaces a regulatory-constrained task — review deferral limits"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">_FLAG_TEMPORAL_CONTRADICTION</span> <span class="ow">in</span> <span class="n">attention_flags</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"temporal contradiction in the causal chain — verify event ordering"</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="n">decision_status</span> <span class="o">==</span> <span class="n">_INCONCLUSIVE</span><span class="p">:</span>
             <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"no feasible option identified — manual scheduling decision required"</span><span class="p">)</span>
@@ -1038,10 +1134,11 @@
                 <span class="s2">"verify component and failure-mode identification before acting"</span>
             <span class="p">)</span>
 
-        <span class="c1"># No feasible + cleared option</span>
+        <span class="c1"># No feasible + cleared option (fail-closed defaults, consistent with</span>
+        <span class="c1"># _select_primary_option / _select_recommended — PR#78 [9]).</span>
         <span class="n">feasible_cleared</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">o</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">insertion_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"options"</span><span class="p">,</span> <span class="p">[])</span>
-            <span class="k">if</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span> <span class="ow">and</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"feasible"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span> <span class="ow">and</span> <span class="n">o</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"regulatory_cleared"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
         <span class="p">]</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">feasible_cleared</span><span class="p">:</span>
             <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"no feasible, regulatory-cleared option exists"</span><span class="p">)</span>
@@ -1069,32 +1166,26 @@
 
 <span class="sd">        schema_valid:                  always True here (schema validation runs</span>
 <span class="sd">                                       in the orchestrator's _validate_and_persist).</span>
-<span class="sd">        all_regulatory_flags_resolved: True if every regulatory_flag entry has</span>
-<span class="sd">                                       a corresponding evidence_chain item that</span>
-<span class="sd">                                       supports=True, or if there are no flags.</span>
+<span class="sd">        all_regulatory_flags_resolved: fail-closed. When any regulatory flag is</span>
+<span class="sd">                                       present this is False at generation time —</span>
+<span class="sd">                                       a regulatory constraint is resolved only</span>
+<span class="sd">                                       by a human acknowledgement, which does not</span>
+<span class="sd">                                       exist yet in Stage G output</span>
+<span class="sd">                                       (analyst_review.reviewer_decision is still</span>
+<span class="sd">                                       None; it is populated later by the analyst</span>
+<span class="sd">                                       UI). True only when there are no flags.</span>
 <span class="sd">        minimum_evidence_met:          True if len(evidence_chain) &gt;= 1 with at</span>
 <span class="sd">                                       least one supports=True entry.</span>
 <span class="sd">        fallback_used:                 from historical_analogs.retrieval_summary.</span>
 <span class="sd">        """</span>
-        <span class="c1"># Regulatory flags resolved: each flag must have a supporting evidence item</span>
-        <span class="n">all_resolved</span><span class="p">:</span> <span class="nb">bool</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">regulatory_flags</span><span class="p">:</span>
-            <span class="n">all_resolved</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">supporting_sources</span> <span class="o">=</span> <span class="p">{</span>
-                <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_id"</span><span class="p">)</span>
-                <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">evidence_chain</span>
-                <span class="k">if</span> <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"supports"</span><span class="p">)</span>
-            <span class="p">}</span>
-            <span class="c1"># A flag is "resolved" when its driver_id or driver_type appears in</span>
-            <span class="c1"># a supporting evidence item, OR when a schedule/temporal analysis</span>
-            <span class="c1"># evidence item (which covers the activity holistically) is present.</span>
-            <span class="n">holistic_evidence</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
-                <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"schedule_analysis"</span><span class="p">,</span> <span class="s2">"temporal_chain_link"</span><span class="p">}</span>
-                <span class="ow">and</span> <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"supports"</span><span class="p">)</span>
-                <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">evidence_chain</span>
-            <span class="p">)</span>
-            <span class="n">all_resolved</span> <span class="o">=</span> <span class="n">holistic_evidence</span> <span class="ow">or</span> <span class="nb">bool</span><span class="p">(</span><span class="n">supporting_sources</span><span class="p">)</span>
+        <span class="c1"># Regulatory flags are NOT auto-resolved by the presence of evidence</span>
+        <span class="c1"># (B5, PR#78 [3]): an earlier version matched evidence source_ids to</span>
+        <span class="c1"># driver ids, but no evidence item's source_id ever equals a driver_id,</span>
+        <span class="c1"># so it was always False in a confusing way.  The intended behaviour is</span>
+        <span class="c1"># simply fail-closed — while any regulatory flag exists the constraint is</span>
+        <span class="c1"># unresolved until a reviewer acknowledges it (analyst_review), and Stage</span>
+        <span class="c1"># G output always precedes that acknowledgement.  Compute it directly.</span>
+        <span class="n">all_resolved</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">regulatory_flags</span>
 
         <span class="n">minimum_evidence_met</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">evidence_chain</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span>
             <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"supports"</span><span class="p">)</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">evidence_chain</span>
