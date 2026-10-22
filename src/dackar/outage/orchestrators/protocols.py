@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -481,8 +482,22 @@ class FileArtifactStore:
     def __init__(self, root_dir: str | Path) -> None:
         self.root_dir = Path(root_dir)
 
+    def _run_dir(self, run_id: str) -> Path:
+        """Return the per-run directory, with the run_id made a filesystem-safe
+        path segment.
+
+        run_ids are formatted ``PREFIX::hex`` (see new_run_id), and ``:`` is a
+        reserved character on Windows (drive separator), so using the run_id
+        verbatim as a directory name raises WinError 123 there.  Characters that
+        are illegal on Windows (``<>:"/\\|?*``) are mapped to ``_`` so the same
+        run writes to the same portable directory on every OS.  The run_id value
+        stored *inside* the artifacts is unchanged.
+        """
+        safe = re.sub(r'[<>:"/\\|?*]', "_", run_id)
+        return self.root_dir / safe
+
     def save(self, run_id: str, artifact_name: str, payload: JsonDict) -> str:
-        out_dir = self.root_dir / run_id
+        out_dir = self._run_dir(run_id)
         out_dir.mkdir(parents=True, exist_ok=True)
         path = out_dir / f"{artifact_name}.json"
         path.write_text(json.dumps(payload, indent=2, default=str))
@@ -492,7 +507,7 @@ class FileArtifactStore:
     def save_list(
         self, run_id: str, artifact_name: str, payload: List[JsonDict]
     ) -> str:
-        out_dir = self.root_dir / run_id
+        out_dir = self._run_dir(run_id)
         out_dir.mkdir(parents=True, exist_ok=True)
         path = out_dir / f"{artifact_name}.jsonl"
         with path.open("w") as fh:

@@ -691,3 +691,48 @@ class TestOrchestratorPrecomputeScheduleContext:
         )
         orch.run({"activity_id": "EA1", "outage_id": "O1"})
         assert captured.get("schedule_context") is ctx
+
+
+class TestFileArtifactStoreRunIdSanitization:
+    """FileArtifactStore must make the run_id a filesystem-safe directory name.
+
+    Regression for the Windows-only failure (WinError 123): new_run_id() returns
+    'PREFIX::hex' and ':' is reserved on Windows, so using the run_id verbatim as
+    a directory name raised OSError on Windows CI while passing on POSIX. These
+    assertions are OS-independent, so the regression is caught on every runner.
+    """
+
+    def test_run_id_colon_is_sanitized_in_path(self):
+        import tempfile, os
+        from dackar.outage.orchestrators.protocols import FileArtifactStore, new_run_id
+
+        tmp = tempfile.mkdtemp()
+        store = FileArtifactStore(tmp)
+        run_id = new_run_id()
+        assert "::" in run_id  # guards the premise
+
+        path = store.save(run_id, "run_context", {"run_id": run_id})
+        # No character illegal on Windows survives in any path segment.
+        rel = os.path.relpath(path, tmp)
+        assert not any(c in rel for c in '<>:"|?*'), rel
+        assert os.path.exists(path)
+
+    def test_run_id_value_preserved_inside_artifact(self):
+        import tempfile, json
+        from dackar.outage.orchestrators.protocols import FileArtifactStore, new_run_id
+
+        store = FileArtifactStore(tempfile.mkdtemp())
+        run_id = new_run_id()
+        path = store.save(run_id, "run_context", {"run_id": run_id, "x": 1})
+        # The id is only sanitized for the PATH; its value in the artifact is intact.
+        assert json.load(open(path))["run_id"] == run_id
+
+    def test_save_and_save_list_share_run_directory(self):
+        import tempfile, os
+        from dackar.outage.orchestrators.protocols import FileArtifactStore, new_run_id
+
+        store = FileArtifactStore(tempfile.mkdtemp())
+        run_id = new_run_id()
+        p1 = store.save(run_id, "a", {"run_id": run_id})
+        p2 = store.save_list(run_id, "b", [{"run_id": run_id}])
+        assert os.path.dirname(p1) == os.path.dirname(p2)
