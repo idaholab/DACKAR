@@ -41,7 +41,10 @@ from __future__ import annotations
 import copy
 import csv
 import logging
+import math
+import numbers
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -66,6 +69,23 @@ def _parse_iso(iso_str: str) -> Optional[datetime]:
         return dt
     except (ValueError, TypeError):
         return None
+
+
+def _valid_duration(v: Any) -> bool:
+    """True when *v* is a positive, finite real number.
+
+    Uses numbers.Real (not int/float) so numpy scalars from a pandas column
+    (np.int64 / np.float32) are accepted — ``isinstance(np.int64(2), int)`` is
+    False.  bool is rejected (it is a Real but not a duration).  math.isfinite
+    on a huge Python int raises OverflowError, so the float conversion is
+    guarded to preserve the never-raises contract.
+    """
+    if not isinstance(v, numbers.Real) or isinstance(v, bool):
+        return False
+    try:
+        return math.isfinite(float(v)) and float(v) > 0
+    except (OverflowError, ValueError, TypeError):
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -192,10 +212,16 @@ class CompletionFeedbackWriter:
                 index_updated=False, persisted=False, warnings=warnings,
             )
 
-        if actual_duration_hours <= 0:
+        # B6: reject non-numeric, non-finite (NaN/inf), and non-positive values.
+        # `nan <= 0` is False (so NaN slipped past the old check and was written
+        # to the index and CSV), and `None` crashed the `:.4f` format, breaking
+        # the "never raises" contract.  _valid_duration also accepts numpy
+        # scalars (np.int64/np.float32 from a pandas column) and survives a huge
+        # Python int (math.isfinite OverflowError) — PR#79 [3].
+        if not _valid_duration(actual_duration_hours):
             msg = (
-                f"actual_duration_hours={actual_duration_hours:.4f} is not positive; "
-                "write-back skipped to prevent corrupting the analog index"
+                f"actual_duration_hours={actual_duration_hours!r} is not a positive "
+                "finite number; write-back skipped to prevent corrupting the analog index"
             )
             warnings.append(msg)
             LOGGER.warning("CompletionFeedbackWriter: %s", msg)
@@ -292,10 +318,27 @@ class CompletionFeedbackWriter:
             # Shallow-copy the existing ActivityCase and overwrite completion fields
             updated = copy.copy(existing)
             updated.actual_duration_hours = actual_duration_hours
+            # I16: only overwrite when the incoming timestamp parses — an
+            # unparseable string must not wipe a valid existing actual_start/
+            # actual_finish with None.
             if actual_start:
-                updated.actual_start = _parse_iso(actual_start)
+                parsed_start = _parse_iso(actual_start)
+                if parsed_start is not None:
+                    updated.actual_start = parsed_start
+                else:
+                    LOGGER.warning(
+                        "CompletionFeedbackWriter: unparseable actual_start %r for %s; "
+                        "keeping existing value", actual_start, activity_id,
+                    )
             if actual_finish:
-                updated.actual_finish = _parse_iso(actual_finish)
+                parsed_finish = _parse_iso(actual_finish)
+                if parsed_finish is not None:
+                    updated.actual_finish = parsed_finish
+                else:
+                    LOGGER.warning(
+                        "CompletionFeedbackWriter: unparseable actual_finish %r for %s; "
+                        "keeping existing value", actual_finish, activity_id,
+                    )
             if outcome_notes:
                 meta = dict(updated.metadata)
                 meta["outcome_notes"] = outcome_notes
@@ -370,13 +413,102 @@ _CSV_COLUMNS: tuple = (
 )
 
 
-class CsvAnalogPersister:
-    """Append completed ActivityCase records to a CSV file.
+class _FileLock:
+    """Minimal cross-process advisory lock via an exclusive lock file.
 
-    The file is created (with a header row) if it does not yet exist.  Each
-    ``append()`` call adds one row.  Column order follows ``_CSV_COLUMNS``
-    so that rows written across sessions are compatible and can be loaded
-    directly by :class:`~outage_uncertainty.adapters.pandas_repository.PandasActivityRepository`.
+    Standard-library only (no fcntl dependency, so it also works on Windows).
+    Acquisition retries until ``timeout`` seconds elapse.  On timeout, a lock
+    older than ``stale_after`` seconds is assumed to belong to a crashed writer:
+    it is unlinked and the exclusive open is retried once, so a leftover lock
+    cannot permanently defeat mutual exclusion (PR#79 [2]).  Only if the lock is
+    fresh (another writer is genuinely active) do we proceed without it, logging
+    a warning, rather than blocking the "never raises" write-back path.
+    """
+
+    def __init__(self, lock_path: str, timeout: float = 10.0,
+                 stale_after: float = 30.0) -> None:
+        self._lock_path = lock_path
+        self._timeout = timeout
+        self._stale_after = stale_after
+        self._fd: Optional[int] = None
+
+    def _try_open(self) -> bool:
+        try:
+            self._fd = os.open(self._lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            return True
+        except FileExistsError:
+            return False
+
+    def __enter__(self) -> "_FileLock":
+        deadline = time.monotonic() + self._timeout
+        while True:
+            if self._try_open():
+                return self
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.05)
+
+        # Timed out.  If the existing lock is stale (crashed holder), take it
+        # over: unlink and retry the exclusive open once.
+        try:
+            age = time.time() - os.path.getmtime(self._lock_path)
+        except OSError:
+            age = None
+        if age is not None and age >= self._stale_after:
+            LOGGER.warning(
+                "CsvAnalogPersister: lock %s is stale (%.0fs old); taking it over.",
+                self._lock_path, age,
+            )
+            try:
+                os.unlink(self._lock_path)
+            except OSError:
+                pass
+            if self._try_open():
+                return self
+
+        # Lock is fresh (another writer is active) or could not be reclaimed:
+        # proceed without it rather than blocking the write-back.
+        LOGGER.warning(
+            "CsvAnalogPersister: lock %s held past %.0fs; proceeding without it.",
+            self._lock_path, self._timeout,
+        )
+        self._fd = None
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        if self._fd is not None:
+            try:
+                os.close(self._fd)
+            finally:
+                try:
+                    os.unlink(self._lock_path)
+                except OSError:
+                    pass
+
+
+class CsvAnalogPersister:
+    """Upsert completed ActivityCase records into a CSV analog store.
+
+    ``append()`` is an idempotent upsert keyed by ``activity_id``: re-ingesting
+    the same id replaces that row rather than adding a duplicate (so a double
+    ingest does not grow the file, and the last write wins on reload).  The file
+    is rewritten whole via a temp file + ``os.replace`` (atomic), so a crash
+    mid-write cannot leave a partial or header-less file.
+
+    Column handling: the rewritten header is the UNION of the existing file's
+    columns and ``_CSV_COLUMNS`` (existing order first), so extra columns in a
+    seeded historical file — e.g. ``contractor_flag``, which
+    ``PandasActivityRepository.load_activities()`` reads — are preserved, not
+    dropped (PR#79 [0]).
+
+    Side-effect files (same directory as the CSV): a ``<path>.lock`` exclusive
+    lock serialises concurrent writers (see :class:`_FileLock`), and a transient
+    ``<path>.tmp.<pid>`` holds the new content before the atomic rename.
+
+    If an existing file cannot be read (malformed CSV, oversized field,
+    encoding or OS error), ``append()`` refuses to overwrite it and raises, so
+    the caller reports ``persisted=False`` rather than silently replacing the
+    whole history with one row (PR#79 [1]).
 
     Args:
         filepath: Path to the CSV file.  The parent directory must exist.
@@ -386,26 +518,91 @@ class CsvAnalogPersister:
         self._path = str(filepath)
 
     def append(self, activity: Any) -> None:
-        """Append one row to the CSV file, creating it with a header if needed."""
+        """Upsert one activity row by activity_id (see class docstring)."""
         row = {col: getattr(activity, col, None) for col in _CSV_COLUMNS}
-
-        # Serialise datetime fields to ISO strings
         for dt_field in ("actual_start", "actual_finish"):
             val = row.get(dt_field)
             if val is not None and hasattr(val, "isoformat"):
                 row[dt_field] = val.isoformat()
 
-        needs_header = (
-            not os.path.exists(self._path)
-            or os.path.getsize(self._path) == 0
-        )
-        with open(self._path, "a", newline="", encoding="utf-8") as fh:
-            writer = csv.DictWriter(fh, fieldnames=list(_CSV_COLUMNS))
-            if needs_header:
-                writer.writeheader()
-            writer.writerow(row)
+        activity_id = row.get("activity_id")
+
+        with _FileLock(self._path + ".lock"):
+            # Load existing rows and their header.  A file that exists but cannot
+            # be read must NOT be silently replaced with a single-row file
+            # (PR#79 [1]): re-raise so record_completion reports persisted=False.
+            existing: list = []
+            existing_fields: list = []
+            if os.path.exists(self._path) and os.path.getsize(self._path) > 0:
+                try:
+                    with open(self._path, newline="", encoding="utf-8") as fh:
+                        reader = csv.DictReader(fh)
+                        existing = list(reader)
+                        existing_fields = list(reader.fieldnames or [])
+                except (OSError, csv.Error, UnicodeDecodeError):
+                    LOGGER.warning(
+                        "CsvAnalogPersister: could not read %s; refusing to "
+                        "overwrite existing analog history",
+                        self._path, exc_info=True,
+                    )
+                    raise
+
+            # Upsert by activity_id (dedup); append when the id is new or absent.
+            replaced = False
+            if activity_id:
+                for i, r in enumerate(existing):
+                    if r.get("activity_id") == activity_id:
+                        existing[i] = {**r, **row}  # preserve extra cols on the row
+                        replaced = True
+                        break
+            if not replaced:
+                existing.append(row)
+
+            # Header = existing columns first, then any _CSV_COLUMNS not already
+            # present — preserves extra columns in a seeded file (PR#79 [0]).
+            fieldnames = existing_fields + [
+                c for c in _CSV_COLUMNS if c not in existing_fields
+            ]
+
+            # Atomic rewrite: temp file in the same dir, then os.replace; fsync
+            # the file and the directory so the rename is durable (PR#79 [5]).
+            # Unlink the temp file if the write fails, leaving no .tmp litter
+            # (PR#79 [6]).
+            directory = os.path.dirname(self._path) or "."
+            tmp_path = f"{self._path}.tmp.{os.getpid()}"
+            try:
+                with open(tmp_path, "w", newline="", encoding="utf-8") as fh:
+                    writer = csv.DictWriter(fh, fieldnames=fieldnames, extrasaction="ignore")
+                    writer.writeheader()
+                    for r in existing:
+                        writer.writerow({col: r.get(col) for col in fieldnames})
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.replace(tmp_path, self._path)
+                self._fsync_dir(directory)
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
 
         LOGGER.debug(
-            "CsvAnalogPersister: appended activity %s to %s",
-            getattr(activity, "activity_id", "?"), self._path,
+            "CsvAnalogPersister: %s activity %s in %s",
+            "replaced" if replaced else "appended",
+            activity_id or "?", self._path,
         )
+
+    @staticmethod
+    def _fsync_dir(directory: str) -> None:
+        """fsync a directory so a rename into it is durable on POSIX (best effort)."""
+        try:
+            dfd = os.open(directory, os.O_RDONLY)
+        except OSError:
+            return
+        try:
+            os.fsync(dfd)
+        except OSError:
+            pass  # not supported on this platform (e.g. Windows)
+        finally:
+            os.close(dfd)
