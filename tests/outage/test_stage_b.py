@@ -15,17 +15,14 @@ Coverage targets:
 """
 from __future__ import annotations
 
-import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock
+from typing import (
+    Any,
+    Dict,
+)
 
 import pytest
 
-_OUTAGE_ROOT = Path(__file__).resolve().parents[2] / "src" / "dackar" / "outage"
-if str(_OUTAGE_ROOT) not in sys.path:
-    pass  # sys.path hack removed
 
 from dackar.outage.stages.stage_b_kg_timeline import (
     KGTimelineBuilder,

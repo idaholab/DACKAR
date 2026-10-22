@@ -19,17 +19,15 @@ Coverage targets:
 from __future__ import annotations
 
 import copy
-import sys
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, patch
+from typing import (
+    Dict,
+    List,
+)
+from unittest.mock import MagicMock
 
 import pytest
 
-_OUTAGE_ROOT = Path(__file__).resolve().parents[2] / "src" / "dackar" / "outage"
-if str(_OUTAGE_ROOT) not in sys.path:
-    pass  # sys.path hack removed
 
 from dackar.outage.stages.stage_e_schedule import (
     ScheduleImpactAssessor,

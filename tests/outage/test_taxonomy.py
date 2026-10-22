@@ -3,7 +3,6 @@ Tests for TaskLabelMapper and the built-in DEFAULT_TAXONOMY_RULES vocabulary.
 """
 from __future__ import annotations
 
-import pytest
 
 from dackar.outage.outage_uncertainty.domain.activity import ActivityCase
 from dackar.outage.outage_uncertainty.preprocessing.default_taxonomy import DEFAULT_TAXONOMY_RULES

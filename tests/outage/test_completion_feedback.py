@@ -46,18 +46,11 @@ Coverage targets:
 from __future__ import annotations
 
 import csv
-import os
-import sys
-import tempfile
 from dataclasses import FrozenInstanceError
 from datetime import datetime, timezone
-from pathlib import Path
 
 import pytest
 
-_OUTAGE_ROOT = Path(__file__).resolve().parents[2] / "src" / "dackar" / "outage"
-if str(_OUTAGE_ROOT) not in sys.path:
-    pass  # sys.path hack removed
 
 from dackar.outage.outage_uncertainty.retrieval.retrieval_index import HistoricalActivityIndex
 from dackar.outage.outage_uncertainty.domain.activity import ActivityCase

@@ -17,7 +17,7 @@ from dackar.outage.outage_uncertainty.retrieval.context_similarity import Contex
 from dackar.outage.outage_uncertainty.uncertainty.confidence import ConfidenceEstimator, ConfidenceResult
 from dackar.outage.outage_uncertainty.uncertainty.distribution_fitter import DistributionFitter
 from dackar.outage.outage_uncertainty.uncertainty.fallback_policy import HierarchicalFallbackPolicy
-from dackar.outage.outage_uncertainty.uncertainty.outlier_handler import OutlierHandler, OutlierSeparation
+from dackar.outage.outage_uncertainty.uncertainty.outlier_handler import OutlierSeparation
 
 
 # ---------------------------------------------------------------------------

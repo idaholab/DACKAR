@@ -9,11 +9,10 @@ Tests for:
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -21,8 +20,6 @@ from dackar.outage.stages.insertion_point_determiner import (
     InsertionPointDeterminer,
     ScheduleContext,
     _default_phase_windows,
-    _ensure_tz,
-    _parse_dt,
 )
 from dackar.outage.stages.stage_d_analogs import (
     HistoricalAnalogConfig,

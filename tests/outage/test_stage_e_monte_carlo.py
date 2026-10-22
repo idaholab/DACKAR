@@ -4,30 +4,25 @@ Tests for Stage E Monte Carlo engine (Gap 3).
 Covers:
     _build_duration_sampler()   — lognormal fitting from mean/std, p80, p90, p50-only
     _run_3scenario_proxy()      — fallback path when monte_carlo_runs < 10
-    _run_monte_carlo()          — real MC path (set_durations and clone-per-iteration)
+    _run_monte_carlo()          — real MC path (set_durations and clone-per-iteration, seed=0)
     notes field in assess()     — updated wording for real MC vs proxy
     permit_lead_hours           — added to every sample
 """
 from __future__ import annotations
 
 import copy
-import math
-import sys
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import (
+    Dict,
+    List,
+)
 
 import numpy as np
-import pytest
 
-_OUTAGE_ROOT = Path(__file__).resolve().parents[2] / "src" / "dackar" / "outage"
-if str(_OUTAGE_ROOT) not in sys.path:
-    pass  # sys.path hack removed
 
 from dackar.outage.stages.stage_e_schedule import (
     ScheduleImpactAssessor,
     ScheduleImpactConfig,
-    _SimResult,
     _ScheduleNetwork,
     _MIN_DURATION_HOURS,
 )
@@ -159,7 +154,7 @@ class TestBuildDurationSampler:
 
     def _sampler(self, **kwargs):
         assessor = ScheduleImpactAssessor()
-        return assessor._build_duration_sampler(_dist(**kwargs))
+        return assessor._build_duration_sampler(_dist(**kwargs), seed=0)
 
     def test_returns_callable(self):
         s = self._sampler(p50=10.0, p80=15.0)
@@ -182,7 +177,7 @@ class TestBuildDurationSampler:
         """Method-of-moments path gives samples centred on mean."""
         assessor = ScheduleImpactAssessor()
         dist = {"p50_hours": 10.0, "p80_hours": None, "mean_hours": 12.0, "std_hours": 3.0}
-        s = assessor._build_duration_sampler(dist)
+        s = assessor._build_duration_sampler(dist, seed=0)
         samples = [s() for _ in range(2000)]
         empirical_mean = float(np.mean(samples))
         assert abs(empirical_mean - 12.0) / 12.0 < 0.15
@@ -191,7 +186,7 @@ class TestBuildDurationSampler:
         """Falls back to p90 fitting when p80 is absent."""
         assessor = ScheduleImpactAssessor()
         dist = {"p50_hours": 10.0, "p80_hours": None, "p90_hours": 16.0}
-        s = assessor._build_duration_sampler(dist)
+        s = assessor._build_duration_sampler(dist, seed=0)
         samples = [s() for _ in range(500)]
         assert all(v > 0 for v in samples)
 
@@ -199,7 +194,7 @@ class TestBuildDurationSampler:
         """With no spread info, sigma=0.10 — samples near p50."""
         assessor = ScheduleImpactAssessor()
         dist = {"p50_hours": 10.0}
-        s = assessor._build_duration_sampler(dist)
+        s = assessor._build_duration_sampler(dist, seed=0)
         samples = [s() for _ in range(1000)]
         assert abs(float(np.median(samples)) - 10.0) < 2.5
 
@@ -207,7 +202,7 @@ class TestBuildDurationSampler:
         """Every sample must be ≥ permit_lead_hours."""
         assessor = ScheduleImpactAssessor()
         dist = {"p50_hours": 8.0, "p80_hours": 12.0}
-        s = assessor._build_duration_sampler(dist, permit_lead_hours=4.0)
+        s = assessor._build_duration_sampler(dist, permit_lead_hours=4.0, seed=0)
         samples = [s() for _ in range(200)]
         # All samples should be ≥ _MIN_DURATION_HOURS (the absolute floor)
         # and in practice well above 4.0
@@ -218,7 +213,7 @@ class TestBuildDurationSampler:
         """p50 below _MIN_DURATION_HOURS is clamped before fitting."""
         assessor = ScheduleImpactAssessor()
         dist = {"p50_hours": 0.0}
-        s = assessor._build_duration_sampler(dist)
+        s = assessor._build_duration_sampler(dist, seed=0)
         samples = [s() for _ in range(100)]
         assert all(v >= _MIN_DURATION_HOURS for v in samples)
 
@@ -227,7 +222,7 @@ class TestBuildDurationSampler:
         assessor = ScheduleImpactAssessor()
         # p80 = p50: would produce sigma=0 without floor
         dist = {"p50_hours": 10.0, "p80_hours": 10.0}
-        s = assessor._build_duration_sampler(dist)
+        s = assessor._build_duration_sampler(dist, seed=0)
         samples = [s() for _ in range(100)]
         assert all(v > 0 for v in samples)
 
@@ -269,12 +264,14 @@ class TestRun3ScenarioProxy:
                                   result_with_lead.project_durations):
             assert abs(d_lead - d_base - 4.0) < 1e-6
 
-    def test_zero_duration_scenarios_skipped(self):
+    def test_zero_duration_scenarios_clamped_not_skipped(self):
         network = _make_network(baseline_hours=480.0)
         dist = _dist(p50=0.0, p80=0.0, p90=0.0)
-        # All three scenarios get clamped to _MIN_DURATION_HOURS, not skipped
+        # All three scenarios are clamped to _MIN_DURATION_HOURS and KEPT, not
+        # skipped — so the 3-scenario proxy still reports n_runs == 3 (the old
+        # `>= 0` assertion was vacuous).
         result = self._proxy(network, _insertion_point(), dist)
-        assert result.n_runs >= 0  # may be 3 clamped scenarios
+        assert result.n_runs == 3
 
 
 # ===========================================================================
@@ -289,7 +286,7 @@ class TestRunMonteCarloSetDurations:
         assessor = ScheduleImpactAssessor(config=config)
         network = _make_network(baseline_hours=480.0, use_set_durations=True)
         return assessor._run_monte_carlo(
-            network, _insertion_point(), _dist(**dist_kwargs)
+            network, _insertion_point(), _dist(**dist_kwargs), seed=0
         )
 
     def test_n_runs_samples_produced(self):
@@ -321,7 +318,7 @@ class TestRunMonteCarloSetDurations:
         assessor = ScheduleImpactAssessor(config=config)
         network = _make_network(use_set_durations=True)
         ip = _insertion_point(emergent_task_id="EA::CUSTOM-001")
-        result = assessor._run_monte_carlo(network, ip, _dist())
+        result = assessor._run_monte_carlo(network, ip, _dist(), seed=0)
         assert result.emergent_task_id == "EA::CUSTOM-001"
 
     def test_permit_lead_shifts_distribution_up(self):
@@ -331,9 +328,9 @@ class TestRunMonteCarloSetDurations:
         network_a = _make_network(baseline_hours=480.0, use_set_durations=True)
         network_b = _make_network(baseline_hours=480.0, use_set_durations=True)
         dist = _dist(p50=8.0, p80=12.0)
-        result_no_lead = assessor._run_monte_carlo(network_a, _insertion_point(), dist)
+        result_no_lead = assessor._run_monte_carlo(network_a, _insertion_point(), dist, seed=0)
         result_with_lead = assessor._run_monte_carlo(
-            network_b, _insertion_point(), dist, permit_lead_hours=6.0
+            network_b, _insertion_point(), dist, permit_lead_hours=6.0, seed=0
         )
         median_no_lead = float(np.median(result_no_lead.project_durations))
         median_with_lead = float(np.median(result_with_lead.project_durations))
@@ -352,7 +349,7 @@ class TestRunMonteCarloCloneFallback:
         assessor = ScheduleImpactAssessor(config=config)
         network = _make_network(baseline_hours=480.0, use_set_durations=False)
         return assessor._run_monte_carlo(
-            network, _insertion_point(), _dist(p50=8.0, p80=12.0, p90=16.0)
+            network, _insertion_point(), _dist(p50=8.0, p80=12.0, p90=16.0), seed=0
         )
 
     def test_n_runs_samples_produced(self):
@@ -376,7 +373,7 @@ class TestProxyFallback:
         assessor = ScheduleImpactAssessor(config=config)
         network = _make_network(baseline_hours=480.0, use_set_durations=True)
         result = assessor._run_monte_carlo(
-            network, _insertion_point(), _dist(p50=8.0, p80=12.0, p90=16.0)
+            network, _insertion_point(), _dist(p50=8.0, p80=12.0, p90=16.0), seed=0
         )
         # 3-scenario proxy produces exactly 3 results
         assert result.n_runs == 3
@@ -387,7 +384,7 @@ class TestProxyFallback:
         assessor = ScheduleImpactAssessor(config=config)
         network = _make_network(baseline_hours=480.0, use_set_durations=True)
         result = assessor._run_monte_carlo(
-            network, _insertion_point(), _dist(p50=8.0, p80=12.0, p90=16.0)
+            network, _insertion_point(), _dist(p50=8.0, p80=12.0, p90=16.0), seed=0
         )
         assert result.n_runs == 10
         assert len(result.project_durations) == 10
@@ -404,7 +401,7 @@ class TestComputeCPMetricsWithRealMC:
         config = ScheduleImpactConfig(monte_carlo_runs=n_runs)
         assessor = ScheduleImpactAssessor(config=config)
         network = _make_network(baseline_hours=480.0, use_set_durations=True)
-        sim = assessor._run_monte_carlo(network, _insertion_point(), _dist(p50=8.0, p80=12.0))
+        sim = assessor._run_monte_carlo(network, _insertion_point(), _dist(p50=8.0, p80=12.0), seed=0)
         return assessor._compute_cp_metrics(sim, baseline_cp_hours=480.0)
 
     def test_estimated_new_cp_exceeds_baseline(self):

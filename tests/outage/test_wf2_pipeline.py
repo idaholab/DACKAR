@@ -15,29 +15,19 @@ Coverage targets:
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-_OUTAGE_ROOT = Path(__file__).resolve().parents[2] / "src" / "dackar" / "outage"
-_WF2_ROOT = _OUTAGE_ROOT / "demos" / "unexpected_act_workflow_2"
-for _p in (_OUTAGE_ROOT, _WF2_ROOT):
-    if str(_p) not in sys.path:
-        pass  # sys.path hack removed
-
-pytest.importorskip("demo_data", reason="outage demos (src/dackar/outage/demos) arrive in MR #17")
-from demo_data import (
-    ACTIVITIES,
-    COMPONENTS,
-    CONDITION_REPORTS,
-    SCHEDULE,
-    WORK_ORDERS,
-    RF22_GROUND_TRUTH,
-    NER_GROUND_TRUTH,
-    PLANT_ID_PATTERN,
-    CR_WO_PATTERN,
+# Outage demos land in MR #17 as dackar.outage.demos.unexpected_act_workflow_2;
+# import by package path so the skip lifts when they merge (see test_orchestrator_e2e).
+demo_data = pytest.importorskip(
+    "dackar.outage.demos.unexpected_act_workflow_2.demo_data",
+    reason="outage demos (dackar.outage.demos) arrive in MR #17",
 )
+ACTIVITIES = demo_data.ACTIVITIES
+COMPONENTS = demo_data.COMPONENTS
+CONDITION_REPORTS = demo_data.CONDITION_REPORTS
+SCHEDULE = demo_data.SCHEDULE
+WORK_ORDERS = demo_data.WORK_ORDERS
 
 
 # ---------------------------------------------------------------------------

@@ -1715,7 +1715,12 @@ class TestN6RegulatoryEvidencePinned:
 
 from dackar.outage.stages.stage_f_options import (
     _compute_cost_estimate,
-    _INSERT_NOW, _DEFER, _CONTINGENCY, _PRE_STAGE, _PARALLEL, _SCOPE_REDUCTION, _ESCALATE,
+    _INSERT_NOW,
+    _DEFER,
+    _CONTINGENCY,
+    _PARALLEL,
+    _SCOPE_REDUCTION,
+    _ESCALATE,
 )
 
 

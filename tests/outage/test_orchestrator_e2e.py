@@ -20,25 +20,22 @@ Coverage targets:
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any, Dict
 
 import pytest
 
-_OUTAGE_ROOT = Path(__file__).resolve().parents[2] / "src" / "dackar" / "outage"
-_DEMO_ROOT = _OUTAGE_ROOT / "demos" / "unexpected_act_workflow_1"
-for _p in (_OUTAGE_ROOT, _DEMO_ROOT):
-    if str(_p) not in sys.path:
-        pass  # sys.path hack removed
-
-pytest.importorskip("demo_scenarios", reason="outage demos (src/dackar/outage/demos) arrive in MR #17")
-from demo_scenarios import (
-    run_pipeline,
-    SCENARIO_RCP_SEAL,
-    SCENARIO_SNUBBER_EXT,
-    SCENARIO_UNKNOWN_COMPONENT,
+# The outage demos land in MR #17 as a proper package
+# (dackar.outage.demos.unexpected_act_workflow_1); import by package path so the
+# skip actually lifts once they merge, rather than depending on a sys.path shim
+# that can never resolve a bare `demo_scenarios` module.
+demo_scenarios = pytest.importorskip(
+    "dackar.outage.demos.unexpected_act_workflow_1.demo_scenarios",
+    reason="outage demos (dackar.outage.demos) arrive in MR #17",
 )
+run_pipeline = demo_scenarios.run_pipeline
+SCENARIO_RCP_SEAL = demo_scenarios.SCENARIO_RCP_SEAL
+SCENARIO_SNUBBER_EXT = demo_scenarios.SCENARIO_SNUBBER_EXT
+SCENARIO_UNKNOWN_COMPONENT = demo_scenarios.SCENARIO_UNKNOWN_COMPONENT
 
 # ===========================================================================
 # Helpers
@@ -268,11 +265,6 @@ class TestN13StageEStubDegradation:
 
     def _make_orchestrator(self, *, assessor_raises: bool = False):
         """Build a minimal orchestrator with all stubs except the assessor."""
-        import sys
-        _ORCH_ROOT = Path(__file__).resolve().parents[2] / "src" / "dackar" / "outage"
-        if str(_ORCH_ROOT) not in sys.path:
-            pass  # sys.path hack removed
-
         from dackar.outage.orchestrators.outage_activity_orchestrator import OutageActivityOrchestrator
         from dackar.outage.orchestrators.protocols import (
             NoOpSchemaValidator,
@@ -526,12 +518,7 @@ class TestX4StageBValueErrorDegradation:
     """
 
     def _make_orchestrator(self, *, builder_raises: bool = False):
-        import sys
         import tempfile
-        _ORCH_ROOT = Path(__file__).resolve().parents[2] / "src" / "dackar" / "outage"
-        if str(_ORCH_ROOT) not in sys.path:
-            pass  # sys.path hack removed
-
         from dackar.outage.orchestrators.outage_activity_orchestrator import OutageActivityOrchestrator
         from dackar.outage.orchestrators.protocols import (
             NoOpSchemaValidator,

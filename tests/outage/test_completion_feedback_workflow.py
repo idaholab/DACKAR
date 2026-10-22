@@ -39,21 +39,14 @@ Coverage targets:
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-from typing import Any, Optional
-from unittest.mock import MagicMock, call
+from typing import Optional
+from unittest.mock import MagicMock
 
-import pytest
 
-_OUTAGE_ROOT = Path(__file__).resolve().parents[2] / "src" / "dackar" / "outage"
-if str(_OUTAGE_ROOT) not in sys.path:
-    pass  # sys.path hack removed
 
 from dackar.outage.stages.completion_feedback import CompletionRecord, _utcnow_iso
 from dackar.outage.workflows.completion_feedback_workflow import (
     CompletionFeedbackWorkflow,
-    IngestionReceipt,
     _REJECTION_PREFIX,
 )
 

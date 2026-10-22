@@ -18,17 +18,12 @@ Coverage targets:
 """
 from __future__ import annotations
 
-import sys
 from datetime import datetime, timezone
-from pathlib import Path
 
 import pytest
 
 # Make the stages package importable via the outage root already on sys.path
 # (conftest.py adds _OUTAGE_ROOT = tests/../ = .../dackar/outage/ to sys.path)
-_OUTAGE_ROOT = Path(__file__).resolve().parents[2] / "src" / "dackar" / "outage"
-if str(_OUTAGE_ROOT) not in sys.path:
-    pass  # sys.path hack removed
 
 from dackar.outage.stages.stage_a_intake import ActivityIntakeProcessor, ActivityIntakeConfig
 from dackar.outage.stages.stage_c_temporal_chain import TemporalChainScorer, TemporalChainConfig
