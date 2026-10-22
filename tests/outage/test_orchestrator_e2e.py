@@ -24,13 +24,13 @@ from typing import Any, Dict
 
 import pytest
 
-# The outage demos land in MR #17 as a proper package
-# (dackar.outage.demos.unexpected_act_workflow_1); import by package path so the
-# skip actually lifts once they merge, rather than depending on a sys.path shim
-# that can never resolve a bare `demo_scenarios` module.
+# The workflow-1 demo lives at examples/outage/unexpected_act_workflow_1/ and is
+# put on sys.path by tests/outage/conftest.py, so it imports by bare module name
+# (demo_scenarios).  importorskip keeps the file from erroring if the examples
+# tree is ever absent.
 demo_scenarios = pytest.importorskip(
-    "dackar.outage.demos.unexpected_act_workflow_1.demo_scenarios",
-    reason="outage demos (dackar.outage.demos) arrive in MR #17",
+    "demo_scenarios",
+    reason="workflow-1 demo (examples/outage/unexpected_act_workflow_1) not importable",
 )
 run_pipeline = demo_scenarios.run_pipeline
 SCENARIO_RCP_SEAL = demo_scenarios.SCENARIO_RCP_SEAL
@@ -357,7 +357,21 @@ class TestN13StageEStubDegradation:
         assert float_analysis.get("is_critical_path_impact") is False
 
     def test_y8_stub_artifact_passes_schema_field_names(self):
-        """Y8 fix: stub must use schema-valid field names and values throughout."""
+        """The degraded-mode Stage E stub must validate against the current
+        ScheduleImpactAssessment schema.
+
+        The stub legitimately carries ``schedule_loader_unavailable=True`` and
+        ``float_analysis.criticality_label == "unknown"`` — both are defined in
+        the schema (``"unknown"`` means "schedule unavailable (degraded stub)")
+        so Stage G does not read an absent schedule as a safely non-critical one.
+        Validating the real artifact against the real schema is stronger than a
+        hand-maintained field checklist and does not drift when the schema grows.
+        """
+        import json
+        from pathlib import Path
+
+        import jsonschema
+
         orch = self._make_orchestrator(assessor_raises=True)
         stub_result = orch._stage_e_schedule(
             run_id="TEST-Y8",
@@ -368,42 +382,30 @@ class TestN13StageEStubDegradation:
             precomputed=None,
             optional_failures=[],
         )
-        # Non-schema fields that were present before Y8 fix must be absent
-        assert "schedule_loader_unavailable" not in stub_result, (
-            "'schedule_loader_unavailable' is not in schema (Y8 fix)"
+
+        schema_path = (
+            Path(__file__).resolve().parents[2]
+            / "src" / "dackar" / "outage" / "schemas"
+            / "schedule_impact_assessment.json"
         )
-        assert "crew_continuity" not in stub_result, (
-            "'crew_continuity' is not in schema (Y8 fix)"
+        schema = json.loads(schema_path.read_text())
+        jsonschema.validate(stub_result, schema)
+
+        # Degraded-stub contract (explicit, beyond bare schema validation):
+        assert stub_result["schedule_loader_unavailable"] is True
+        fa = stub_result["float_analysis"]
+        assert fa["criticality_label"] == "unknown", (
+            "degraded stub must mark criticality_label 'unknown' so Stage G does "
+            "not treat an absent schedule as non-critical"
         )
-        assert "permit_lead_time" not in stub_result, (
-            "'permit_lead_time' is not in schema (Y8 fix)"
-        )
-        # float_analysis: old wrong field names must be absent
-        fa = stub_result.get("float_analysis", {})
-        assert "available_float_before" not in fa, (
-            "'available_float_before' is wrong field name — schema uses 'available_float_before_hours' (Y8 fix)"
-        )
-        assert "remaining_float_hours" not in fa, (
-            "'remaining_float_hours' is wrong field name — schema uses 'remaining_float_after_hours' (Y8 fix)"
-        )
-        assert "near_critical_float_threshold" not in fa, (
-            "'near_critical_float_threshold' is not in schema (Y8 fix)"
-        )
-        # criticality_label must be in schema enum
-        assert fa.get("criticality_label") in {"critical", "near_critical", "non_critical"}, (
-            f"criticality_label '{fa.get('criticality_label')}' not in schema enum (Y8 fix: 'unknown' was invalid)"
-        )
-        # cp_impact must have required fields
-        cp = stub_result.get("cp_impact", {})
-        assert "estimated_new_cp_hours" in cp, (
-            "cp_impact must include 'estimated_new_cp_hours' (Y8 fix)"
-        )
-        # duration_estimate must have required fields
-        de = stub_result.get("duration_estimate", {})
+        # Old wrong field names (pre-schema-alignment) must not reappear.
+        assert "available_float_before" not in fa
+        assert "remaining_float_hours" not in fa
+        # cp_impact / duration_estimate required fields are present.
+        assert "estimated_new_cp_hours" in stub_result["cp_impact"]
+        de = stub_result["duration_estimate"]
         for req_field in ("p50_hours", "p80_hours", "p90_hours", "confidence_tier"):
-            assert req_field in de, (
-                f"duration_estimate missing required field '{req_field}' (Y8 fix)"
-            )
+            assert req_field in de
         # schedule_version_id must be a non-null string
         assert isinstance(stub_result.get("schedule_version_id"), str), (
             "schedule_version_id must be a string, not None (Y8 fix)"
