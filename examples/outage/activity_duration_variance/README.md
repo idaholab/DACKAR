@@ -30,22 +30,28 @@ This demo answers both.
 
 ## How to run
 
+> **Note:** this demo depends on the outage schedule-risk layer
+> (`dackar.outage.outage_uncertainty.schedule_risk`), which is not yet part of
+> the published package. Until it is merged the demo exits early with a message
+> saying so. The other three demos under `examples/outage/` run today.
+
+Install DACKAR first (e.g. `pip install -e .` from the repo root); the demo
+imports the pipeline from the installed `dackar` package.
+
 ### Notebook (recommended)
 
 Open `outage_uncertainty_demo.ipynb` and run all cells.
 
 ```
-conda activate base
-cd .../outage
-jupyter lab "demos/activity_duration variance/outage_uncertainty_demo.ipynb"
+cd examples/outage/activity_duration_variance
+jupyter lab outage_uncertainty_demo.ipynb
 ```
 
 ### CLI script
 
 ```
-conda activate base
-cd .../outage
-python "demos/activity_duration variance/activity_duration_demo.py"
+cd examples/outage/activity_duration_variance
+python activity_duration_demo.py
 ```
 
 No external services required — all steps run offline.

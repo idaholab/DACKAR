@@ -451,8 +451,8 @@ def plot_preprocessing_benchmark(
 
     def _clean(raw: str) -> str:
         try:
-            from outage_uncertainty.preprocessing.abbreviations import AbbreviationResolver
-            from outage_uncertainty.preprocessing.spell_checker import DomainSpellChecker
+            from dackar.outage.outage_uncertainty.preprocessing.abbreviations import AbbreviationResolver
+            from dackar.outage.outage_uncertainty.preprocessing.spell_checker import DomainSpellChecker
             resolver = AbbreviationResolver()
             checker  = DomainSpellChecker()
             return checker.transform(resolver.transform(raw))

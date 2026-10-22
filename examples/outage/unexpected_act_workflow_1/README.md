@@ -40,11 +40,12 @@ making it easy to trace exactly which inputs drove each conclusion.
 
 Open `dackar_workflow_demo.ipynb` and run all cells.
 No external services are required — see "Stub backends" below.
+The demo imports the pipeline from the installed `dackar` package, so install
+DACKAR (e.g. `pip install -e .` from the repo root) first.
 
 ```
-conda activate base
-cd .../outage
-jupyter lab demos/unexpected_act_workflow_1/dackar_workflow_demo.ipynb
+cd examples/outage/unexpected_act_workflow_1
+jupyter lab dackar_workflow_demo.ipynb
 ```
 
 ---

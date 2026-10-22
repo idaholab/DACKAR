@@ -1,14 +1,23 @@
 # DACKAR Outage — Demos
 
-Three self-contained demonstrations of the outage activity analysis pipeline.
-All demos run without external services (no Neo4j, no embedding server, no LOGOS required).
+Four demonstrations of the outage activity analysis pipeline. Demos 1 and 2 and
+the cross-phase demo run offline with no external services (no Neo4j, no
+embedding server, no LOGOS required). The duration-variance demo additionally
+needs the outage schedule-risk layer
+(`dackar.outage.outage_uncertainty.schedule_risk`), which is not yet part of the
+published package — until it is merged that demo exits early with a message
+saying so.
+
+The demos import the pipeline from the installed `dackar` package, so install
+DACKAR first (e.g. `pip install -e .` from the repo root).
 
 ---
 
-## How the three demos connect
+## How the demos connect
 
-The three demos cover different points in the outage lifecycle and answer different questions.
-They are designed to be used together, not independently.
+The first three demos cover different points in the outage lifecycle and answer
+different questions; the cross-phase demo chains two of them end to end. They are
+designed to be used together, not independently.
 
 ```
   ── Planning phase ──────────────────────────────────────────────────────────────────────────
@@ -48,7 +57,11 @@ duration uncertainty, then Demo 1 to see how a discovered activity is triaged in
 | **Output** | ESCALATE / PROCEED / DEFER recommendation | Risk register + evidence chains | Duration distribution + schedule risk |
 | **Pipeline** | Stages A–G | Ingestion → NLP → KG → Prediction → Recommendation | Duration service + Monte Carlo |
 | **Notebook** | `dackar_workflow_demo.ipynb` | `dackar_v2_demo_executed.ipynb` | `outage_uncertainty_demo.ipynb` |
-| **Folder** | `unexpected_act_workflow_1/` | `unexpected_act_workflow_2/` | `activity_duration variance/` |
+| **Folder** | `unexpected_act_workflow_1/` | `unexpected_act_workflow_2/` | `activity_duration_variance/` |
+
+A fourth demo, `unexpected_act_cross_phase/`, ties Demo 2 (pre-outage prediction)
+and Demo 1 (in-outage triage) together end to end to show how a predicted risk
+becomes a discovered activity.
 
 ---
 
@@ -79,9 +92,10 @@ outages, predict which components will generate emergent work in the upcoming ou
 | `demo_build_guide.md` | Step-by-step guide to how the pipeline was built |
 | `test_case_spec.md` | Acceptance test cases for the demo pipeline |
 
-### `activity_duration variance/`
+### `activity_duration_variance/`
 Duration uncertainty: given historical activity completions, estimate a duration
 distribution for a planned activity and propagate uncertainty through a schedule network.
+Depends on the not-yet-merged schedule-risk layer (see the note at the top).
 
 | File | Purpose |
 |------|---------|
@@ -89,9 +103,19 @@ distribution for a planned activity and propagate uncertainty through a schedule
 | `outage_uncertainty_demo.ipynb` | Interactive notebook — run this for the full demo |
 | `activity_duration_demo.py` | CLI version of the same demo |
 
+### `unexpected_act_cross_phase/`
+Cross-phase story: chains Demo 2 (pre-outage risk prediction) into Demo 1
+(in-outage triage) to trace a predicted risk through to a discovered activity.
+Reuses the two workflow demos, so it has no data of its own.
+
+| File | Purpose |
+|------|---------|
+| `dackar_cross_phase_demo.ipynb` | Interactive notebook tying the two workflows together |
+| `workflow_reference.md` | How the cross-phase narrative maps onto the two pipelines |
+
 ---
 
 ## Quick start
 
-Each demo is self-contained. Open the notebook for the workflow you want and run all cells.
-See `../docs/TESTING.md` for environment setup.
+Install DACKAR (`pip install -e .` from the repo root), then open the notebook
+for the demo you want and run all cells.
