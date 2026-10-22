@@ -124,7 +124,10 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">csv</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numbers</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timezone</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Optional</span>
@@ -157,6 +160,26 @@
         <span class="k">return</span> <span class="n">dt</span>
     <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
         <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_valid_duration">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback._valid_duration">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_valid_duration</span><span class="p">(</span><span class="n">v</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""True when *v* is a positive, finite real number.</span>
+
+<span class="sd">    Uses numbers.Real (not int/float) so numpy scalars from a pandas column</span>
+<span class="sd">    (np.int64 / np.float32) are accepted — ``isinstance(np.int64(2), int)`` is</span>
+<span class="sd">    False.  bool is rejected (it is a Real but not a duration).  math.isfinite</span>
+<span class="sd">    on a huge Python int raises OverflowError, so the float conversion is</span>
+<span class="sd">    guarded to preserve the never-raises contract.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">numbers</span><span class="o">.</span><span class="n">Real</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">math</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">))</span> <span class="ow">and</span> <span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">OverflowError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">False</span></div>
 
 
 
@@ -327,10 +350,16 @@
                 <span class="n">index_updated</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">persisted</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">warnings</span><span class="o">=</span><span class="n">warnings</span><span class="p">,</span>
             <span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">actual_duration_hours</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="c1"># B6: reject non-numeric, non-finite (NaN/inf), and non-positive values.</span>
+        <span class="c1"># `nan &lt;= 0` is False (so NaN slipped past the old check and was written</span>
+        <span class="c1"># to the index and CSV), and `None` crashed the `:.4f` format, breaking</span>
+        <span class="c1"># the "never raises" contract.  _valid_duration also accepts numpy</span>
+        <span class="c1"># scalars (np.int64/np.float32 from a pandas column) and survives a huge</span>
+        <span class="c1"># Python int (math.isfinite OverflowError) — PR#79 [3].</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">_valid_duration</span><span class="p">(</span><span class="n">actual_duration_hours</span><span class="p">):</span>
             <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="sa">f</span><span class="s2">"actual_duration_hours=</span><span class="si">{</span><span class="n">actual_duration_hours</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> is not positive; "</span>
-                <span class="s2">"write-back skipped to prevent corrupting the analog index"</span>
+                <span class="sa">f</span><span class="s2">"actual_duration_hours=</span><span class="si">{</span><span class="n">actual_duration_hours</span><span class="si">!r}</span><span class="s2"> is not a positive "</span>
+                <span class="s2">"finite number; write-back skipped to prevent corrupting the analog index"</span>
             <span class="p">)</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
             <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"CompletionFeedbackWriter: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">msg</span><span class="p">)</span>
@@ -430,10 +459,27 @@
             <span class="c1"># Shallow-copy the existing ActivityCase and overwrite completion fields</span>
             <span class="n">updated</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">existing</span><span class="p">)</span>
             <span class="n">updated</span><span class="o">.</span><span class="n">actual_duration_hours</span> <span class="o">=</span> <span class="n">actual_duration_hours</span>
+            <span class="c1"># I16: only overwrite when the incoming timestamp parses — an</span>
+            <span class="c1"># unparseable string must not wipe a valid existing actual_start/</span>
+            <span class="c1"># actual_finish with None.</span>
             <span class="k">if</span> <span class="n">actual_start</span><span class="p">:</span>
-                <span class="n">updated</span><span class="o">.</span><span class="n">actual_start</span> <span class="o">=</span> <span class="n">_parse_iso</span><span class="p">(</span><span class="n">actual_start</span><span class="p">)</span>
+                <span class="n">parsed_start</span> <span class="o">=</span> <span class="n">_parse_iso</span><span class="p">(</span><span class="n">actual_start</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">parsed_start</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">updated</span><span class="o">.</span><span class="n">actual_start</span> <span class="o">=</span> <span class="n">parsed_start</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                        <span class="s2">"CompletionFeedbackWriter: unparseable actual_start </span><span class="si">%r</span><span class="s2"> for </span><span class="si">%s</span><span class="s2">; "</span>
+                        <span class="s2">"keeping existing value"</span><span class="p">,</span> <span class="n">actual_start</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">,</span>
+                    <span class="p">)</span>
             <span class="k">if</span> <span class="n">actual_finish</span><span class="p">:</span>
-                <span class="n">updated</span><span class="o">.</span><span class="n">actual_finish</span> <span class="o">=</span> <span class="n">_parse_iso</span><span class="p">(</span><span class="n">actual_finish</span><span class="p">)</span>
+                <span class="n">parsed_finish</span> <span class="o">=</span> <span class="n">_parse_iso</span><span class="p">(</span><span class="n">actual_finish</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">parsed_finish</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">updated</span><span class="o">.</span><span class="n">actual_finish</span> <span class="o">=</span> <span class="n">parsed_finish</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                        <span class="s2">"CompletionFeedbackWriter: unparseable actual_finish </span><span class="si">%r</span><span class="s2"> for </span><span class="si">%s</span><span class="s2">; "</span>
+                        <span class="s2">"keeping existing value"</span><span class="p">,</span> <span class="n">actual_finish</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">,</span>
+                    <span class="p">)</span>
             <span class="k">if</span> <span class="n">outcome_notes</span><span class="p">:</span>
                 <span class="n">meta</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">updated</span><span class="o">.</span><span class="n">metadata</span><span class="p">)</span>
                 <span class="n">meta</span><span class="p">[</span><span class="s2">"outcome_notes"</span><span class="p">]</span> <span class="o">=</span> <span class="n">outcome_notes</span>
@@ -516,15 +562,128 @@
 
 
 
+<div class="viewcode-block" id="_FileLock">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback._FileLock">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">_FileLock</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Minimal cross-process advisory lock via an exclusive lock file.</span>
+
+<span class="sd">    Standard-library only (no fcntl dependency, so it also works on Windows).</span>
+<span class="sd">    Acquisition retries until ``timeout`` seconds elapse.  On timeout, a lock</span>
+<span class="sd">    older than ``stale_after`` seconds is assumed to belong to a crashed writer:</span>
+<span class="sd">    it is unlinked and the exclusive open is retried once, so a leftover lock</span>
+<span class="sd">    cannot permanently defeat mutual exclusion (PR#79 [2]).  Only if the lock is</span>
+<span class="sd">    fresh (another writer is genuinely active) do we proceed without it, logging</span>
+<span class="sd">    a warning, rather than blocking the "never raises" write-back path.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lock_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">10.0</span><span class="p">,</span>
+                 <span class="n">stale_after</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">30.0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="_FileLock._lock_path">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback._FileLock._lock_path">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lock_path</span> <span class="o">=</span> <span class="n">lock_path</span></div>
+
+<div class="viewcode-block" id="_FileLock._timeout">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback._FileLock._timeout">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_timeout</span> <span class="o">=</span> <span class="n">timeout</span></div>
+
+<div class="viewcode-block" id="_FileLock._stale_after">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback._FileLock._stale_after">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stale_after</span> <span class="o">=</span> <span class="n">stale_after</span></div>
+
+<div class="viewcode-block" id="_FileLock._fd">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback._FileLock._fd">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_fd</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="_FileLock._try_open">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback._FileLock._try_open">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_try_open</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_fd</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_lock_path</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">O_CREAT</span> <span class="o">|</span> <span class="n">os</span><span class="o">.</span><span class="n">O_EXCL</span> <span class="o">|</span> <span class="n">os</span><span class="o">.</span><span class="n">O_WRONLY</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">except</span> <span class="ne">FileExistsError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span></div>
+
+
+<div class="viewcode-block" id="_FileLock.__enter__">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback._FileLock.__enter__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"_FileLock"</span><span class="p">:</span>
+        <span class="n">deadline</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_timeout</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_try_open</span><span class="p">():</span>
+                <span class="k">return</span> <span class="bp">self</span>
+            <span class="k">if</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span> <span class="o">&gt;=</span> <span class="n">deadline</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.05</span><span class="p">)</span>
+
+        <span class="c1"># Timed out.  If the existing lock is stale (crashed holder), take it</span>
+        <span class="c1"># over: unlink and retry the exclusive open once.</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">age</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getmtime</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_lock_path</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+            <span class="n">age</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">age</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">age</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stale_after</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"CsvAnalogPersister: lock </span><span class="si">%s</span><span class="s2"> is stale (</span><span class="si">%.0f</span><span class="s2">s old); taking it over."</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_lock_path</span><span class="p">,</span> <span class="n">age</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_lock_path</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_try_open</span><span class="p">():</span>
+                <span class="k">return</span> <span class="bp">self</span>
+
+        <span class="c1"># Lock is fresh (another writer is active) or could not be reclaimed:</span>
+        <span class="c1"># proceed without it rather than blocking the write-back.</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"CsvAnalogPersister: lock </span><span class="si">%s</span><span class="s2"> held past </span><span class="si">%.0f</span><span class="s2">s; proceeding without it."</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_lock_path</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_timeout</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_fd</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="bp">self</span></div>
+
+
+<div class="viewcode-block" id="_FileLock.__exit__">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback._FileLock.__exit__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">exc</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_fd</span><span class="p">)</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_lock_path</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+                    <span class="k">pass</span></div>
+</div>
+
+
+
 <div class="viewcode-block" id="CsvAnalogPersister">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CsvAnalogPersister">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">CsvAnalogPersister</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Append completed ActivityCase records to a CSV file.</span>
+<span class="w">    </span><span class="sd">"""Upsert completed ActivityCase records into a CSV analog store.</span>
 
-<span class="sd">    The file is created (with a header row) if it does not yet exist.  Each</span>
-<span class="sd">    ``append()`` call adds one row.  Column order follows ``_CSV_COLUMNS``</span>
-<span class="sd">    so that rows written across sessions are compatible and can be loaded</span>
-<span class="sd">    directly by :class:`~outage_uncertainty.adapters.pandas_repository.PandasActivityRepository`.</span>
+<span class="sd">    ``append()`` is an idempotent upsert keyed by ``activity_id``: re-ingesting</span>
+<span class="sd">    the same id replaces that row rather than adding a duplicate (so a double</span>
+<span class="sd">    ingest does not grow the file, and the last write wins on reload).  The file</span>
+<span class="sd">    is rewritten whole via a temp file + ``os.replace`` (atomic), so a crash</span>
+<span class="sd">    mid-write cannot leave a partial or header-less file.</span>
+
+<span class="sd">    Column handling: the rewritten header is the UNION of the existing file's</span>
+<span class="sd">    columns and ``_CSV_COLUMNS`` (existing order first), so extra columns in a</span>
+<span class="sd">    seeded historical file — e.g. ``contractor_flag``, which</span>
+<span class="sd">    ``PandasActivityRepository.load_activities()`` reads — are preserved, not</span>
+<span class="sd">    dropped (PR#79 [0]).</span>
+
+<span class="sd">    Side-effect files (same directory as the CSV): a ``&lt;path&gt;.lock`` exclusive</span>
+<span class="sd">    lock serialises concurrent writers (see :class:`_FileLock`), and a transient</span>
+<span class="sd">    ``&lt;path&gt;.tmp.&lt;pid&gt;`` holds the new content before the atomic rename.</span>
+
+<span class="sd">    If an existing file cannot be read (malformed CSV, oversized field,</span>
+<span class="sd">    encoding or OS error), ``append()`` refuses to overwrite it and raises, so</span>
+<span class="sd">    the caller reports ``persisted=False`` rather than silently replacing the</span>
+<span class="sd">    whole history with one row (PR#79 [1]).</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        filepath: Path to the CSV file.  The parent directory must exist.</span>
@@ -539,29 +698,97 @@
 <div class="viewcode-block" id="CsvAnalogPersister.append">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CsvAnalogPersister.append">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">append</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Append one row to the CSV file, creating it with a header if needed."""</span>
+<span class="w">        </span><span class="sd">"""Upsert one activity row by activity_id (see class docstring)."""</span>
         <span class="n">row</span> <span class="o">=</span> <span class="p">{</span><span class="n">col</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">activity</span><span class="p">,</span> <span class="n">col</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">_CSV_COLUMNS</span><span class="p">}</span>
-
-        <span class="c1"># Serialise datetime fields to ISO strings</span>
         <span class="k">for</span> <span class="n">dt_field</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"actual_start"</span><span class="p">,</span> <span class="s2">"actual_finish"</span><span class="p">):</span>
             <span class="n">val</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">dt_field</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">val</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="s2">"isoformat"</span><span class="p">):</span>
                 <span class="n">row</span><span class="p">[</span><span class="n">dt_field</span><span class="p">]</span> <span class="o">=</span> <span class="n">val</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span>
 
-        <span class="n">needs_header</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">)</span>
-            <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
-        <span class="p">)</span>
-        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">,</span> <span class="s2">"a"</span><span class="p">,</span> <span class="n">newline</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
-            <span class="n">writer</span> <span class="o">=</span> <span class="n">csv</span><span class="o">.</span><span class="n">DictWriter</span><span class="p">(</span><span class="n">fh</span><span class="p">,</span> <span class="n">fieldnames</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">_CSV_COLUMNS</span><span class="p">))</span>
-            <span class="k">if</span> <span class="n">needs_header</span><span class="p">:</span>
-                <span class="n">writer</span><span class="o">.</span><span class="n">writeheader</span><span class="p">()</span>
-            <span class="n">writer</span><span class="o">.</span><span class="n">writerow</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+        <span class="n">activity_id</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"activity_id"</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="n">_FileLock</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_path</span> <span class="o">+</span> <span class="s2">".lock"</span><span class="p">):</span>
+            <span class="c1"># Load existing rows and their header.  A file that exists but cannot</span>
+            <span class="c1"># be read must NOT be silently replaced with a single-row file</span>
+            <span class="c1"># (PR#79 [1]): re-raise so record_completion reports persisted=False.</span>
+            <span class="n">existing</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">existing_fields</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">)</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">,</span> <span class="n">newline</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+                        <span class="n">reader</span> <span class="o">=</span> <span class="n">csv</span><span class="o">.</span><span class="n">DictReader</span><span class="p">(</span><span class="n">fh</span><span class="p">)</span>
+                        <span class="n">existing</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">reader</span><span class="p">)</span>
+                        <span class="n">existing_fields</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">reader</span><span class="o">.</span><span class="n">fieldnames</span> <span class="ow">or</span> <span class="p">[])</span>
+                <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="n">csv</span><span class="o">.</span><span class="n">Error</span><span class="p">,</span> <span class="ne">UnicodeDecodeError</span><span class="p">):</span>
+                    <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                        <span class="s2">"CsvAnalogPersister: could not read </span><span class="si">%s</span><span class="s2">; refusing to "</span>
+                        <span class="s2">"overwrite existing analog history"</span><span class="p">,</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="k">raise</span>
+
+            <span class="c1"># Upsert by activity_id (dedup); append when the id is new or absent.</span>
+            <span class="n">replaced</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">if</span> <span class="n">activity_id</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">existing</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"activity_id"</span><span class="p">)</span> <span class="o">==</span> <span class="n">activity_id</span><span class="p">:</span>
+                        <span class="n">existing</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">r</span><span class="p">,</span> <span class="o">**</span><span class="n">row</span><span class="p">}</span>  <span class="c1"># preserve extra cols on the row</span>
+                        <span class="n">replaced</span> <span class="o">=</span> <span class="kc">True</span>
+                        <span class="k">break</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">replaced</span><span class="p">:</span>
+                <span class="n">existing</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+
+            <span class="c1"># Header = existing columns first, then any _CSV_COLUMNS not already</span>
+            <span class="c1"># present — preserves extra columns in a seeded file (PR#79 [0]).</span>
+            <span class="n">fieldnames</span> <span class="o">=</span> <span class="n">existing_fields</span> <span class="o">+</span> <span class="p">[</span>
+                <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">_CSV_COLUMNS</span> <span class="k">if</span> <span class="n">c</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">existing_fields</span>
+            <span class="p">]</span>
+
+            <span class="c1"># Atomic rewrite: temp file in the same dir, then os.replace; fsync</span>
+            <span class="c1"># the file and the directory so the rename is durable (PR#79 [5]).</span>
+            <span class="c1"># Unlink the temp file if the write fails, leaving no .tmp litter</span>
+            <span class="c1"># (PR#79 [6]).</span>
+            <span class="n">directory</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"."</span>
+            <span class="n">tmp_path</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="si">}</span><span class="s2">.tmp.</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">getpid</span><span class="p">()</span><span class="si">}</span><span class="s2">"</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">tmp_path</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">,</span> <span class="n">newline</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+                    <span class="n">writer</span> <span class="o">=</span> <span class="n">csv</span><span class="o">.</span><span class="n">DictWriter</span><span class="p">(</span><span class="n">fh</span><span class="p">,</span> <span class="n">fieldnames</span><span class="o">=</span><span class="n">fieldnames</span><span class="p">,</span> <span class="n">extrasaction</span><span class="o">=</span><span class="s2">"ignore"</span><span class="p">)</span>
+                    <span class="n">writer</span><span class="o">.</span><span class="n">writeheader</span><span class="p">()</span>
+                    <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">existing</span><span class="p">:</span>
+                        <span class="n">writer</span><span class="o">.</span><span class="n">writerow</span><span class="p">({</span><span class="n">col</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">col</span><span class="p">)</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">fieldnames</span><span class="p">})</span>
+                    <span class="n">fh</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+                    <span class="n">os</span><span class="o">.</span><span class="n">fsync</span><span class="p">(</span><span class="n">fh</span><span class="o">.</span><span class="n">fileno</span><span class="p">())</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tmp_path</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_fsync_dir</span><span class="p">(</span><span class="n">directory</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">tmp_path</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+                    <span class="k">pass</span>
+                <span class="k">raise</span>
 
         <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-            <span class="s2">"CsvAnalogPersister: appended activity </span><span class="si">%s</span><span class="s2"> to </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
-            <span class="nb">getattr</span><span class="p">(</span><span class="n">activity</span><span class="p">,</span> <span class="s2">"activity_id"</span><span class="p">,</span> <span class="s2">"?"</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">,</span>
+            <span class="s2">"CsvAnalogPersister: </span><span class="si">%s</span><span class="s2"> activity </span><span class="si">%s</span><span class="s2"> in </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+            <span class="s2">"replaced"</span> <span class="k">if</span> <span class="n">replaced</span> <span class="k">else</span> <span class="s2">"appended"</span><span class="p">,</span>
+            <span class="n">activity_id</span> <span class="ow">or</span> <span class="s2">"?"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">,</span>
         <span class="p">)</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="CsvAnalogPersister._fsync_dir">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/outage/stages/completion_feedback/index.html#src.dackar.outage.stages.completion_feedback.CsvAnalogPersister._fsync_dir">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fsync_dir</span><span class="p">(</span><span class="n">directory</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""fsync a directory so a rename into it is durable on POSIX (best effort)."""</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">dfd</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">directory</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">O_RDONLY</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">fsync</span><span class="p">(</span><span class="n">dfd</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+            <span class="k">pass</span>  <span class="c1"># not supported on this platform (e.g. Windows)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">dfd</span><span class="p">)</span></div>
 </div>
 
 </pre></div>

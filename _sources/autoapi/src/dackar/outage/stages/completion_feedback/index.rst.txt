@@ -60,6 +60,7 @@ Classes
 
    src.dackar.outage.stages.completion_feedback.CompletionRecord
    src.dackar.outage.stages.completion_feedback.CompletionFeedbackWriter
+   src.dackar.outage.stages.completion_feedback._FileLock
    src.dackar.outage.stages.completion_feedback.CsvAnalogPersister
 
 
@@ -70,6 +71,7 @@ Functions
 
    src.dackar.outage.stages.completion_feedback._utcnow_iso
    src.dackar.outage.stages.completion_feedback._parse_iso
+   src.dackar.outage.stages.completion_feedback._valid_duration
 
 
 Module Contents
@@ -82,6 +84,17 @@ Module Contents
 .. py:function:: _parse_iso(iso_str)
 
    Parse ISO-8601 string to a timezone-aware datetime; None on failure.
+
+
+.. py:function:: _valid_duration(v)
+
+   True when *v* is a positive, finite real number.
+
+   Uses numbers.Real (not int/float) so numpy scalars from a pandas column
+   (np.int64 / np.float32) are accepted — ``isinstance(np.int64(2), int)`` is
+   False.  bool is rejected (it is a Real but not a duration).  math.isfinite
+   on a huge Python int raises OverflowError, so the float conversion is
+   guarded to preserve the never-raises contract.
 
 
 .. py:class:: CompletionRecord
@@ -244,14 +257,71 @@ Module Contents
    :value: ('activity_id', 'outage_id', 'plant_id', 'unit_id', 'raw_description', 'cleaned_description',...
 
 
+.. py:class:: _FileLock(lock_path, timeout = 10.0, stale_after = 30.0)
+
+   Minimal cross-process advisory lock via an exclusive lock file.
+
+   Standard-library only (no fcntl dependency, so it also works on Windows).
+   Acquisition retries until ``timeout`` seconds elapse.  On timeout, a lock
+   older than ``stale_after`` seconds is assumed to belong to a crashed writer:
+   it is unlinked and the exclusive open is retried once, so a leftover lock
+   cannot permanently defeat mutual exclusion (PR#79 [2]).  Only if the lock is
+   fresh (another writer is genuinely active) do we proceed without it, logging
+   a warning, rather than blocking the "never raises" write-back path.
+
+
+   .. py:attribute:: _lock_path
+
+
+   .. py:attribute:: _timeout
+      :value: 10.0
+
+
+
+   .. py:attribute:: _stale_after
+      :value: 30.0
+
+
+
+   .. py:attribute:: _fd
+      :type:  Optional[int]
+      :value: None
+
+
+
+   .. py:method:: _try_open()
+
+
+   .. py:method:: __enter__()
+
+
+   .. py:method:: __exit__(*exc)
+
+
 .. py:class:: CsvAnalogPersister(filepath)
 
-   Append completed ActivityCase records to a CSV file.
+   Upsert completed ActivityCase records into a CSV analog store.
 
-   The file is created (with a header row) if it does not yet exist.  Each
-   ``append()`` call adds one row.  Column order follows ``_CSV_COLUMNS``
-   so that rows written across sessions are compatible and can be loaded
-   directly by :class:`~outage_uncertainty.adapters.pandas_repository.PandasActivityRepository`.
+   ``append()`` is an idempotent upsert keyed by ``activity_id``: re-ingesting
+   the same id replaces that row rather than adding a duplicate (so a double
+   ingest does not grow the file, and the last write wins on reload).  The file
+   is rewritten whole via a temp file + ``os.replace`` (atomic), so a crash
+   mid-write cannot leave a partial or header-less file.
+
+   Column handling: the rewritten header is the UNION of the existing file's
+   columns and ``_CSV_COLUMNS`` (existing order first), so extra columns in a
+   seeded historical file — e.g. ``contractor_flag``, which
+   ``PandasActivityRepository.load_activities()`` reads — are preserved, not
+   dropped (PR#79 [0]).
+
+   Side-effect files (same directory as the CSV): a ``<path>.lock`` exclusive
+   lock serialises concurrent writers (see :class:`_FileLock`), and a transient
+   ``<path>.tmp.<pid>`` holds the new content before the atomic rename.
+
+   If an existing file cannot be read (malformed CSV, oversized field,
+   encoding or OS error), ``append()`` refuses to overwrite it and raises, so
+   the caller reports ``persisted=False`` rather than silently replacing the
+   whole history with one row (PR#79 [1]).
 
    :param filepath: Path to the CSV file.  The parent directory must exist.
 
@@ -263,7 +333,15 @@ Module Contents
 
    .. py:method:: append(activity)
 
-      Append one row to the CSV file, creating it with a header if needed.
+      Upsert one activity row by activity_id (see class docstring).
+
+
+
+   .. py:method:: _fsync_dir(directory)
+      :staticmethod:
+
+
+      fsync a directory so a rename into it is durable on POSIX (best effort).
 
 
 

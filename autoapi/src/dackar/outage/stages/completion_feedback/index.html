@@ -174,8 +174,11 @@ recording from blocking the primary pipeline.</p>
 <tr class="row-even"><td><p><a class="reference internal" href="#src.dackar.outage.stages.completion_feedback.CompletionFeedbackWriter" title="src.dackar.outage.stages.completion_feedback.CompletionFeedbackWriter"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CompletionFeedbackWriter</span></code></a></p></td>
 <td><p>Write actual completion data back to the historical analog index.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#src.dackar.outage.stages.completion_feedback.CsvAnalogPersister" title="src.dackar.outage.stages.completion_feedback.CsvAnalogPersister"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CsvAnalogPersister</span></code></a></p></td>
-<td><p>Append completed ActivityCase records to a CSV file.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#src.dackar.outage.stages.completion_feedback._FileLock" title="src.dackar.outage.stages.completion_feedback._FileLock"><code class="xref py py-obj docutils literal notranslate"><span class="pre">_FileLock</span></code></a></p></td>
+<td><p>Minimal cross-process advisory lock via an exclusive lock file.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#src.dackar.outage.stages.completion_feedback.CsvAnalogPersister" title="src.dackar.outage.stages.completion_feedback.CsvAnalogPersister"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CsvAnalogPersister</span></code></a></p></td>
+<td><p>Upsert completed ActivityCase records into a CSV analog store.</p></td>
 </tr>
 </tbody>
 </table>
@@ -189,6 +192,9 @@ recording from blocking the primary pipeline.</p>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#src.dackar.outage.stages.completion_feedback._parse_iso" title="src.dackar.outage.stages.completion_feedback._parse_iso"><code class="xref py py-obj docutils literal notranslate"><span class="pre">_parse_iso</span></code></a>(iso_str)</p></td>
 <td><p>Parse ISO-8601 string to a timezone-aware datetime; None on failure.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#src.dackar.outage.stages.completion_feedback._valid_duration" title="src.dackar.outage.stages.completion_feedback._valid_duration"><code class="xref py py-obj docutils literal notranslate"><span class="pre">_valid_duration</span></code></a>(v)</p></td>
+<td><p>True when <em>v</em> is a positive, finite real number.</p></td>
 </tr>
 </tbody>
 </table>
@@ -220,6 +226,25 @@ recording from blocking the primary pipeline.</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
 <dd class="field-even"><p>Optional[datetime.datetime]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.dackar.outage.stages.completion_feedback._valid_duration">
+<span class="sig-prename descclassname"><span class="pre">src.dackar.outage.stages.completion_feedback.</span></span><span class="sig-name descname"><span class="pre">_valid_duration</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">v</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/completion_feedback.html#_valid_duration"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.completion_feedback._valid_duration" title="Link to this definition">¶</a></dt>
+<dd><p>True when <em>v</em> is a positive, finite real number.</p>
+<p>Uses numbers.Real (not int/float) so numpy scalars from a pandas column
+(np.int64 / np.float32) are accepted — <code class="docutils literal notranslate"><span class="pre">isinstance(np.int64(2),</span> <span class="pre">int)</span></code> is
+False.  bool is rejected (it is a Real but not a duration).  math.isfinite
+on a huge Python int raises OverflowError, so the float conversion is
+guarded to preserve the never-raises contract.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>v</strong> (<em>Any</em>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>bool</p>
 </dd>
 </dl>
 </dd></dl>
@@ -461,13 +486,101 @@ store it for the next <code class="docutils literal notranslate"><span class="pr
 <dd></dd></dl>
 
 <dl class="py class">
+<dt class="sig sig-object py" id="src.dackar.outage.stages.completion_feedback._FileLock">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">src.dackar.outage.stages.completion_feedback.</span></span><span class="sig-name descname"><span class="pre">_FileLock</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lock_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stale_after</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">30.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/completion_feedback.html#_FileLock"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.completion_feedback._FileLock" title="Link to this definition">¶</a></dt>
+<dd><p>Minimal cross-process advisory lock via an exclusive lock file.</p>
+<p>Standard-library only (no fcntl dependency, so it also works on Windows).
+Acquisition retries until <code class="docutils literal notranslate"><span class="pre">timeout</span></code> seconds elapse.  On timeout, a lock
+older than <code class="docutils literal notranslate"><span class="pre">stale_after</span></code> seconds is assumed to belong to a crashed writer:
+it is unlinked and the exclusive open is retried once, so a leftover lock
+cannot permanently defeat mutual exclusion (PR#79 [2]).  Only if the lock is
+fresh (another writer is genuinely active) do we proceed without it, logging
+a warning, rather than blocking the “never raises” write-back path.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>lock_path</strong> (<em>str</em>)</p></li>
+<li><p><strong>timeout</strong> (<em>float</em>)</p></li>
+<li><p><strong>stale_after</strong> (<em>float</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.dackar.outage.stages.completion_feedback._FileLock._lock_path">
+<span class="sig-name descname"><span class="pre">_lock_path</span></span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/completion_feedback.html#_FileLock._lock_path"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.completion_feedback._FileLock._lock_path" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.dackar.outage.stages.completion_feedback._FileLock._timeout">
+<span class="sig-name descname"><span class="pre">_timeout</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">10.0</span></span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/completion_feedback.html#_FileLock._timeout"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.completion_feedback._FileLock._timeout" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.dackar.outage.stages.completion_feedback._FileLock._stale_after">
+<span class="sig-name descname"><span class="pre">_stale_after</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">30.0</span></span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/completion_feedback.html#_FileLock._stale_after"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.completion_feedback._FileLock._stale_after" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.dackar.outage.stages.completion_feedback._FileLock._fd">
+<span class="sig-name descname"><span class="pre">_fd</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/completion_feedback.html#_FileLock._fd"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.completion_feedback._FileLock._fd" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.dackar.outage.stages.completion_feedback._FileLock._try_open">
+<span class="sig-name descname"><span class="pre">_try_open</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/completion_feedback.html#_FileLock._try_open"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.completion_feedback._FileLock._try_open" title="Link to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.dackar.outage.stages.completion_feedback._FileLock.__enter__">
+<span class="sig-name descname"><span class="pre">__enter__</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/completion_feedback.html#_FileLock.__enter__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.completion_feedback._FileLock.__enter__" title="Link to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#src.dackar.outage.stages.completion_feedback._FileLock" title="src.dackar.outage.stages.completion_feedback._FileLock">_FileLock</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.dackar.outage.stages.completion_feedback._FileLock.__exit__">
+<span class="sig-name descname"><span class="pre">__exit__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">exc</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/completion_feedback.html#_FileLock.__exit__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.completion_feedback._FileLock.__exit__" title="Link to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>exc</strong> (<em>Any</em>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
 <dt class="sig sig-object py" id="src.dackar.outage.stages.completion_feedback.CsvAnalogPersister">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">src.dackar.outage.stages.completion_feedback.</span></span><span class="sig-name descname"><span class="pre">CsvAnalogPersister</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filepath</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/completion_feedback.html#CsvAnalogPersister"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.completion_feedback.CsvAnalogPersister" title="Link to this definition">¶</a></dt>
-<dd><p>Append completed ActivityCase records to a CSV file.</p>
-<p>The file is created (with a header row) if it does not yet exist.  Each
-<code class="docutils literal notranslate"><span class="pre">append()</span></code> call adds one row.  Column order follows <code class="docutils literal notranslate"><span class="pre">_CSV_COLUMNS</span></code>
-so that rows written across sessions are compatible and can be loaded
-directly by <code class="xref py py-class docutils literal notranslate"><span class="pre">PandasActivityRepository</span></code>.</p>
+<dd><p>Upsert completed ActivityCase records into a CSV analog store.</p>
+<p><code class="docutils literal notranslate"><span class="pre">append()</span></code> is an idempotent upsert keyed by <code class="docutils literal notranslate"><span class="pre">activity_id</span></code>: re-ingesting
+the same id replaces that row rather than adding a duplicate (so a double
+ingest does not grow the file, and the last write wins on reload).  The file
+is rewritten whole via a temp file + <code class="docutils literal notranslate"><span class="pre">os.replace</span></code> (atomic), so a crash
+mid-write cannot leave a partial or header-less file.</p>
+<p>Column handling: the rewritten header is the UNION of the existing file’s
+columns and <code class="docutils literal notranslate"><span class="pre">_CSV_COLUMNS</span></code> (existing order first), so extra columns in a
+seeded historical file — e.g. <code class="docutils literal notranslate"><span class="pre">contractor_flag</span></code>, which
+<code class="docutils literal notranslate"><span class="pre">PandasActivityRepository.load_activities()</span></code> reads — are preserved, not
+dropped (PR#79 [0]).</p>
+<p>Side-effect files (same directory as the CSV): a <code class="docutils literal notranslate"><span class="pre">&lt;path&gt;.lock</span></code> exclusive
+lock serialises concurrent writers (see <a class="reference internal" href="#src.dackar.outage.stages.completion_feedback._FileLock" title="src.dackar.outage.stages.completion_feedback._FileLock"><code class="xref py py-class docutils literal notranslate"><span class="pre">_FileLock</span></code></a>), and a transient
+<code class="docutils literal notranslate"><span class="pre">&lt;path&gt;.tmp.&lt;pid&gt;</span></code> holds the new content before the atomic rename.</p>
+<p>If an existing file cannot be read (malformed CSV, oversized field,
+encoding or OS error), <code class="docutils literal notranslate"><span class="pre">append()</span></code> refuses to overwrite it and raises, so
+the caller reports <code class="docutils literal notranslate"><span class="pre">persisted=False</span></code> rather than silently replacing the
+whole history with one row (PR#79 [1]).</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>filepath</strong> (<em>Any</em>) – Path to the CSV file.  The parent directory must exist.</p>
@@ -481,10 +594,24 @@ directly by <code class="xref py py-class docutils literal notranslate"><span cl
 <dl class="py method">
 <dt class="sig sig-object py" id="src.dackar.outage.stages.completion_feedback.CsvAnalogPersister.append">
 <span class="sig-name descname"><span class="pre">append</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">activity</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/completion_feedback.html#CsvAnalogPersister.append"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.completion_feedback.CsvAnalogPersister.append" title="Link to this definition">¶</a></dt>
-<dd><p>Append one row to the CSV file, creating it with a header if needed.</p>
+<dd><p>Upsert one activity row by activity_id (see class docstring).</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>activity</strong> (<em>Any</em>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.dackar.outage.stages.completion_feedback.CsvAnalogPersister._fsync_dir">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">_fsync_dir</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">directory</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../_modules/src/dackar/outage/stages/completion_feedback.html#CsvAnalogPersister._fsync_dir"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.outage.stages.completion_feedback.CsvAnalogPersister._fsync_dir" title="Link to this definition">¶</a></dt>
+<dd><p>fsync a directory so a rename into it is durable on POSIX (best effort).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>directory</strong> (<em>str</em>)</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
 <dd class="field-even"><p>None</p>
