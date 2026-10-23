@@ -113,6 +113,11 @@ Reuses the two workflow demos, so it has no data of its own.
 | `dackar_cross_phase_demo.ipynb` | Interactive notebook tying the two workflows together |
 | `workflow_reference.md` | How the cross-phase narrative maps onto the two pipelines |
 
+### `sample_usage.py`
+A minimal standalone script showing the duration-uncertainty service API end to
+end (build the service, estimate one activity against a couple of historical
+rows, print the explanation). Run it with `python examples/outage/sample_usage.py`.
+
 ---
 
 ## Quick start
