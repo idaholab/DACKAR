@@ -52,8 +52,8 @@ class ChunkContext:
     - doc_type: DocType
     - chunk_id: str
     - section_path: str (e.g., "7 Procedure > 7.2 Stroke Time Verification")
-    - page_start: int
-    - page_end: int
+    - page_start: int or None (None when the source chunk carries no page metadata)
+    - page_end: int or None (None when the source chunk carries no page metadata)
     - authority_level: str in {"mandatory","guidance","informational","unknown"}
     - section_role: str (derived label such as "steps", "evidence", "analysis"...)
 
@@ -65,8 +65,8 @@ class ChunkContext:
     doc_type: DocType
     chunk_id: str
     section_path: str
-    page_start: int
-    page_end: int
+    page_start: Optional[int]
+    page_end: Optional[int]
     authority_level: str = "unknown"
     section_role: str = "unknown"
 
@@ -301,21 +301,29 @@ _RCA_FRAME_LIST_FIELDS: Tuple[str, ...] = (
     "candidate_actions",
     "constraints",
 )
-_CITATION_FIELD_TYPES: Dict[str, type] = {
-    "doc_id": str,
-    "section_path": str,
-    "page_start": int,
-    "page_end": int,
+# Accepted types per citation field.  page_start/page_end accept int OR None:
+# a chunk with no page metadata legitimately carries a null page (see
+# ChunkContext / _trusted_citations), and None must not be flagged as wrong-type.
+_CITATION_FIELD_TYPES: Dict[str, Tuple[type, ...]] = {
+    "doc_id": (str,),
+    "section_path": (str,),
+    "page_start": (int, type(None)),
+    "page_end": (int, type(None)),
 }
 
 
 def _trusted_citations(ctx: ChunkContext) -> Dict[str, Any]:
-    """Build the citations block from trusted ChunkContext provenance."""
+    """Build the citations block from trusted ChunkContext provenance.
+
+    ``page_start``/``page_end`` may be ``None`` when the source chunk carries no
+    page metadata; they are preserved as ``None`` rather than coerced, so a
+    missing page is never fabricated as page 0.
+    """
     return {
         "doc_id": ctx.doc_id,
         "section_path": ctx.section_path,
-        "page_start": int(ctx.page_start),
-        "page_end": int(ctx.page_end),
+        "page_start": int(ctx.page_start) if ctx.page_start is not None else None,
+        "page_end": int(ctx.page_end) if ctx.page_end is not None else None,
     }
 
 
@@ -640,10 +648,10 @@ def _citation_flags(obj: Dict[str, Any]) -> List[str]:
     if not isinstance(cit, dict):
         flags.append("citations_not_object")
         return flags
-    for ck, ctype in _CITATION_FIELD_TYPES.items():
+    for ck, ctypes in _CITATION_FIELD_TYPES.items():
         if ck not in cit:
             flags.append(f"citations_{ck}_missing")
-        elif not isinstance(cit.get(ck), ctype):
+        elif not isinstance(cit.get(ck), ctypes):
             flags.append(f"citations_{ck}_wrong_type")
     return flags
 
