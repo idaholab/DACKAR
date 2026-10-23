@@ -1,0 +1,246 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Outage Schedule Analysis &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="_static/documentation_options.js?v=2709fde1"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="API Reference" href="autoapi/index.html" />
+    <link rel="prev" title="Root Cause Analysis (RCA)" href="rca.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rca.html">Root Cause Analysis (RCA)</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Outage Schedule Analysis</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#architecture-overview">Architecture overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#pipeline-stages-ag">Pipeline stages (A–G)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#p6-adapter">P6 adapter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#testing">Testing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#design-documentation">Design documentation</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Outage Schedule Analysis</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/outage.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="outage-schedule-analysis">
+<h1>Outage Schedule Analysis<a class="headerlink" href="#outage-schedule-analysis" title="Link to this heading">¶</a></h1>
+<p>The <code class="docutils literal notranslate"><span class="pre">dackar.outage</span></code> subsystem analyzes nuclear-plant outage schedules for
+unexpected activities, schedule risk and duration uncertainty.  It ingests a
+Primavera P6 schedule (XER or CSV export), reconciles it against the plant
+knowledge graph and event narratives, and produces ranked options and
+recommendations together with a quantified duration-uncertainty estimate.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>A complete, auto-generated API reference for every <code class="docutils literal notranslate"><span class="pre">dackar.outage</span></code> module
+is produced by <code class="docutils literal notranslate"><span class="pre">autoapi</span></code> (see the <em>API Reference</em> section of the sidebar).
+This page is a narrative overview of the architecture and entry points.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code class="docutils literal notranslate"><span class="pre">dackar.outage</span></code> builds on the <a class="reference internal" href="rca.html"><span class="doc">RCA</span></a> subsystem — it reuses the
+RCA knowledge-graph context, temporal-relation reasoning and validation.
+RCA must therefore be available for the outage pipeline to run.</p>
+</div>
+<section id="architecture-overview">
+<h2>Architecture overview<a class="headerlink" href="#architecture-overview" title="Link to this heading">¶</a></h2>
+<p>The subsystem is organized as a staged pipeline, each stage backed by a module
+under <code class="docutils literal notranslate"><span class="pre">src/dackar/outage</span></code>:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 24.0%" />
+<col style="width: 76.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Package</p></th>
+<th class="head"><p>Responsibility</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">P6_adapter</span></code> (<code class="docutils literal notranslate"><span class="pre">outage_model</span></code>)</p></td>
+<td><p>Parse and transform Primavera P6 exports (XER parser, CSV transformer)
+into the canonical outage dataset (tasks, dependencies, WBS, calendars,
+resources, activity codes).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">schemas</span></code></p></td>
+<td><p>Schemas for the canonical outage model and the pipeline artifacts.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">stages</span></code></p></td>
+<td><p>The Stage A–G analysis pipeline (see below), plus the completion-feedback
+and insertion-point-determiner helpers.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">workflows</span></code></p></td>
+<td><p>Higher-level workflow wiring (e.g. the completion-feedback workflow).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">orchestrators</span></code></p></td>
+<td><p>The outage-activity orchestrator that drives an end-to-end run and its
+artifact-store / config protocols.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">outage_uncertainty</span></code></p></td>
+<td><p>Duration-uncertainty and schedule-risk analysis (domain models,
+preprocessing, retrieval, schedule-risk, services, uncertainty and
+visualization submodules).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">validators</span></code></p></td>
+<td><p>Validation of pipeline inputs and outputs.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="pipeline-stages-ag">
+<h2>Pipeline stages (A–G)<a class="headerlink" href="#pipeline-stages-ag" title="Link to this heading">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">stages</span></code> package implements the unexpected-activity analysis pipeline:</p>
+<ul class="simple">
+<li><p><strong>A. Intake</strong> (<code class="docutils literal notranslate"><span class="pre">stage_a_intake</span></code>) — normalize inputs, extract entities and
+regulatory patterns from the activity narrative.</p></li>
+<li><p><strong>B. KG + timeline</strong> (<code class="docutils literal notranslate"><span class="pre">stage_b_kg_timeline</span></code>) — build knowledge-graph
+context and the schedule timeline.</p></li>
+<li><p><strong>C. Temporal chain</strong> (<code class="docutils literal notranslate"><span class="pre">stage_c_temporal_chain</span></code>) — assemble the temporal
+chain of activities and precursors.</p></li>
+<li><p><strong>D. Analogs</strong> (<code class="docutils literal notranslate"><span class="pre">stage_d_analogs</span></code>) — retrieve analogous historical
+activities.</p></li>
+<li><p><strong>E. Schedule</strong> (<code class="docutils literal notranslate"><span class="pre">stage_e_schedule</span></code>) — schedule-network / critical-path and
+Monte-Carlo schedule analysis.</p></li>
+<li><p><strong>F. Options</strong> (<code class="docutils literal notranslate"><span class="pre">stage_f_options</span></code>) — generate candidate response options.</p></li>
+<li><p><strong>G. Recommendation</strong> (<code class="docutils literal notranslate"><span class="pre">stage_g_recommendation</span></code>) — rank options and produce
+the recommendation.</p></li>
+</ul>
+<p>The <code class="docutils literal notranslate"><span class="pre">completion_feedback</span></code> stage and <code class="docutils literal notranslate"><span class="pre">completion_feedback_workflow</span></code> close the
+loop by folding realized-activity feedback back into the model.</p>
+</section>
+<section id="p6-adapter">
+<h2>P6 adapter<a class="headerlink" href="#p6-adapter" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">P6_adapter</span></code> (its package is <code class="docutils literal notranslate"><span class="pre">dackar.outage.P6_adapter.outage_model</span></code>, e.g.
+<code class="docutils literal notranslate"><span class="pre">from</span> <span class="pre">dackar.outage.P6_adapter.outage_model.loaders.xer_loader</span> <span class="pre">import</span>
+<span class="pre">load_xer_dataset</span></code> as in <code class="docutils literal notranslate"><span class="pre">P6_adapter/examples/load_sample_xer.py</span></code>) reads
+Primavera P6 data from two sources — a native <code class="docutils literal notranslate"><span class="pre">.xer</span></code> file or a directory of CSV
+exports — and transforms either into the same canonical <code class="xref py py-class docutils literal notranslate"><span class="pre">OutageDataset</span></code>.
+Example inputs live under <code class="docutils literal notranslate"><span class="pre">P6_adapter/examples</span></code> (a sample <code class="docutils literal notranslate"><span class="pre">.xer</span></code> project and
+a mock CSV export) and are used directly by the test suite.</p>
+</section>
+<section id="testing">
+<h2>Testing<a class="headerlink" href="#testing" title="Link to this heading">¶</a></h2>
+<p>The outage test suite lives under the repository-level <code class="docutils literal notranslate"><span class="pre">tests</span></code> directory:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">tests/outage/</span></code> — unit, component and end-to-end tests.  Production imports
+resolve as <code class="docutils literal notranslate"><span class="pre">dackar.outage.*</span></code> via <code class="docutils literal notranslate"><span class="pre">pythonpath</span> <span class="pre">=</span> <span class="pre">src</span></code> in <code class="docutils literal notranslate"><span class="pre">pytest.ini</span></code> (no
+<code class="docutils literal notranslate"><span class="pre">sys.path</span></code> manipulation is needed for them).  Its <code class="docutils literal notranslate"><span class="pre">conftest.py</span></code> exposes the
+mock-CSV / sample-XER fixture paths and puts the two workflow demo directories
+(<code class="docutils literal notranslate"><span class="pre">examples/outage/unexpected_act_workflow_1</span></code> and <code class="docutils literal notranslate"><span class="pre">…_2</span></code>) on <code class="docutils literal notranslate"><span class="pre">sys.path</span></code> so
+the end-to-end tests can import the demos by bare module name.</p></li>
+</ul>
+<p>Run it from the repository root (<code class="docutils literal notranslate"><span class="pre">pytest.ini</span></code> sets <code class="docutils literal notranslate"><span class="pre">pythonpath</span> <span class="pre">=</span> <span class="pre">src</span></code>):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="o">-</span><span class="n">m</span> <span class="n">pytest</span> <span class="n">tests</span><span class="o">/</span><span class="n">outage</span> <span class="o">-</span><span class="n">q</span>
+</pre></div>
+</div>
+</section>
+<section id="design-documentation">
+<h2>Design documentation<a class="headerlink" href="#design-documentation" title="Link to this heading">¶</a></h2>
+<p>P6 adapter design notes are kept alongside the code under
+<code class="docutils literal notranslate"><span class="pre">src/dackar/outage/P6_adapter/docs</span></code> — the canonical outage model and pipeline,
+the XER pipeline and the physical schema.</p>
+<p>Runnable demonstrations of the pipeline live under <code class="docutils literal notranslate"><span class="pre">examples/outage/</span></code> (four
+demos plus a minimal API example); see <code class="docutils literal notranslate"><span class="pre">examples/outage/README.md</span></code> for an
+overview of what each one shows.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="rca.html" class="btn btn-neutral float-left" title="Root Cause Analysis (RCA)" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="autoapi/index.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
