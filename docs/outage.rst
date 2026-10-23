@@ -78,20 +78,25 @@ loop by folding realized-activity feedback back into the model.
 P6 adapter
 ==========
 
-``P6_adapter`` (importable as ``outage_model``) reads Primavera P6 data from two
-sources — a native ``.xer`` file or a directory of CSV exports — and transforms
-either into the same canonical :class:`OutageDataset`.  Example inputs live
-under ``P6_adapter/examples`` (a sample ``.xer`` project and a mock CSV export)
-and are used directly by the test suite.
+``P6_adapter`` (its package is ``dackar.outage.P6_adapter.outage_model``, e.g.
+``from dackar.outage.P6_adapter.outage_model.loaders.xer_loader import
+load_xer_dataset`` as in ``P6_adapter/examples/load_sample_xer.py``) reads
+Primavera P6 data from two sources — a native ``.xer`` file or a directory of CSV
+exports — and transforms either into the same canonical :class:`OutageDataset`.
+Example inputs live under ``P6_adapter/examples`` (a sample ``.xer`` project and
+a mock CSV export) and are used directly by the test suite.
 
 Testing
 =======
 
 The outage test suite lives under the repository-level ``tests`` directory:
 
-- ``tests/outage/`` — unit, component and end-to-end tests, with a
-  ``conftest.py`` that puts the ``outage`` and ``P6_adapter`` package roots on
-  ``sys.path`` and exposes the mock-CSV / sample-XER fixture paths.
+- ``tests/outage/`` — unit, component and end-to-end tests.  Production imports
+  resolve as ``dackar.outage.*`` via ``pythonpath = src`` in ``pytest.ini`` (no
+  ``sys.path`` manipulation is needed for them).  Its ``conftest.py`` exposes the
+  mock-CSV / sample-XER fixture paths and puts the two workflow demo directories
+  (``examples/outage/unexpected_act_workflow_1`` and ``…_2``) on ``sys.path`` so
+  the end-to-end tests can import the demos by bare module name.
 
 Run it from the repository root (``pytest.ini`` sets ``pythonpath = src``)::
 
@@ -100,8 +105,10 @@ Run it from the repository root (``pytest.ini`` sets ``pythonpath = src``)::
 Design documentation
 ====================
 
-Detailed design notes, gap analyses, code reviews and metric definitions are
-kept alongside the code under ``src/dackar/outage/docs`` (organized by date) and
-``src/dackar/outage/P6_adapter/docs``.  They document the canonical outage
-model, the CPM/RCPSP critical-path treatment, the schedule-risk methodology and
-the pipeline-stage reference.
+P6 adapter design notes are kept alongside the code under
+``src/dackar/outage/P6_adapter/docs`` — the canonical outage model and pipeline,
+the XER pipeline and the physical schema.
+
+Runnable demonstrations of the pipeline live under ``examples/outage/`` (four
+demos plus a minimal API example); see ``examples/outage/README.md`` for an
+overview of what each one shows.

@@ -18,13 +18,12 @@ from __future__ import annotations
 import pytest
 
 # The workflow-2 demo lives at examples/outage/unexpected_act_workflow_2/ and is
-# put on sys.path by tests/outage/conftest.py, so it imports by bare module name
-# (demo_data / pipeline).  importorskip keeps the file from erroring if the
-# examples tree is ever absent.
-demo_data = pytest.importorskip(
-    "demo_data",
-    reason="workflow-2 demo (examples/outage/unexpected_act_workflow_2) not importable",
-)
+# put on sys.path by tests/outage/conftest.py, so it imports by bare module name.
+# A plain import (not importorskip) is deliberate: the examples tree ships in
+# this repo and cannot legitimately be missing, so a broken import in demo_data
+# or pipeline should fail the run rather than silently skip it.
+import demo_data
+
 ACTIVITIES = demo_data.ACTIVITIES
 COMPONENTS = demo_data.COMPONENTS
 CONDITION_REPORTS = demo_data.CONDITION_REPORTS

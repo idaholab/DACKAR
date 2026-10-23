@@ -25,13 +25,12 @@ from typing import Any, Dict
 import pytest
 
 # The workflow-1 demo lives at examples/outage/unexpected_act_workflow_1/ and is
-# put on sys.path by tests/outage/conftest.py, so it imports by bare module name
-# (demo_scenarios).  importorskip keeps the file from erroring if the examples
-# tree is ever absent.
-demo_scenarios = pytest.importorskip(
-    "demo_scenarios",
-    reason="workflow-1 demo (examples/outage/unexpected_act_workflow_1) not importable",
-)
+# put on sys.path by tests/outage/conftest.py, so it imports by bare module name.
+# A plain import (not importorskip) is deliberate: the examples tree ships in
+# this repo and cannot legitimately be missing, so a failure here means the demo
+# is actually broken and should fail the run rather than silently skip.
+import demo_scenarios
+
 run_pipeline = demo_scenarios.run_pipeline
 SCENARIO_RCP_SEAL = demo_scenarios.SCENARIO_RCP_SEAL
 SCENARIO_SNUBBER_EXT = demo_scenarios.SCENARIO_SNUBBER_EXT
