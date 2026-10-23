@@ -17,12 +17,13 @@ from __future__ import annotations
 
 import pytest
 
-# Outage demos land in MR #17 as dackar.outage.demos.unexpected_act_workflow_2;
-# import by package path so the skip lifts when they merge (see test_orchestrator_e2e).
-demo_data = pytest.importorskip(
-    "dackar.outage.demos.unexpected_act_workflow_2.demo_data",
-    reason="outage demos (dackar.outage.demos) arrive in MR #17",
-)
+# The workflow-2 demo lives at examples/outage/unexpected_act_workflow_2/ and is
+# put on sys.path by tests/outage/conftest.py, so it imports by bare module name.
+# A plain import (not importorskip) is deliberate: the examples tree ships in
+# this repo and cannot legitimately be missing, so a broken import in demo_data
+# or pipeline should fail the run rather than silently skip it.
+import demo_data
+
 ACTIVITIES = demo_data.ACTIVITIES
 COMPONENTS = demo_data.COMPONENTS
 CONDITION_REPORTS = demo_data.CONDITION_REPORTS

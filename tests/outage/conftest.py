@@ -1,8 +1,16 @@
 """
 Shared fixtures for outage module tests.
 
-Imports resolve via ``pythonpath = src`` in ``pytest.ini`` (the packages are
-``dackar.outage.*``); no sys.path manipulation is needed.
+Production imports resolve via ``pythonpath = src`` in ``pytest.ini`` (the
+packages are ``dackar.outage.*``); no sys.path manipulation is needed for those.
+
+Demo modules: the two workflow demos live under ``examples/outage/`` (outside
+``src/``, matching ``examples/RCA/demos/``), so they are not importable as
+``dackar.outage.demos.*``.  This conftest puts each demo's own directory on
+``sys.path`` so ``test_orchestrator_e2e`` / ``test_wf2_pipeline`` can import them
+by bare module name (``demo_scenarios`` / ``demo_data`` / ``pipeline``) — the
+same way the companion demo notebooks do, and mirroring
+``tests/RCA/scenario/conftest.py``.
 
 P6 CSV/XER fixtures:
     sample_xer_path   — path to the committed sample XER
@@ -17,13 +25,25 @@ P6 CSV/XER fixtures:
 """
 from __future__ import annotations
 
+import sys
 import textwrap
 from pathlib import Path
 
 import pytest
 
-_OUTAGE_ROOT = Path(__file__).resolve().parents[2] / "src" / "dackar" / "outage"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_OUTAGE_ROOT = _REPO_ROOT / "src" / "dackar" / "outage"
 _P6_ADAPTER_ROOT = _OUTAGE_ROOT / "P6_adapter"
+
+# Expose the two workflow demos (examples/outage/) by bare module name.  Only
+# the names the tests import are distinct across the two dirs
+# (demo_scenarios / demo_data / pipeline); demo_plots exists in both but no test
+# imports it, so the shared-name case does not arise.
+_EXAMPLES_OUTAGE = _REPO_ROOT / "examples" / "outage"
+for _demo_dir in ("unexpected_act_workflow_1", "unexpected_act_workflow_2"):
+    _p = str(_EXAMPLES_OUTAGE / _demo_dir)
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 MOCK_CSV_DIR = _P6_ADAPTER_ROOT / "examples" / "mock_p6_export"
 SAMPLE_XER_PATH = _P6_ADAPTER_ROOT / "examples" / "sample_xer" / "sample_project.xer"
