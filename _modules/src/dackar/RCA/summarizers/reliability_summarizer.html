@@ -144,8 +144,8 @@
 <span class="sd">    - doc_type: DocType</span>
 <span class="sd">    - chunk_id: str</span>
 <span class="sd">    - section_path: str (e.g., "7 Procedure &gt; 7.2 Stroke Time Verification")</span>
-<span class="sd">    - page_start: int</span>
-<span class="sd">    - page_end: int</span>
+<span class="sd">    - page_start: int or None (None when the source chunk carries no page metadata)</span>
+<span class="sd">    - page_end: int or None (None when the source chunk carries no page metadata)</span>
 <span class="sd">    - authority_level: str in {"mandatory","guidance","informational","unknown"}</span>
 <span class="sd">    - section_role: str (derived label such as "steps", "evidence", "analysis"...)</span>
 
@@ -171,11 +171,11 @@
 
 <div class="viewcode-block" id="ChunkContext.page_start">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/summarizers/reliability_summarizer/index.html#src.dackar.RCA.summarizers.reliability_summarizer.ChunkContext.page_start">[docs]</a>
-    <span class="n">page_start</span><span class="p">:</span> <span class="nb">int</span></div>
+    <span class="n">page_start</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span></div>
 
 <div class="viewcode-block" id="ChunkContext.page_end">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/summarizers/reliability_summarizer/index.html#src.dackar.RCA.summarizers.reliability_summarizer.ChunkContext.page_end">[docs]</a>
-    <span class="n">page_end</span><span class="p">:</span> <span class="nb">int</span></div>
+    <span class="n">page_end</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span></div>
 
 <div class="viewcode-block" id="ChunkContext.authority_level">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/summarizers/reliability_summarizer/index.html#src.dackar.RCA.summarizers.reliability_summarizer.ChunkContext.authority_level">[docs]</a>
@@ -499,13 +499,16 @@
     <span class="s2">"constraints"</span><span class="p">,</span>
 <span class="p">)</span></div>
 
+<span class="c1"># Accepted types per citation field.  page_start/page_end accept int OR None:</span>
+<span class="c1"># a chunk with no page metadata legitimately carries a null page (see</span>
+<span class="c1"># ChunkContext / _trusted_citations), and None must not be flagged as wrong-type.</span>
 <div class="viewcode-block" id="_CITATION_FIELD_TYPES">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/summarizers/reliability_summarizer/index.html#src.dackar.RCA.summarizers.reliability_summarizer._CITATION_FIELD_TYPES">[docs]</a>
-<span class="n">_CITATION_FIELD_TYPES</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">type</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">"doc_id"</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="s2">"section_path"</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="s2">"page_start"</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-    <span class="s2">"page_end"</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<span class="n">_CITATION_FIELD_TYPES</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">type</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"doc_id"</span><span class="p">:</span> <span class="p">(</span><span class="nb">str</span><span class="p">,),</span>
+    <span class="s2">"section_path"</span><span class="p">:</span> <span class="p">(</span><span class="nb">str</span><span class="p">,),</span>
+    <span class="s2">"page_start"</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">)),</span>
+    <span class="s2">"page_end"</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">)),</span>
 <span class="p">}</span></div>
 
 
@@ -513,12 +516,17 @@
 <div class="viewcode-block" id="_trusted_citations">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/summarizers/reliability_summarizer/index.html#src.dackar.RCA.summarizers.reliability_summarizer._trusted_citations">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">_trusted_citations</span><span class="p">(</span><span class="n">ctx</span><span class="p">:</span> <span class="n">ChunkContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">"""Build the citations block from trusted ChunkContext provenance."""</span>
+<span class="w">    </span><span class="sd">"""Build the citations block from trusted ChunkContext provenance.</span>
+
+<span class="sd">    ``page_start``/``page_end`` may be ``None`` when the source chunk carries no</span>
+<span class="sd">    page metadata; they are preserved as ``None`` rather than coerced, so a</span>
+<span class="sd">    missing page is never fabricated as page 0.</span>
+<span class="sd">    """</span>
     <span class="k">return</span> <span class="p">{</span>
         <span class="s2">"doc_id"</span><span class="p">:</span> <span class="n">ctx</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span>
         <span class="s2">"section_path"</span><span class="p">:</span> <span class="n">ctx</span><span class="o">.</span><span class="n">section_path</span><span class="p">,</span>
-        <span class="s2">"page_start"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">page_start</span><span class="p">),</span>
-        <span class="s2">"page_end"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">page_end</span><span class="p">),</span>
+        <span class="s2">"page_start"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">page_start</span><span class="p">)</span> <span class="k">if</span> <span class="n">ctx</span><span class="o">.</span><span class="n">page_start</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"page_end"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">page_end</span><span class="p">)</span> <span class="k">if</span> <span class="n">ctx</span><span class="o">.</span><span class="n">page_end</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">}</span></div>
 
 
@@ -714,8 +722,8 @@
         <span class="o">+</span> <span class="sa">f</span><span class="s2">"doc_type: </span><span class="si">{</span><span class="n">ctx</span><span class="o">.</span><span class="n">doc_type</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
         <span class="o">+</span> <span class="sa">f</span><span class="s2">"chunk_id: </span><span class="si">{</span><span class="n">ctx</span><span class="o">.</span><span class="n">chunk_id</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
         <span class="o">+</span> <span class="sa">f</span><span class="s2">"section_path: </span><span class="si">{</span><span class="n">ctx</span><span class="o">.</span><span class="n">section_path</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
-        <span class="o">+</span> <span class="sa">f</span><span class="s2">"page_start: </span><span class="si">{</span><span class="n">ctx</span><span class="o">.</span><span class="n">page_start</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
-        <span class="o">+</span> <span class="sa">f</span><span class="s2">"page_end: </span><span class="si">{</span><span class="n">ctx</span><span class="o">.</span><span class="n">page_end</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
+        <span class="o">+</span> <span class="sa">f</span><span class="s2">"page_start: </span><span class="si">{</span><span class="n">ctx</span><span class="o">.</span><span class="n">page_start</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">ctx</span><span class="o">.</span><span class="n">page_start</span><span class="w"> </span><span class="ow">is</span><span class="w"> </span><span class="ow">not</span><span class="w"> </span><span class="kc">None</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'unknown'</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
+        <span class="o">+</span> <span class="sa">f</span><span class="s2">"page_end: </span><span class="si">{</span><span class="n">ctx</span><span class="o">.</span><span class="n">page_end</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">ctx</span><span class="o">.</span><span class="n">page_end</span><span class="w"> </span><span class="ow">is</span><span class="w"> </span><span class="ow">not</span><span class="w"> </span><span class="kc">None</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'unknown'</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
         <span class="o">+</span> <span class="sa">f</span><span class="s2">"authority_level: </span><span class="si">{</span><span class="n">ctx</span><span class="o">.</span><span class="n">authority_level</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
         <span class="o">+</span> <span class="sa">f</span><span class="s2">"section_role: </span><span class="si">{</span><span class="n">ctx</span><span class="o">.</span><span class="n">section_role</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
         <span class="o">+</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">NER_SEED (may include items not present; include only if supported by CHUNK_TEXT):</span><span class="se">\n</span><span class="s2">"</span>
@@ -870,10 +878,10 @@
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cit</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
         <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"citations_not_object"</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">flags</span>
-    <span class="k">for</span> <span class="n">ck</span><span class="p">,</span> <span class="n">ctype</span> <span class="ow">in</span> <span class="n">_CITATION_FIELD_TYPES</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">ck</span><span class="p">,</span> <span class="n">ctypes</span> <span class="ow">in</span> <span class="n">_CITATION_FIELD_TYPES</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="k">if</span> <span class="n">ck</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">cit</span><span class="p">:</span>
             <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"citations_</span><span class="si">{</span><span class="n">ck</span><span class="si">}</span><span class="s2">_missing"</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ck</span><span class="p">),</span> <span class="n">ctype</span><span class="p">):</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ck</span><span class="p">),</span> <span class="n">ctypes</span><span class="p">):</span>
             <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"citations_</span><span class="si">{</span><span class="n">ck</span><span class="si">}</span><span class="s2">_wrong_type"</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">flags</span></div>
 
