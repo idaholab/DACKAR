@@ -3,9 +3,7 @@ Unit tests for dackar.RCA.ner.hybrid_ner.generators.candidate_utils.
 
 Pure span manipulation over CandidateSpan dataclasses — no spaCy, no network.
 Covers dedupe (normalize by (start,end,text_lower), prefer-labeled, substring
-absorption, sort order), component/mechanism splitting, and a determinism +
-mechanism-preservation safety net for the dormant split_multi_label_spans
-(Plan C) so later changes to that function have a regression anchor.
+absorption, sort order) and component/mechanism splitting.
 """
 from __future__ import annotations
 
@@ -13,7 +11,6 @@ from dackar.RCA.ner.hybrid_ner.models import CandidateSpan, LabelHypothesis
 from dackar.RCA.ner.hybrid_ner.generators.candidate_utils import (
     dedupe_candidate_spans,
     split_component_mechanism_spans,
-    split_multi_label_spans,
 )
 
 
@@ -105,52 +102,3 @@ def test_split_no_mechanism_token_kept_intact():
         [c], component_tokens={"pump"}, mechanism_tokens={"corrosion"},
     )
     assert out == [c]
-
-
-# ---------------------------------------------------------------------------
-# split_multi_label_spans — Plan C safety net (dormant feature)
-# ---------------------------------------------------------------------------
-
-def test_multi_label_single_label_unchanged():
-    c = _span("c", 0, 10, "bearing wear", labels=["comp"])
-    assert split_multi_label_spans([c]) == [c]
-
-
-def test_multi_label_short_span_kept():
-    c = _span("c", 0, 10, "bearing wear", labels=["comp", "deg"])  # 2 tokens
-    assert split_multi_label_spans([c]) == [c]
-
-
-def test_multi_label_split_emits_both_roles_exact():
-    """Plan C fix: a multi-component + mechanism phrase splits into BOTH a
-    component span and a mechanism span, with the earliest-in-text keyword chosen
-    per role (so the result is identical under any PYTHONHASHSEED).
-
-    For "bearing shaft seal corrosion event" the leftmost component keyword is
-    "bearing" (offset 0) and the only mechanism keyword is "corrosion" (offset
-    19), so the exact output is pinned.
-    """
-    c = _span("c", 0, 34, "bearing shaft seal corrosion event", labels=["comp", "deg"])
-    out = [(s.span_id, s.start, s.end, s.text) for s in split_multi_label_spans([c])]
-    assert out == [
-        ("c_split_bearing_comp", 0, 7, "bearing"),
-        ("c_split_corrosion_deg", 19, 28, "corrosion"),
-    ]
-
-
-def test_multi_label_split_role_labels_partitioned():
-    """Each emitted span carries only its own role's labels."""
-    c = _span("c", 0, 34, "bearing shaft seal corrosion event", labels=["comp", "deg"])
-    out = split_multi_label_spans([c])
-    by_role = {s.span_id.rsplit("_", 1)[1]: s for s in out}
-    assert [h.label for h in by_role["comp"].proposed_labels] == ["comp"]
-    assert [h.label for h in by_role["deg"].proposed_labels] == ["deg"]
-
-
-def test_multi_label_split_component_choice_is_leftmost_not_seed_dependent():
-    """The component span is the leftmost component keyword regardless of the
-    order keywords are stored in the internal set (hash-seed independent)."""
-    c = _span("c", 0, 34, "bearing shaft seal corrosion event", labels=["comp", "deg"])
-    comp = [s for s in split_multi_label_spans([c]) if s.span_id.endswith("_comp")]
-    assert len(comp) == 1
-    assert comp[0].text == "bearing"  # offset 0 beats shaft(8)/seal(14)
