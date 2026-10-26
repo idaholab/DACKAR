@@ -197,39 +197,55 @@ def split_multi_label_spans(candidates: List[CandidateSpan], token_index=None) -
         )):
             out.append(c)
             continue
-        produced = False
-        # find component keywords first (from props or comp_kw/comp_tokens)
-        # use union of known comp tokens
-        kws_comp = set([k for k in comp_kw]) | comp_tokens
-        for kw in kws_comp:
-            if re.search(r"\b" + re.escape(kw) + r"\b", text_low):
+        # Pick, per role, the keyword whose match appears EARLIEST in the text.
+        # Scanning by match position (not set-iteration order) makes the choice
+        # deterministic regardless of PYTHONHASHSEED.  On a tie (same offset) the
+        # alphabetically-first keyword wins, so the result is fully stable.
+        def _earliest_match(keywords: set[str]):
+            best = None  # (start_offset, keyword, match)
+            for kw in keywords:
                 m = re.search(r"\b" + re.escape(kw) + r"\b", text_low)
-                s = c.start + m.start()
-                e = s + len(kw)
-                try:
-                    new = type(c)(span_id=c.span_id + f"_split_{kw}_comp", doc_id=c.doc_id, start=s, end=e, text=c.text[m.start():m.start()+len(kw)], sources=c.sources, proposed_labels=[p for p in props if p.label.startswith("comp")])
-                except Exception:
-                    new = c
-                out.append(new)
-                produced = True
-                break
-        # find degradation keywords
-        kws_deg = set([k for k in deg_kw]) | deg_tokens
-        for kw in kws_deg:
-            if produced:
-                break
-            if re.search(r"\b" + re.escape(kw) + r"\b", text_low):
-                m = re.search(r"\b" + re.escape(kw) + r"\b", text_low)
-                s = c.start + m.start()
-                e = s + len(kw)
-                try:
-                    new = type(c)(span_id=c.span_id + f"_split_{kw}_deg", doc_id=c.doc_id, start=s, end=e, text=c.text[m.start():m.start()+len(kw)], sources=c.sources, proposed_labels=[p for p in props if p.label.startswith("deg")])
-                except Exception:
-                    new = c
-                out.append(new)
-                produced = True
-                break
-        if not produced:
+                if m is None:
+                    continue
+                cand_key = (m.start(), kw)
+                if best is None or cand_key < best[0]:
+                    best = (cand_key, kw, m)
+            if best is None:
+                return None
+            (_, _), kw, m = best
+            return kw, m
+
+        def _emit(role: str, keywords: set[str]) -> bool:
+            hit = _earliest_match(keywords)
+            if hit is None:
+                return False
+            kw, m = hit
+            s = c.start + m.start()
+            e = s + len(kw)
+            try:
+                new = type(c)(
+                    span_id=c.span_id + f"_split_{kw}_{role}",
+                    doc_id=c.doc_id,
+                    start=s,
+                    end=e,
+                    text=c.text[m.start():m.start() + len(kw)],
+                    sources=c.sources,
+                    proposed_labels=[p for p in props if p.label.startswith(role)],
+                )
+            except Exception:
+                new = c
+            out.append(new)
+            return True
+
+        # Emit BOTH a component span and a mechanism/degradation span when each
+        # role is present — previously the function stopped after the first
+        # component match and silently dropped the mechanism half.
+        kws_comp = set(comp_kw) | comp_tokens
+        kws_deg = set(deg_kw) | deg_tokens
+        produced_comp = _emit("comp", kws_comp)
+        produced_deg = _emit("deg", kws_deg)
+
+        if not (produced_comp or produced_deg):
             # safer fallback: keep original candidate, do not silently collapse
             out.append(c)
             continue
