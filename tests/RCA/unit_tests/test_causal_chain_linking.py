@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import time
 
-from dackar.RCA.ner.causal_condition_adapter import _chain_causal_statements
+from dackar.RCA.ner.causal_condition_adapter import (
+    _chain_causal_statements,
+    _MAX_CHAIN_PATHS,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -63,15 +66,38 @@ def test_chain_dicts_have_expected_keys():
 # Path-enumeration bound (Plan B) — dense graph must terminate quickly
 # ---------------------------------------------------------------------------
 
-def test_dense_graph_terminates_quickly():
+def test_dense_graph_bounded_by_cap():
     """A fully-connected statement set (every effect == every cause) previously
-    enumerated factorially many paths and hung.  With the bound it must return
-    promptly and not raise."""
+    enumerated factorially many paths and hung.  With the bound it must return a
+    number of chains capped at _MAX_CHAIN_PATHS — and promptly.
+
+    n=12 is chosen so that WITHOUT the cap this enumerates factorially many paths
+    and would stall CI (not merely run slow): asserting the count against the cap,
+    not just the runtime, makes a removed-cap regression fail hard.
+    """
     shared = "reactor coolant system leakage event"
-    stmts = [{"cause_text": shared, "effect_text": shared} for _ in range(14)]
+    stmts = [{"cause_text": shared, "effect_text": shared} for _ in range(12)]
     t0 = time.perf_counter()
     chains = _chain_causal_statements(stmts)
     elapsed = time.perf_counter() - t0
+    assert 0 < len(chains) <= _MAX_CHAIN_PATHS
     assert elapsed < 5.0, f"chain linking took {elapsed:.1f}s on a dense graph"
-    # a bounded number of chains is returned (not a factorial explosion)
-    assert isinstance(chains, list)
+
+
+def test_dense_cluster_does_not_starve_unrelated_chain(monkeypatch):
+    """Per-source path budget (PR#84 review): a dense cluster processed first must
+    not consume the whole allowance and drop an unrelated sparse chain.  With a
+    tiny cap the dense cluster alone would exhaust a shared budget, yet the
+    distinct pump chain must still be returned."""
+    import dackar.RCA.ner.causal_condition_adapter as mod
+    monkeypatch.setattr(mod, "_MAX_CHAIN_PATHS", 4)
+
+    dense = "reactor coolant system leakage event"
+    stmts = [{"cause_text": dense, "effect_text": dense} for _ in range(10)]
+    stmts += [
+        {"cause_text": "pump seal wear", "effect_text": "auxiliary lube oil loss"},
+        {"cause_text": "auxiliary lube oil loss", "effect_text": "pump bearing seizure"},
+    ]
+    chains = mod._chain_causal_statements(stmts)
+    pump_present = any("pump seal wear" in n for c in chains for n in c["nodes"])
+    assert pump_present, "unrelated sparse chain was starved by the dense cluster"

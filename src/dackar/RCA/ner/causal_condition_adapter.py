@@ -467,14 +467,20 @@ def _chain_causal_statements(
         sources = [min(range(n), key=lambda k: len(predecessors[k]))]
 
     found_chains: List[List[int]] = []
-    _dfs_visits = 0  # node-expansion counter (bounds worst-case runtime)
+    _dfs_visits = 0  # global node-expansion counter (hard runtime ceiling)
 
-    def _dfs(path: List[int], visited: set) -> None:
+    # Per-source path budget so a single dense source cannot consume the whole
+    # allowance and starve later sources' (possibly unrelated) chains.  Each
+    # source may contribute up to this many chains; the global visit ceiling
+    # still bounds total runtime regardless of how sources divide the budget.
+    per_source_budget = max(1, _MAX_CHAIN_PATHS // max(1, len(sources)))
+
+    def _dfs(path: List[int], visited: set, src_found: List[int]) -> None:
         nonlocal _dfs_visits
-        # Safety bound: stop enumerating once either cap is reached. A densely
-        # connected graph is worst-case exponential (see _MAX_CHAIN_PATHS); the
-        # chains collected so far are returned rather than hanging.
-        if len(found_chains) >= _MAX_CHAIN_PATHS or _dfs_visits >= _MAX_CHAIN_DFS_VISITS:
+        # Stop this source once it has used its path budget, or globally once the
+        # visit ceiling is hit; the chains collected so far are kept (a densely
+        # connected graph is worst-case exponential — see _MAX_CHAIN_PATHS).
+        if src_found[0] >= per_source_budget or _dfs_visits >= _MAX_CHAIN_DFS_VISITS:
             return
         _dfs_visits += 1
         current = path[-1]
@@ -482,16 +488,17 @@ def _chain_causal_statements(
         if not children:
             if len(path) >= 2:
                 found_chains.append(list(path))
+                src_found[0] += 1
             return
         for child in children:
-            if len(found_chains) >= _MAX_CHAIN_PATHS or _dfs_visits >= _MAX_CHAIN_DFS_VISITS:
+            if src_found[0] >= per_source_budget or _dfs_visits >= _MAX_CHAIN_DFS_VISITS:
                 return
-            _dfs(path + [child], visited | {child})
+            _dfs(path + [child], visited | {child}, src_found)
 
     for src in sources:
-        if len(found_chains) >= _MAX_CHAIN_PATHS or _dfs_visits >= _MAX_CHAIN_DFS_VISITS:
+        if _dfs_visits >= _MAX_CHAIN_DFS_VISITS:
             break
-        _dfs([src], {src})
+        _dfs([src], {src}, [0])
 
     if not found_chains:
         return []

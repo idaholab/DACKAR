@@ -327,11 +327,31 @@ class DescriptionEmbedGenerator:
         raise RuntimeError("No embedder built; call fit() first.")
 
     def score_span_against_labels(self, span_text, context=None, q_emb=None):
-        # IMPORTANT:
-        # Do NOT blend context into the query embedding. It causes "wear"/"degradation"
-        # in nearby text to leak into every candidate.
-        # q_emb may be supplied by a batched caller (see generate) to avoid a
-        # per-span _embed_texts() call; when None we embed the single span here.
+        """Score one span's query embedding against every label's example bank.
+
+        Parameters
+        ----------
+        span_text : str
+            The candidate span text. When ``q_emb`` is None it is embedded here
+            as ``(span_text or "").strip().lower()``.
+        context : str, optional
+            Unused. Kept for signature stability — context is deliberately NOT
+            blended into the query embedding (nearby "wear"/"degradation" would
+            otherwise leak into every candidate's score).
+        q_emb : numpy.ndarray, optional
+            Precomputed query embedding for the span, supplied by the batched
+            :meth:`generate` path to avoid a per-span ``_embed_texts`` call. It
+            MUST be the single L2-normalized row that ``_embed_texts`` returns for
+            ``span_text.strip().lower()`` (i.e. ``_embed_texts([q])[0]``) — the
+            label banks are normalized, so a raw/un-normalized vector silently
+            shifts every similarity. When None the span is embedded here.
+
+        Returns
+        -------
+        list[tuple[str, float, str]]
+            ``(label, score, "desc_embed")`` for every indexed label, sorted by
+            score descending. ``score = max pos_sim - 0.7 * max neg_sim``.
+        """
         if q_emb is None:
             q = (span_text or "").strip().lower()
             q_emb = self._embed_texts([q])[0]

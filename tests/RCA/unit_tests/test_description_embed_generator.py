@@ -128,3 +128,22 @@ def test_scoring_is_independent_of_candidate_grouping(tmp_path):
     for c in cands:
         single[c.span_id] = [h.label for h in g.generate_for_candidate(doc, c)]
     assert together == single
+
+
+def test_batching_invariance_on_tfidf_path(tmp_path, monkeypatch):
+    """Batching invariance must also hold on the REAL TF-IDF fallback embedder
+    (no injected embedder, SBERT forced off) — not just the fake embedder."""
+    import dackar.RCA.ner.hybrid_ner.generators.description_embed_generator as mod
+    monkeypatch.setattr(mod, "_HAS_SBERT", False)
+
+    g = DescriptionEmbedGenerator(
+        label_json_path=_labels_json(tmp_path),
+        embedder=None, use_tfidf_fallback=True, score_threshold=0.3,
+    )
+    g.fit(_schema())
+    doc = Document(doc_id="D1", text="corrosion and a pump near a bearing")
+    cands = [_span("corrosion", 0, 9), _span("pump", 16, 20), _span("bearing", 28, 35)]
+
+    together = {c.span_id: [h.label for h in lh] for c, lh in g.generate(doc, cands)}
+    single = {c.span_id: [h.label for h in g.generate_for_candidate(doc, c)] for c in cands}
+    assert together == single
