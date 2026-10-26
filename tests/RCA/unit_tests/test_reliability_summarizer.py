@@ -231,6 +231,37 @@ def test_rca_frame_flags_missing_list_and_bad_citation():
 
 
 # ---------------------------------------------------------------------------
+# Null page metadata (chunk with no page_start/page_end) is preserved, not
+# coerced to 0 and never crashes on int(None).  Regression for the four bare
+# int(ctx.page_*) sites (reliability_summarizer._trusted_citations and
+# augment_chunks serialization).
+# ---------------------------------------------------------------------------
+
+def test_null_pages_preserved_in_citations():
+    """A ChunkContext with no pages yields null citation pages, not 0/crash."""
+    summary = empty_retrieval_summary(_ctx(page_start=None, page_end=None))
+    assert summary["citations"]["page_start"] is None
+    assert summary["citations"]["page_end"] is None
+
+
+def test_null_pages_still_validate():
+    """Skeletons with null pages pass validation (int-or-None is accepted)."""
+    assert validate_retrieval_summary_json(
+        _valid_retrieval_summary(_ctx(page_start=None, page_end=None))
+    ) == []
+    assert validate_rca_frame_json(
+        empty_rca_frame(_ctx(page_start=None, page_end=None))
+    ) == []
+
+
+def test_int_pages_still_round_trip():
+    """Real integer pages are unchanged by the None-safe conversion."""
+    summary = empty_retrieval_summary(_ctx(page_start=3, page_end=4))
+    assert summary["citations"]["page_start"] == 3
+    assert summary["citations"]["page_end"] == 4
+
+
+# ---------------------------------------------------------------------------
 # #6 embedding flatteners drop empty fields (PR #58 line-667 nit)
 # ---------------------------------------------------------------------------
 

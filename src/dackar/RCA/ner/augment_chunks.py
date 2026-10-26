@@ -691,8 +691,12 @@ def build_chunk_metadata(
         "doc_type": ctx.doc_type,
         "authority_level": ctx.authority_level,
         "section_role": ctx.section_role,
-        "page_start": int(ctx.page_start),
-        "page_end": int(ctx.page_end),
+        # page_start/page_end may be None when the chunk has no page metadata
+        # (_safe_optional_int above returns None); preserve None rather than
+        # crashing on int(None).  Downstream page-order checks already guard on
+        # `is not None` before comparing.
+        "page_start": int(ctx.page_start) if ctx.page_start is not None else None,
+        "page_end": int(ctx.page_end) if ctx.page_end is not None else None,
 
         # retrieval/filter fields
         "equipment_ids": equipment_ids,
@@ -792,8 +796,9 @@ def build_processed_text_record(
         "provenance": {
             "chunk_id": chunk_id,
             "section_path": ctx.section_path,
-            "page_start": int(ctx.page_start),
-            "page_end": int(ctx.page_end),
+            # None-safe: a chunk with no page metadata carries null pages.
+            "page_start": int(ctx.page_start) if ctx.page_start is not None else None,
+            "page_end": int(ctx.page_end) if ctx.page_end is not None else None,
             "authority_level": ctx.authority_level,
             "section_role": ctx.section_role,
             "source_chunk_type": chunk.get("type"),
