@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 import re
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ import pandas as pd
 
 from ..models import CandidateSpan, Document, LabelHypothesis, SourceHit
 from .base import CandidateGenerator
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -166,7 +169,8 @@ class GazetteerGenerator(CandidateGenerator):
                 return 0.65
             try:
                 return float(self.config.fuzzy_jaccard_threshold)
-            except Exception:
+            except (TypeError, ValueError):
+                # non-numeric configured threshold; use the default.
                 return 0.8
 
         # split into sentence-like spans to avoid matching across sentences
@@ -282,7 +286,8 @@ class GazetteerGenerator(CandidateGenerator):
             grp = None
             try:
                 grp = schema.label_to_group.get(lbl)
-            except Exception:
+            except Exception as exc:
+                logger.debug("schema.label_to_group lookup failed for %r: %s", lbl, exc)
                 grp = None
             if not grp:
                 continue

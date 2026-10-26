@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 
 from typing import List
@@ -13,6 +14,8 @@ from .classifier import SpanClassifier
 from .postprocess import Postprocessor
 from .generators.base import CandidateGenerator
 from .generators.candidate_utils import split_component_mechanism_spans
+
+logger = logging.getLogger(__name__)
 
 MECH_KEYWORDS = {
     "wear", "corrosion", "pitting", "erosion", "degradation",
@@ -95,8 +98,7 @@ class HybridNERPipeline:
                         # keep gazetteer/classifier labels, but drop desc_gen hypotheses
                         c.proposed_labels = [h for h in c.proposed_labels if getattr(h, "source", "") != "desc_embed"]
             except Exception as e:
-                import logging
-                logging.debug(f"STOP_TOKENS admin/meta filter skipped: {e}")
+                logger.debug("STOP_TOKENS admin/meta filter skipped: %s", e)
 
 
         # Build role-aware token sets (component vs mechanism) from generator gazetteers.
@@ -143,8 +145,7 @@ class HybridNERPipeline:
             try:
                 self.llm_disambiguator.disambiguate(doc.text, candidates)
             except Exception as e:
-                import logging
-                logging.warning(f"LLM disambiguator failed: {e}")
+                logger.warning("LLM disambiguator failed: %s", e)
 
         # 3) Rule disambiguation
         candidates = self.disambiguator.apply(doc, candidates, self.schema)

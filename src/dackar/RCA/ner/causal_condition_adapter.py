@@ -53,7 +53,8 @@ def _load_causal_verb_lemmas() -> frozenset:
                 if v and " " not in v and v not in _SPEECH_ACT_VERBS:
                     lemmas.add(v)
         return frozenset(lemmas) if lemmas else _DEP_CAUSAL_VERB_LEMMAS_FALLBACK
-    except Exception:
+    except Exception as exc:
+        logger.debug("causal verb lemma load failed; using fallback set: %s", exc)
         return _DEP_CAUSAL_VERB_LEMMAS_FALLBACK
 
 
@@ -82,8 +83,8 @@ def _build_conjecture_pattern() -> re.Pattern:
                         terms.append(re.escape(t))
         if terms:
             return re.compile(r"\b(?:" + "|".join(terms) + r")\b", re.IGNORECASE)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("conjecture keyword load failed; using fallback regex: %s", exc)
     return re.compile(r"\b(?:" + _FALLBACK + r")\b", re.IGNORECASE)
 
 
@@ -145,8 +146,8 @@ def _load_health_condition_terms() -> Dict[str, frozenset]:
                         result["failed"].add(term)
                     else:
                         result["degraded"].add(term)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("health_status negative keyword load failed; using fallback: %s", exc)
     try:
         with open(_DATA_DIR / "health_status_keywords_positive.csv", newline="", encoding="utf-8-sig") as f:
             for row in _csv.DictReader(f):
@@ -154,8 +155,8 @@ def _load_health_condition_terms() -> Dict[str, frozenset]:
                     term = (row.get(col) or "").strip().lower()
                     if term and len(term) >= 2:
                         result["acceptable"].add(term)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("health_status positive keyword load failed; using fallback: %s", exc)
     return {k: frozenset(v) for k, v in result.items()}
 
 
@@ -274,8 +275,8 @@ def _build_embed_fn(
         try:
             if nlp.vocab.vectors.shape[0] > 0:
                 return lambda a, b: nlp(a).similarity(nlp(b))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("spaCy vector similarity unavailable; no embed_fn: %s", exc)
     return None
 
 
@@ -338,8 +339,8 @@ def calibrate_chain_threshold(
                         if float(embed_fn(eff_text, cau_text)) >= _CHAIN_EMBED_THRESHOLD:
                             succ[i].append(j)
                             pred[j].append(i)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("embed_fn failed for a chain pair; skipping link: %s", exc)
         sources = [i for i in range(n) if not pred[i]] or [0]
         chains: List[List[int]] = []
 
@@ -448,8 +449,8 @@ def _chain_causal_statements(
                     if sim >= _CHAIN_EMBED_THRESHOLD:
                         successors[i].append(j)
                         predecessors[j].append(i)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("embed_fn failed for a chain pair; skipping link: %s", exc)
 
     sources = [i for i in range(n) if not predecessors[i]]
     if not sources:
@@ -1366,8 +1367,8 @@ def _extract_native_stage5(extractor_obj: Any) -> Dict[str, Any]:
             out = fn()
             if isinstance(out, dict):
                 return out
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("to_stage5_dict() call failed; ignoring: %s", exc)
     return {}
 
 
@@ -1398,8 +1399,8 @@ def _extract_causal_rows(extractor_obj: Any, native: Optional[Dict[str, Any]] = 
                     if isinstance(row, dict):
                         candidates.append(row)
                 continue
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("DataFrame.to_dict() failed for %s; trying next source: %s", attr_name, exc)
 
         # list-like
         if isinstance(value, list):
@@ -1472,7 +1473,8 @@ def _extract_status_mentions(extractor_obj: Any, native: Optional[Dict[str, Any]
             continue
         try:
             rows = value.to_dict(orient="records")
-        except Exception:
+        except Exception as exc:
+            logger.debug("DataFrame.to_dict() failed for %s; skipping: %s", attr_name, exc)
             continue
 
         for row in rows:

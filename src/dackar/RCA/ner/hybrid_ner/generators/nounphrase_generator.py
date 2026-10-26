@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import List, Optional, Tuple
 
 from ..models import CandidateSpan, Document, SourceHit
 from .base import CandidateGenerator
+
+logger = logging.getLogger(__name__)
 
 
 class NounPhraseGenerator(CandidateGenerator):
@@ -35,9 +38,12 @@ class NounPhraseGenerator(CandidateGenerator):
             import spacy  # type: ignore
             try:
                 self._nlp = spacy.load("en_core_web_sm")
-            except Exception:
+            except Exception as exc:
+                # spaCy present but the model isn't downloaded (OSError) or load
+                # failed — fall back to the non-spaCy path, but say why.
+                logger.debug("spaCy model en_core_web_sm unavailable: %s", exc)
                 self._nlp = None
-        except Exception:
+        except ImportError:
             self._nlp = None
 
         # NLTK (optional)
@@ -46,7 +52,7 @@ class NounPhraseGenerator(CandidateGenerator):
             import nltk  # type: ignore
             from nltk import pos_tag  # noqa: F401
             self._nltk_available = True
-        except Exception:
+        except ImportError:
             self._nltk_available = False
 
     def generate(self, doc: Document) -> List[CandidateSpan]:
@@ -106,7 +112,9 @@ class NounPhraseGenerator(CandidateGenerator):
             from nltk import pos_tag  # type: ignore
             tagged = pos_tag(tokens)
             return [t[1] for t in tagged]
-        except Exception:
+        except Exception as exc:
+            # pos_tag can fail if NLTK tagger data isn't downloaded.
+            logger.debug("NLTK pos_tag failed; skipping POS tags: %s", exc)
             return None
 
     def _is_np_token(self, tok: str, pos: Optional[str]) -> bool:

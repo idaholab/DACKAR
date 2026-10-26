@@ -10,14 +10,14 @@ import math
 try:
     from sentence_transformers import SentenceTransformer, util as st_util
     _HAS_SBERT = True
-except Exception:
+except ImportError:
     _HAS_SBERT = False
 
 try:
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.metrics.pairwise import cosine_similarity as sk_cos_sim
     _HAS_SKLEARN = True
-except Exception:
+except ImportError:
     _HAS_SKLEARN = False
 
  # Very small stoplist for cue building / gating
@@ -74,7 +74,7 @@ def extract_examples_from_excel(path: str) -> Dict[str, List[str]]:
     """
     try:
         import pandas as pd
-    except Exception:
+    except ImportError:
         return {}
 
     df = pd.read_excel(path, sheet_name=0)

@@ -37,9 +37,12 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from pathlib import Path
 import json
+import logging
 import os
 import re
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 from dackar.RCA.ner.causal_condition_adapter import extract_stage5_causal_condition
 
@@ -127,9 +130,11 @@ def _write_jsonl(path: Path, records: Iterable[Dict[str, Any]]) -> None:
 
 
 def _safe_int(x: Any, default: int = 0) -> int:
+    # Narrow catch: int() raises only TypeError/ValueError on bad input; the
+    # fallback IS the contract here, so this is not a swallowed failure.
     try:
         return int(x)
-    except Exception:
+    except (TypeError, ValueError):
         return default
 
 def _safe_optional_int(x: Any) -> Optional[int]:
@@ -137,7 +142,7 @@ def _safe_optional_int(x: Any) -> Optional[int]:
         if x is None or x == "":
             return None
         return int(x)
-    except Exception:
+    except (TypeError, ValueError):
         return None
 
 def _extract_equipment_ids_quick(text: str, limit: int = 50) -> List[str]:
@@ -472,6 +477,7 @@ def augment_chunks_with_structured_summaries(
 
         except Exception as e:
             failed += 1
+            logger.debug("chunk augmentation failed (doc_type=%s): %s", doc_type, e)
             c["augmentation"] = {"status": "error", "error": str(e), "doc_type": doc_type}
             # Keep chunk even if it failed, so you can inspect errors later.
 
