@@ -50,7 +50,8 @@ class SpanClassifier:
         try:
             import sklearn  # noqa: F401
             self._sklearn_ok = True
-        except Exception:
+        except ImportError:
+            # scikit-learn is an optional dependency; classifier becomes a no-op.
             self._sklearn_ok = False
 
     def fit(self, examples: Sequence[TrainingExample], schema: SchemaIndex) -> None:

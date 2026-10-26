@@ -1,9 +1,11 @@
 
 from __future__ import annotations
-from typing import List
-from ..models import CandidateSpan
+import logging
 import re
 from typing import List
+from ..models import CandidateSpan
+
+logger = logging.getLogger(__name__)
 
 def split_component_mechanism_spans(
     candidates: List[CandidateSpan],
@@ -232,7 +234,8 @@ def split_multi_label_spans(candidates: List[CandidateSpan], token_index=None) -
                     sources=c.sources,
                     proposed_labels=[p for p in props if p.label.startswith(role)],
                 )
-            except Exception:
+            except Exception as exc:
+                logger.debug("failed to build %s split span; keeping original: %s", role, exc)
                 new = c
             out.append(new)
             return True

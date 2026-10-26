@@ -1,5 +1,6 @@
 # file: hybrid_ner/llm_disambiguator.py
 from __future__ import annotations
+import logging
 import requests
 import subprocess
 import json
@@ -12,6 +13,8 @@ from urllib.parse import urljoin
 # Import your project's LabelHypothesis, CandidateSpan, SchemaIndex
 from .models import LabelHypothesis, CandidateSpan
 from .schema import SchemaIndex
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class LLMConfig:
@@ -125,14 +128,14 @@ class LLMDisambiguator:
         if s.startswith("{") and s.endswith("}"):
             try:
                 return json.loads(s)
-            except Exception:
-                pass
+            except json.JSONDecodeError:
+                pass  # not valid JSON as-is; fall through to substring recovery
         m = re.search(r"\{.*\}", s, flags=re.DOTALL)
         if not m:
             return None
         try:
             return json.loads(m.group(0))
-        except Exception:
+        except json.JSONDecodeError:
             return None
 
     # Main entry: disambiguate a list of candidates, augment their proposed_labels with llm hypotheses
@@ -176,6 +179,7 @@ class LLMDisambiguator:
                 parsed = self._extract_json_object(text)
                 return parsed if parsed is not None else {"label": "NO_LABEL", "score": 0.0, "rationale": "empty"}
             except Exception as e:
+                logger.debug("LLM CLI call failed: %s", e)
                 return {"label": "NO_LABEL", "score": 0.0, "rationale": f"error:{e}"}
         else:
             try:
@@ -229,6 +233,7 @@ class LLMDisambiguator:
                 r.raise_for_status()
                 return r.json()
             except Exception as e:
+                logger.debug("LLM HTTP call failed: %s", e)
                 return {"label": "NO_LABEL", "score": 0.0, "rationale": f"error:{e}"}
 
     def _parse_llm_response(self, resp: Any, c: CandidateSpan) -> Optional[LabelHypothesis]:
@@ -237,7 +242,7 @@ class LLMDisambiguator:
             # attempt hydration if resp is string
             try:
                 resp = json.loads(str(resp))
-            except Exception:
+            except (json.JSONDecodeError, TypeError):
                 return None
         label = resp.get("label") or resp.get("label_id")
         if not label or label == "NO_LABEL":
@@ -269,6 +274,5 @@ class LLMDisambiguator:
                 )
             return True
         except Exception as e:
-            import logging
-            logging.error(f"LLM health check failed: {e}")
+            logger.error("LLM health check failed: %s", e)
             return False
