@@ -84,6 +84,7 @@
   <h1>Source code for src.dackar.RCA.ner.hybrid_ner.pipeline</h1><div class="highlight"><pre>
 <span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
@@ -97,6 +98,11 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">.postprocess</span><span class="w"> </span><span class="kn">import</span> <span class="n">Postprocessor</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.generators.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">CandidateGenerator</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.generators.candidate_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">split_component_mechanism_spans</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/pipeline/index.html#src.dackar.RCA.ner.hybrid_ner.pipeline.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
 
 <div class="viewcode-block" id="MECH_KEYWORDS">
 <a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/pipeline/index.html#src.dackar.RCA.ner.hybrid_ner.pipeline.MECH_KEYWORDS">[docs]</a>
@@ -216,8 +222,7 @@
                         <span class="c1"># keep gazetteer/classifier labels, but drop desc_gen hypotheses</span>
                         <span class="n">c</span><span class="o">.</span><span class="n">proposed_labels</span> <span class="o">=</span> <span class="p">[</span><span class="n">h</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">c</span><span class="o">.</span><span class="n">proposed_labels</span> <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="s2">"source"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">"desc_embed"</span><span class="p">]</span>
             <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-                <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
-                <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">"STOP_TOKENS admin/meta filter skipped: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"STOP_TOKENS admin/meta filter skipped: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
 
 
         <span class="c1"># Build role-aware token sets (component vs mechanism) from generator gazetteers.</span>
@@ -264,8 +269,7 @@
             <span class="k">try</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">llm_disambiguator</span><span class="o">.</span><span class="n">disambiguate</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">candidates</span><span class="p">)</span>
             <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-                <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
-                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">"LLM disambiguator failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"LLM disambiguator failed: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
 
         <span class="c1"># 3) Rule disambiguation</span>
         <span class="n">candidates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">disambiguator</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">candidates</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="p">)</span>

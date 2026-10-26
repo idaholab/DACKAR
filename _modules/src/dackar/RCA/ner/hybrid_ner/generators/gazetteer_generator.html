@@ -84,6 +84,7 @@
   <h1>Source code for src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator</h1><div class="highlight"><pre>
 <span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
@@ -93,6 +94,11 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">..models</span><span class="w"> </span><span class="kn">import</span> <span class="n">CandidateSpan</span><span class="p">,</span> <span class="n">Document</span><span class="p">,</span> <span class="n">LabelHypothesis</span><span class="p">,</span> <span class="n">SourceHit</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">CandidateGenerator</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/gazetteer_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
 
 
 <span class="nd">@dataclass</span>
@@ -299,7 +305,8 @@
                 <span class="k">return</span> <span class="mf">0.65</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">fuzzy_jaccard_threshold</span><span class="p">)</span>
-            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+                <span class="c1"># non-numeric configured threshold; use the default.</span>
                 <span class="k">return</span> <span class="mf">0.8</span>
 
         <span class="c1"># split into sentence-like spans to avoid matching across sentences</span>
@@ -418,7 +425,8 @@
             <span class="n">grp</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">grp</span> <span class="o">=</span> <span class="n">schema</span><span class="o">.</span><span class="n">label_to_group</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">)</span>
-            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"schema.label_to_group lookup failed for </span><span class="si">%r</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">lbl</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
                 <span class="n">grp</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">grp</span><span class="p">:</span>
                 <span class="k">continue</span>
