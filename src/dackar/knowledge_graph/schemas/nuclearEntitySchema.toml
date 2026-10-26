@@ -1,9 +1,15 @@
 title = "Nuclear Entity Graph Schema"
 version = "1.0"
 
-# nuclear_entity and temporal_entity are leaf nodes: they are targets of relations
-# defined in conditionReportSchema, workOrderSchema, and outageSchema.
-# No outgoing relations are defined here by design.
+# temporal_entity is a leaf node: it is only a target of relations defined in
+# conditionReportSchema, workOrderSchema, and outageSchema.
+#
+# nuclear_entity is the text-mention / NLP-extraction layer (unresolved references
+# pulled from free text). It is a target of condition_report.refers, and it also
+# *grounds into* the structured model layer via the resolves_to_* relations below,
+# so an extracted mention can be linked to the asset / failure concept it denotes
+# (addresses ontology-assessment A4 / §4). Each resolution carries a confidence
+# because grounding is an inference, not a given.
 
 # ============================================================
 # NODE ENTITIES
@@ -23,4 +29,38 @@ node_properties = [
   { name = "id", type = "string", optional = false, description = "Stable unique identifier for the temporal entity." },
   { name = "date_time", type = "string", optional = true, description = "Explicit or implicit reference to a temporal coordinate, such as an absolute timestamp or normalized date string." },
   { name = "temporal_reference", type = "string", optional = true, description = "Relative temporal expression, such as last quarter, during the outage, or next Monday." }
+]
+
+# ============================================================
+# GROUNDING RELATIONS — resolve text mentions into the structured model
+# (ontology-assessment A4 / §4). Typed per target so every endpoint resolves to
+# a defined node label; `material` is intentionally NOT a target because no
+# material node exists in the current set.
+# ============================================================
+
+[relation.resolves_to_asset]
+relation_description = "Grounds an extracted nuclear_entity mention to the installed plant asset it denotes, linking the free-text layer to the MBSE model layer."
+from_entity = "nuclear_entity"
+to_entity = "element_usage"
+relation_properties = [
+  { name = "confidence", type = "float", optional = true, description = "Resolver confidence in [0,1] that this mention denotes this asset." },
+  { name = "resolution_method", type = "enum", optional = true, description = "How the grounding was produced.", enum_values = ["exact_match", "alias", "embedding", "human_confirmed"] }
+]
+
+[relation.resolves_to_failure_mode]
+relation_description = "Grounds an extracted nuclear_entity mention to the failure_mode it denotes, linking the free-text layer to the reliability/FMEA layer."
+from_entity = "nuclear_entity"
+to_entity = "failure_mode"
+relation_properties = [
+  { name = "confidence", type = "float", optional = true, description = "Resolver confidence in [0,1] that this mention denotes this failure mode." },
+  { name = "resolution_method", type = "enum", optional = true, description = "How the grounding was produced.", enum_values = ["exact_match", "alias", "embedding", "human_confirmed"] }
+]
+
+[relation.resolves_to_mechanism]
+relation_description = "Grounds an extracted nuclear_entity mention to the degradation_mechanism it denotes, linking the free-text layer to the causal/degradation layer."
+from_entity = "nuclear_entity"
+to_entity = "degradation_mechanism"
+relation_properties = [
+  { name = "confidence", type = "float", optional = true, description = "Resolver confidence in [0,1] that this mention denotes this degradation mechanism." },
+  { name = "resolution_method", type = "enum", optional = true, description = "How the grounding was produced.", enum_values = ["exact_match", "alias", "embedding", "human_confirmed"] }
 ]
