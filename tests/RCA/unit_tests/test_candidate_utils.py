@@ -9,6 +9,8 @@ mechanism-preservation safety net for the dormant split_multi_label_spans
 """
 from __future__ import annotations
 
+import pytest
+
 from dackar.RCA.ner.hybrid_ner.models import CandidateSpan, LabelHypothesis
 from dackar.RCA.ner.hybrid_ner.generators.candidate_utils import (
     dedupe_candidate_spans,
@@ -121,10 +123,39 @@ def test_multi_label_short_span_kept():
     assert split_multi_label_spans([c]) == [c]
 
 
-def test_multi_label_deterministic_across_runs():
-    """Output must be stable run-to-run (guards the set-iteration-order concern)."""
-    c = _span("c", 0, 30, "bearing shaft seal corrosion event", labels=["comp", "deg"])
-    first = [(s.span_id, s.start, s.end) for s in split_multi_label_spans([c])]
-    for _ in range(5):
-        again = [(s.span_id, s.start, s.end) for s in split_multi_label_spans([c])]
-        assert again == first
+def test_multi_label_split_current_buggy_output():
+    """Expose the CURRENT defect deterministically (hash-seed independent).
+
+    For a multi-component + mechanism phrase, split_multi_label_spans today emits
+    exactly ONE span: it stops after the first component keyword match (`break`),
+    so the mechanism half ("corrosion") is dropped. *Which* component wins
+    ("bearing" vs "shaft" vs "seal") further depends on set-iteration order, fixed
+    per process by PYTHONHASHSEED — which is why a same-process repeat check
+    cannot catch the real cross-process nondeterminism. We assert the invariants
+    that hold under any seed: one span, it's a component split, and no mechanism
+    span is produced.
+    """
+    c = _span("c", 0, 34, "bearing shaft seal corrosion event", labels=["comp", "deg"])
+    out = split_multi_label_spans([c])
+    assert len(out) == 1
+    only = out[0]
+    assert only.span_id.endswith("_comp")                      # a component split
+    assert only.text in {"bearing", "shaft", "seal"}           # seed-dependent choice
+    assert "corrosion" not in {s.text for s in out}            # mechanism half dropped
+
+
+@pytest.mark.xfail(
+    reason="Plan C: split_multi_label_spans drops the mechanism half and depends "
+           "on set-iteration order; flips to pass when the function is fixed to "
+           "emit both roles deterministically.",
+    strict=True,
+)
+def test_multi_label_split_should_keep_both_roles_deterministically():
+    """What CORRECT behavior looks like: emit a component AND a mechanism span,
+    with a stable component choice regardless of PYTHONHASHSEED."""
+    c = _span("c", 0, 34, "bearing shaft seal corrosion event", labels=["comp", "deg"])
+    out = split_multi_label_spans([c])
+    texts = {s.text for s in out}
+    # a mechanism token must survive the split, not just a component token
+    assert "corrosion" in texts
+    assert any(t in texts for t in ("bearing", "shaft", "seal"))

@@ -70,11 +70,29 @@ def test_exact_duplicate_deduped_first_seen():
 # ---------------------------------------------------------------------------
 
 def test_exact_text_nested_same_group_dropped():
+    """Reach _should_drop_nested (not exact-duplicate dedup): the inner span has a
+    DIFFERENT label in the SAME group, so it survives dedup and is then dropped by
+    the nested check because its normalized text matches the outer and they share
+    a group.  (With an identical label, dedup would remove it first and the nested
+    path would never run.)"""
     outer = _rspan("outer", 0, 4, "pump", ["comp"], ["G1"])
-    inner = _rspan("inner", 0, 4, "pump", ["comp"], ["G1"])  # identical text + group
+    inner = _rspan("inner", 0, 4, "pump", ["comp_x"], ["G1"])  # same span+group, diff label
     d = _decision("d1", "accept", [outer, inner])
     result = _pp().apply("D1", [d], [], _SCHEMA)
     assert len(result.entities) == 1
+    assert result.entities[0].span_id == "outer"  # the longer-or-first kept, inner dropped
+
+
+def test_same_group_nested_dropping_is_the_cause(monkeypatch):
+    """Prove it is _should_drop_nested doing the dropping, not dedup: stub it to
+    False and the (distinct-label) inner span is retained -> 2 entities."""
+    from dackar.RCA.ner.hybrid_ner.postprocess import Postprocessor
+    monkeypatch.setattr(Postprocessor, "_should_drop_nested", lambda self, inner, outer: False)
+    outer = _rspan("outer", 0, 4, "pump", ["comp"], ["G1"])
+    inner = _rspan("inner", 0, 4, "pump", ["comp_x"], ["G1"])
+    d = _decision("d1", "accept", [outer, inner])
+    result = Postprocessor().apply("D1", [d], [], _SCHEMA)
+    assert len(result.entities) == 2
 
 
 def test_distinct_atomic_nested_kept():

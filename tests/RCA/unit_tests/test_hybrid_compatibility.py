@@ -90,14 +90,37 @@ def test_single_group_accepts():
     assert dec.output_spans[0].labels == ["comp"]
 
 
-def test_non_whitelisted_multigroup_reduced_to_best_label():
-    # comp (G1) + outcome (G5) is NOT the whitelisted pair → reduce to best score
+def test_g1_plus_outcome_splits_into_physical_and_outcome():
+    """G1_PHYSICAL + G5_FAILURE_OUTCOME compound → R2 split, not reduce.
+
+    A "<phys> failure" compound matches _try_split_physical_outcome, so the
+    decision is a *split* yielding one component span and one outcome span.
+    """
     cand = _cand("pump failure", 0, 12, [("comp", 0.6), ("outcome", 0.95)])
     _engine().assign_groups([cand], _SCHEMA)
-    dec, rels = _engine().resolve_span(_doc(), cand, _SCHEMA)
-    assert dec.action in {"accept", "split", "defer"}
-    if dec.action == "accept":
-        assert dec.output_spans[0].labels == ["outcome"]  # higher score wins
+    dec, rels = _engine().resolve_span(_doc("pump failure"), cand, _SCHEMA)
+    assert dec.action == "split"
+    assert [s.labels for s in dec.output_spans] == [["comp"], ["outcome"]]
+
+
+def test_non_whitelisted_non_split_reduces_to_best_label():
+    """G4_MECHANISM + G5_OUTCOME (no physical+outcome compound) with a clear
+    score gap → reduce to the single best-scoring label (accept)."""
+    cand = _cand("bearing wear event", 0, 18, [("deg_mech", 0.6), ("outcome", 0.95)])
+    _engine().assign_groups([cand], _SCHEMA)
+    dec, rels = _engine().resolve_span(_doc("bearing wear event"), cand, _SCHEMA)
+    assert dec.action == "accept"
+    assert dec.output_spans[0].labels == ["outcome"]  # higher score wins
+
+
+def test_non_whitelisted_ambiguous_defers():
+    """Same non-whitelisted pair but a near-tie (score gap < 0.15) → defer
+    rather than force a collapse."""
+    cand = _cand("bearing wear event", 0, 18, [("deg_mech", 0.85), ("outcome", 0.95)])
+    _engine().assign_groups([cand], _SCHEMA)
+    dec, rels = _engine().resolve_span(_doc("bearing wear event"), cand, _SCHEMA)
+    assert dec.action == "defer"
+    assert dec.output_spans == []
 
 
 def test_best_label_per_group_keeps_highest_score():
