@@ -189,6 +189,8 @@ class GazetteerGenerator(CandidateGenerator):
             # adjust tokens to absolute offsets in the doc
             toks = [(tok, start + sent_s, end + sent_s) for (tok, start, end) in toks]
             token_texts = [t[0] for t in toks]
+            # Normalize each sentence token ONCE (was recomputed per term/window).
+            token_norms = [_normalize_token(t) for t in token_texts]
 
             # iterate terms and attempt fuzzy match within this sentence only
             for label, terms in self.label_terms.items():
@@ -210,7 +212,7 @@ class GazetteerGenerator(CandidateGenerator):
                         w = token_texts[i:j]
                         if not w:
                             continue
-                        wnorm = [_normalize_token(wi) for wi in w]
+                        wnorm = token_norms[i:j]  # precomputed per-sentence
                         wset = set(wnorm)
                         inter = len(tset & wset)
                         union = len(tset | wset)
@@ -222,7 +224,7 @@ class GazetteerGenerator(CandidateGenerator):
                             continue
 
                         # Determine matched token indices (tighten to matched tokens)
-                        matched = [k for k in range(i, j) if _normalize_token(token_texts[k]) in tset]
+                        matched = [k for k in range(i, j) if token_norms[k] in tset]
                         if not matched:
                             continue
                         s_idx, e_idx = matched[0], matched[-1]

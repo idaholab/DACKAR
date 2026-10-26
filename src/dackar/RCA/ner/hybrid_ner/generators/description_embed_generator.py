@@ -326,12 +326,15 @@ class DescriptionEmbedGenerator:
             return arr
         raise RuntimeError("No embedder built; call fit() first.")
 
-    def score_span_against_labels(self, span_text, context=None):
+    def score_span_against_labels(self, span_text, context=None, q_emb=None):
         # IMPORTANT:
         # Do NOT blend context into the query embedding. It causes "wear"/"degradation"
         # in nearby text to leak into every candidate.
-        q = (span_text or "").strip().lower()
-        q_emb = self._embed_texts([q])[0]
+        # q_emb may be supplied by a batched caller (see generate) to avoid a
+        # per-span _embed_texts() call; when None we embed the single span here.
+        if q_emb is None:
+            q = (span_text or "").strip().lower()
+            q_emb = self._embed_texts([q])[0]
         results = []
 
         for lbl in self._label_index:
@@ -348,12 +351,15 @@ class DescriptionEmbedGenerator:
         results.sort(key=lambda x: x[1], reverse=True)
         return results
 
-    def generate_for_candidate(self, doc, cand_span) -> List["LabelHypothesis"]:
+    def generate_for_candidate(self, doc, cand_span, q_emb=None) -> List["LabelHypothesis"]:
         """
         Uses embedding similarity between candidate span text and label description/examples.
         Applies:
         Rule 1: deg_mech requires mechanism cue in span OR near-span context
         Rule 2: G1_PHYSICAL requires label-specific cue token overlap IN SPAN (not context)
+
+        ``q_emb`` is an optional precomputed span-query embedding supplied by the
+        batched ``generate`` path; when None the span is embedded on demand.
         """
         from ..models import LabelHypothesis
 
@@ -368,9 +374,8 @@ class DescriptionEmbedGenerator:
         if not span_text:
             return []
 
-        # Embedding query MUST be span-only 
         # Embedding query MUST be span-only.
-        scored = self.score_span_against_labels(span_text, context=None)  # list[(lbl, sim, trigger)]
+        scored = self.score_span_against_labels(span_text, context=None, q_emb=q_emb)  # list[(lbl, sim, trigger)]
 
 
         span_tokens = set(re.findall(r"\w+", span_text.lower()))
@@ -437,9 +442,20 @@ class DescriptionEmbedGenerator:
         Given document and candidate spans (from other generators), augment with description-based hypotheses.
         Returns: list of CandidateSpan with updated .proposed_labels or plain LabelHypothesis depending on integration style.
         """
+        if not candidate_spans:
+            return []
+
+        # Batch all span-query embeddings into ONE _embed_texts() call instead of
+        # one call per candidate.  The query text must match exactly what
+        # score_span_against_labels would embed: (span.text or "").strip().lower().
+        # Candidates with empty span text are embedded as "" here but short-circuit
+        # to [] in generate_for_candidate, so their row is simply unused.
+        queries = [((getattr(c, "text", "") or "").strip().lower()) for c in candidate_spans]
+        q_embs = self._embed_texts(queries)
+
         outputs = []
-        for cand in candidate_spans:
-            lhyps = self.generate_for_candidate(doc, cand)
+        for cand, q_emb in zip(candidate_spans, q_embs):
+            lhyps = self.generate_for_candidate(doc, cand, q_emb=q_emb)
             outputs.append((cand, lhyps))
         return outputs
 
