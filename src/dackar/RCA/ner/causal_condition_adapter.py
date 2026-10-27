@@ -242,6 +242,15 @@ _CHAIN_JACCARD_THRESHOLD = 0.35
 # 0.75 is conservative; calibrate via calibrate_chain_threshold() with embed_fn.
 _CHAIN_EMBED_THRESHOLD = 0.75
 
+# Safety bound for chain path enumeration.  The root-to-leaf DFS in
+# _chain_causal_statements is worst-case exponential: a densely connected graph
+# (many mutually-similar statements) can enumerate factorially many paths and
+# hang the pipeline.  Enumeration stops once either limit is reached and returns
+# the chains found so far — well above any realistic sparse-document chain count,
+# so normal output is unchanged.
+_MAX_CHAIN_PATHS = 500          # max root-to-leaf chains to collect
+_MAX_CHAIN_DFS_VISITS = 100_000  # max DFS node-expansions (hard runtime ceiling)
+
 # spaCy dependency labels that indicate a participial / adverbial clause.
 # Verbs with these labels inherit their subject from the governing clause
 # and therefore have no explicit nsubj in the dep tree (Fix 3).
@@ -458,19 +467,38 @@ def _chain_causal_statements(
         sources = [min(range(n), key=lambda k: len(predecessors[k]))]
 
     found_chains: List[List[int]] = []
+    _dfs_visits = 0  # global node-expansion counter (hard runtime ceiling)
 
-    def _dfs(path: List[int], visited: set) -> None:
+    # Per-source path budget so a single dense source cannot consume the whole
+    # allowance and starve later sources' (possibly unrelated) chains.  Each
+    # source may contribute up to this many chains; the global visit ceiling
+    # still bounds total runtime regardless of how sources divide the budget.
+    per_source_budget = max(1, _MAX_CHAIN_PATHS // max(1, len(sources)))
+
+    def _dfs(path: List[int], visited: set, src_found: List[int]) -> None:
+        nonlocal _dfs_visits
+        # Stop this source once it has used its path budget, or globally once the
+        # visit ceiling is hit; the chains collected so far are kept (a densely
+        # connected graph is worst-case exponential — see _MAX_CHAIN_PATHS).
+        if src_found[0] >= per_source_budget or _dfs_visits >= _MAX_CHAIN_DFS_VISITS:
+            return
+        _dfs_visits += 1
         current = path[-1]
         children = [j for j in successors[current] if j not in visited]
         if not children:
             if len(path) >= 2:
                 found_chains.append(list(path))
+                src_found[0] += 1
             return
         for child in children:
-            _dfs(path + [child], visited | {child})
+            if src_found[0] >= per_source_budget or _dfs_visits >= _MAX_CHAIN_DFS_VISITS:
+                return
+            _dfs(path + [child], visited | {child}, src_found)
 
     for src in sources:
-        _dfs([src], {src})
+        if _dfs_visits >= _MAX_CHAIN_DFS_VISITS:
+            break
+        _dfs([src], {src}, [0])
 
     if not found_chains:
         return []

@@ -58,6 +58,9 @@ class AnchoredNPGenerator:
         self.token_index = token_index or {}
         self.max_tokens = int(max_tokens)
         self.emit_min_tokens = bool(emit_min_tokens)
+        # Cache for the combined token-evidence regex (see _evidence_pattern).
+        self._ev_pattern: Optional["re.Pattern[str]"] = None
+        self._ev_pattern_key: Optional[dict] = None
 
     def _trim_at_punct(self, text: str) -> str:
         """Return left segment before strong punctuation (., ;, :)."""
@@ -66,16 +69,40 @@ class AnchoredNPGenerator:
         parts = re.split(r"[\.;:]", text, maxsplit=1)
         return (parts[0].strip() if parts else text.strip())
 
+    def _evidence_pattern(self) -> Optional["re.Pattern[str]"]:
+        """Return a single compiled regex matching any eligible gazetteer token.
+
+        Built once per (token_index identity) and cached, instead of re-escaping
+        and re-searching every token for every span.  Returns None when there are
+        no eligible tokens.
+        """
+        cached = getattr(self, "_ev_pattern", None)
+        if cached is not None and self._ev_pattern_key is self.token_index:
+            return cached
+        toks = [
+            tok for tok in self.token_index.keys()
+            if len(tok) >= 3 and tok not in STOP_TOKENS
+        ]
+        if toks:
+            # longest-first so the alternation is unambiguous; one word-boundary
+            # wrap around the whole alternation is equivalent to wrapping each
+            # (all alternatives are whole \w+ tokens).
+            alt = "|".join(re.escape(t) for t in sorted(toks, key=len, reverse=True))
+            pattern = re.compile(r"\b(?:" + alt + r")\b")
+        else:
+            pattern = None
+        self._ev_pattern = pattern
+        self._ev_pattern_key = self.token_index
+        return pattern
+
     def _has_any_token_evidence(self, span_text_lower: str) -> bool:
         """True if any gazetteer token occurs as a whole word in the span."""
         if not self.token_index:
             return False
-        for tok in self.token_index.keys():
-            if len(tok) < 3 or tok in STOP_TOKENS:
-                continue
-            if re.search(r"\b" + re.escape(tok) + r"\b", span_text_lower):
-                return True
-        return False
+        pattern = self._evidence_pattern()
+        if pattern is None:
+            return False
+        return pattern.search(span_text_lower) is not None
 
     def generate(self, doc) -> List[CandidateSpan]:
         """Generate CandidateSpan objects for a Document."""
