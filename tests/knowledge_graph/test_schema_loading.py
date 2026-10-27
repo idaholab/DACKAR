@@ -12,6 +12,11 @@ Definition of done (schema finalization):
      defined somewhere in the curated set.
   4. No node label is defined in more than one schema.
   5. No relation is duplicated as the same (name, from_entity, to_entity) triple.
+  6. Every curated node carries a bfo_category drawn from the closed set the
+     base meta-schema defines. The meta-schema keeps the field optional (so
+     external or experimental schemas are not forced to carry it), but the
+     shipped curated set must be fully and validly tagged for cross-schema
+     querying (ontology-assessment A6 / cross_project_analysis.md 2d).
 """
 import json
 import tomllib
@@ -146,6 +151,35 @@ def test_no_duplicate_relation_triples(schemas):
                 f"{seen[triple]} and {name}"
             )
             seen[triple] = name
+
+
+def _allowed_bfo_categories():
+    """Single source of truth: the closed set the base meta-schema declares."""
+    base = _load_base_schema()
+    node_props = base["properties"]["node"]["additionalProperties"]["properties"]
+    return set(node_props["bfo_category"]["enum"])
+
+
+@pytest.mark.parametrize("name", CURATED)
+def test_every_node_has_a_valid_bfo_category(name):
+    """The curated set must be fully tagged with a category from the closed set.
+
+    The meta-schema leaves bfo_category optional (a non-curated schema may omit
+    it), so base-schema validation alone would pass an untagged curated node.
+    This test enforces the stronger contract for the shipped set: every node is
+    present and drawn from the allowed vocabulary. It is the knob that makes the
+    tag effectively required for curated schemas without changing the
+    meta-schema contract (ontology-assessment A6)."""
+    allowed = _allowed_bfo_categories()
+    schema = _load_toml(name)
+    for label, node in schema.get("node", {}).items():
+        assert "bfo_category" in node, (
+            f"{name}: node {label!r} is missing a bfo_category tag"
+        )
+        assert node["bfo_category"] in allowed, (
+            f"{name}: node {label!r} bfo_category "
+            f"{node['bfo_category']!r} is not in the allowed set {sorted(allowed)}"
+        )
 
 
 # ---------------------------------------------------------------------------

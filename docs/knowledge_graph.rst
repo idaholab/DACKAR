@@ -112,6 +112,20 @@ Knowledge Graph Construction Through Schemas
   - Data type check for each property
   - Check for redundancy against other nodes/relations defined in other schemas
 
+* Node BFO category tag
+  Each node may carry an optional ``bfo_category`` key: a single top-level category, borrowed from the Basic Formal Ontology (BFO), used to group nodes across schemas for cross-schema queries (for example, "all dispositions" or "all information artifacts"). It is a controlled-vocabulary tag only; it does not import BFO's axioms and does not require a reasoner. The value must be one of eight allowed categories:
+
+  - ``material_entity`` — a physical thing (an installed component, a sensor, a connector).
+  - ``function`` — what an element is for (an architecture-level function it performs).
+  - ``disposition`` — a latent potential or tendency, realized under the right conditions (a failure mode, a degradation mechanism, a basic event).
+  - ``role`` — a context-dependent part something plays (reserved; no nodes use it yet).
+  - ``information_artifact`` — a document, record, specification, or type-level definition (a condition report, a requirement, an element definition).
+  - ``process`` — something that unfolds over time (an event, an anomaly occurrence, an outage).
+  - ``quality`` — a measurable attribute of an entity (a monitored physical variable).
+  - ``temporal_region`` — a point or span of time (a temporal mention extracted from text).
+
+  The tag is currently **optional** in the base meta-schema, so an external or experimental schema is not forced to carry it; the meta-schema only enforces that, when present, the value is one of the eight. The curated DACKAR schema set is required to tag every node, and that completeness is checked by the schema-set acceptance test. The tag is intended to become required for the curated set in a later revision.
+
   In this context, knowledge graphs are constructed from pandas dataframes. In addition, the user is required to provide a construction schema that defines the nodes and relations to be populated in the knowledge graph.
   A construction schema is defined in the form of a python dictionary.
   The following example indicates that two nodes are created:

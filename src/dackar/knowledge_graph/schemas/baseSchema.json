@@ -41,6 +41,14 @@
           },
           "minItems": 1,
           "description": "Allowed values when type is enum."
+        },
+        "minimum": {
+          "type": "number",
+          "description": "Inclusive lower bound for a numeric (float/integer/floating) property value. NOTE: this declares the intended range in a machine-readable form; it is validated as a well-formed bound here, but runtime property values are NOT yet range-checked at ingestion (see the schema-set follow-up)."
+        },
+        "maximum": {
+          "type": "number",
+          "description": "Inclusive upper bound for a numeric (float/integer/floating) property value. NOTE: declared range only; runtime values are not yet enforced at ingestion (see the schema-set follow-up)."
         }
       },
       "required": [
@@ -48,18 +56,37 @@
         "type",
         "optional"
       ],
-      "if": {
-        "properties": {
-          "type": {
-            "const": "enum"
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "enum"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "enum_values"
+            ]
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              { "required": ["minimum"] },
+              { "required": ["maximum"] }
+            ]
+          },
+          "then": {
+            "properties": {
+              "type": {
+                "enum": ["float", "integer", "floating"]
+              }
+            }
           }
         }
-      },
-      "then": {
-        "required": [
-          "enum_values"
-        ]
-      }
+      ]
     }
   },
   "properties": {
@@ -85,6 +112,20 @@
           "primary_key": {
             "type": "string",
             "description": "Property used as the MERGE key during ingestion."
+          },
+          "bfo_category": {
+            "type": "string",
+            "enum": [
+              "material_entity",
+              "function",
+              "disposition",
+              "role",
+              "information_artifact",
+              "process",
+              "quality",
+              "temporal_region"
+            ],
+            "description": "BFO-derived top-level category used to group nodes across schemas for cross-schema queries (e.g. 'all dispositions', 'all information artifacts'). One of a fixed closed set; optional for now, intended to become required. Does NOT import BFO's axioms or a reasoner - it is a single controlled-vocabulary tag."
           },
           "node_properties": {
             "type": "array",
