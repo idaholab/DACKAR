@@ -159,6 +159,15 @@
 <a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/anchored_np_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.anchored_np_generator.AnchoredNPGenerator.emit_min_tokens">[docs]</a>
         <span class="bp">self</span><span class="o">.</span><span class="n">emit_min_tokens</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">emit_min_tokens</span><span class="p">)</span></div>
 
+        <span class="c1"># Cache for the combined token-evidence regex (see _evidence_pattern).</span>
+<div class="viewcode-block" id="AnchoredNPGenerator._ev_pattern">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/anchored_np_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.anchored_np_generator.AnchoredNPGenerator._ev_pattern">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ev_pattern</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="s2">"re.Pattern[str]"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="AnchoredNPGenerator._ev_pattern_key">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/anchored_np_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.anchored_np_generator.AnchoredNPGenerator._ev_pattern_key">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ev_pattern_key</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
 
 <div class="viewcode-block" id="AnchoredNPGenerator._trim_at_punct">
 <a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/anchored_np_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.anchored_np_generator.AnchoredNPGenerator._trim_at_punct">[docs]</a>
@@ -170,18 +179,45 @@
         <span class="k">return</span> <span class="p">(</span><span class="n">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">if</span> <span class="n">parts</span> <span class="k">else</span> <span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span></div>
 
 
+<div class="viewcode-block" id="AnchoredNPGenerator._evidence_pattern">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/anchored_np_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.anchored_np_generator.AnchoredNPGenerator._evidence_pattern">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_evidence_pattern</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="s2">"re.Pattern[str]"</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Return a single compiled regex matching any eligible gazetteer token.</span>
+
+<span class="sd">        Built once per (token_index identity) and cached, instead of re-escaping</span>
+<span class="sd">        and re-searching every token for every span.  Returns None when there are</span>
+<span class="sd">        no eligible tokens.</span>
+<span class="sd">        """</span>
+        <span class="n">cached</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_ev_pattern"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cached</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ev_pattern_key</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">token_index</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">cached</span>
+        <span class="n">toks</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">tok</span> <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">token_index</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">tok</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">STOP_TOKENS</span>
+        <span class="p">]</span>
+        <span class="k">if</span> <span class="n">toks</span><span class="p">:</span>
+            <span class="c1"># longest-first so the alternation is unambiguous; one word-boundary</span>
+            <span class="c1"># wrap around the whole alternation is equivalent to wrapping each</span>
+            <span class="c1"># (all alternatives are whole \w+ tokens).</span>
+            <span class="n">alt</span> <span class="o">=</span> <span class="s2">"|"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">toks</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="nb">len</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+            <span class="n">pattern</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b(?:"</span> <span class="o">+</span> <span class="n">alt</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">")\b"</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">pattern</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ev_pattern</span> <span class="o">=</span> <span class="n">pattern</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ev_pattern_key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">token_index</span>
+        <span class="k">return</span> <span class="n">pattern</span></div>
+
+
 <div class="viewcode-block" id="AnchoredNPGenerator._has_any_token_evidence">
 <a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/anchored_np_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.anchored_np_generator.AnchoredNPGenerator._has_any_token_evidence">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">_has_any_token_evidence</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">span_text_lower</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""True if any gazetteer token occurs as a whole word in the span."""</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">token_index</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">False</span>
-        <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">token_index</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span> <span class="ow">or</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">STOP_TOKENS</span><span class="p">:</span>
-                <span class="k">continue</span>
-            <span class="k">if</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b"</span> <span class="o">+</span> <span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">"\b"</span><span class="p">,</span> <span class="n">span_text_lower</span><span class="p">):</span>
-                <span class="k">return</span> <span class="kc">True</span>
-        <span class="k">return</span> <span class="kc">False</span></div>
+        <span class="n">pattern</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_evidence_pattern</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">pattern</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="n">pattern</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">span_text_lower</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span></div>
 
 
 <div class="viewcode-block" id="AnchoredNPGenerator.generate">

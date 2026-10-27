@@ -183,15 +183,40 @@ Module Contents
    .. py:method:: _embed_texts(texts)
 
 
-   .. py:method:: score_span_against_labels(span_text, context=None)
+   .. py:method:: score_span_against_labels(span_text, context=None, q_emb=None)
+
+      Score one span's query embedding against every label's example bank.
+
+      :param span_text: The candidate span text. When ``q_emb`` is None it is embedded here
+                        as ``(span_text or "").strip().lower()``.
+      :type span_text: str
+      :param context: Unused. Kept for signature stability — context is deliberately NOT
+                      blended into the query embedding (nearby "wear"/"degradation" would
+                      otherwise leak into every candidate's score).
+      :type context: str, optional
+      :param q_emb: Precomputed query embedding for the span, supplied by the batched
+                    :meth:`generate` path to avoid a per-span ``_embed_texts`` call. It
+                    MUST be the single L2-normalized row that ``_embed_texts`` returns for
+                    ``span_text.strip().lower()`` (i.e. ``_embed_texts([q])[0]``) — the
+                    label banks are normalized, so a raw/un-normalized vector silently
+                    shifts every similarity. When None the span is embedded here.
+      :type q_emb: numpy.ndarray, optional
+
+      :returns: ``(label, score, "desc_embed")`` for every indexed label, sorted by
+                score descending. ``score = max pos_sim - 0.7 * max neg_sim``.
+      :rtype: list[tuple[str, float, str]]
 
 
-   .. py:method:: generate_for_candidate(doc, cand_span)
+
+   .. py:method:: generate_for_candidate(doc, cand_span, q_emb=None)
 
       Uses embedding similarity between candidate span text and label description/examples.
       Applies:
       Rule 1: deg_mech requires mechanism cue in span OR near-span context
       Rule 2: G1_PHYSICAL requires label-specific cue token overlap IN SPAN (not context)
+
+      ``q_emb`` is an optional precomputed span-query embedding supplied by the
+      batched ``generate`` path; when None the span is embedded on demand.
 
 
 

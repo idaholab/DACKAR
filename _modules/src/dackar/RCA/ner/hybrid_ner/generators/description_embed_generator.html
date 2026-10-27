@@ -507,12 +507,35 @@
 
 <div class="viewcode-block" id="DescriptionEmbedGenerator.score_span_against_labels">
 <a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.score_span_against_labels">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">score_span_against_labels</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">span_text</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="c1"># IMPORTANT:</span>
-        <span class="c1"># Do NOT blend context into the query embedding. It causes "wear"/"degradation"</span>
-        <span class="c1"># in nearby text to leak into every candidate.</span>
-        <span class="n">q</span> <span class="o">=</span> <span class="p">(</span><span class="n">span_text</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
-        <span class="n">q_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embed_texts</span><span class="p">([</span><span class="n">q</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score_span_against_labels</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">span_text</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">q_emb</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Score one span's query embedding against every label's example bank.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        span_text : str</span>
+<span class="sd">            The candidate span text. When ``q_emb`` is None it is embedded here</span>
+<span class="sd">            as ``(span_text or "").strip().lower()``.</span>
+<span class="sd">        context : str, optional</span>
+<span class="sd">            Unused. Kept for signature stability — context is deliberately NOT</span>
+<span class="sd">            blended into the query embedding (nearby "wear"/"degradation" would</span>
+<span class="sd">            otherwise leak into every candidate's score).</span>
+<span class="sd">        q_emb : numpy.ndarray, optional</span>
+<span class="sd">            Precomputed query embedding for the span, supplied by the batched</span>
+<span class="sd">            :meth:`generate` path to avoid a per-span ``_embed_texts`` call. It</span>
+<span class="sd">            MUST be the single L2-normalized row that ``_embed_texts`` returns for</span>
+<span class="sd">            ``span_text.strip().lower()`` (i.e. ``_embed_texts([q])[0]``) — the</span>
+<span class="sd">            label banks are normalized, so a raw/un-normalized vector silently</span>
+<span class="sd">            shifts every similarity. When None the span is embedded here.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        list[tuple[str, float, str]]</span>
+<span class="sd">            ``(label, score, "desc_embed")`` for every indexed label, sorted by</span>
+<span class="sd">            score descending. ``score = max pos_sim - 0.7 * max neg_sim``.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">q_emb</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">q</span> <span class="o">=</span> <span class="p">(</span><span class="n">span_text</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="n">q_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embed_texts</span><span class="p">([</span><span class="n">q</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
         <span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
 
         <span class="k">for</span> <span class="n">lbl</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_label_index</span><span class="p">:</span>
@@ -532,12 +555,15 @@
 
 <div class="viewcode-block" id="DescriptionEmbedGenerator.generate_for_candidate">
 <a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.generate_for_candidate">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">generate_for_candidate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">,</span> <span class="n">cand_span</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="s2">"LabelHypothesis"</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate_for_candidate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">,</span> <span class="n">cand_span</span><span class="p">,</span> <span class="n">q_emb</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="s2">"LabelHypothesis"</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Uses embedding similarity between candidate span text and label description/examples.</span>
 <span class="sd">        Applies:</span>
 <span class="sd">        Rule 1: deg_mech requires mechanism cue in span OR near-span context</span>
 <span class="sd">        Rule 2: G1_PHYSICAL requires label-specific cue token overlap IN SPAN (not context)</span>
+
+<span class="sd">        ``q_emb`` is an optional precomputed span-query embedding supplied by the</span>
+<span class="sd">        batched ``generate`` path; when None the span is embedded on demand.</span>
 <span class="sd">        """</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">..models</span><span class="w"> </span><span class="kn">import</span> <span class="n">LabelHypothesis</span>
 
@@ -552,9 +578,8 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="n">span_text</span><span class="p">:</span>
             <span class="k">return</span> <span class="p">[]</span>
 
-        <span class="c1"># Embedding query MUST be span-only </span>
         <span class="c1"># Embedding query MUST be span-only.</span>
-        <span class="n">scored</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">score_span_against_labels</span><span class="p">(</span><span class="n">span_text</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>  <span class="c1"># list[(lbl, sim, trigger)]</span>
+        <span class="n">scored</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">score_span_against_labels</span><span class="p">(</span><span class="n">span_text</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">q_emb</span><span class="o">=</span><span class="n">q_emb</span><span class="p">)</span>  <span class="c1"># list[(lbl, sim, trigger)]</span>
 
 
         <span class="n">span_tokens</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\w+"</span><span class="p">,</span> <span class="n">span_text</span><span class="o">.</span><span class="n">lower</span><span class="p">()))</span>
@@ -624,9 +649,20 @@
 <span class="sd">        Given document and candidate spans (from other generators), augment with description-based hypotheses.</span>
 <span class="sd">        Returns: list of CandidateSpan with updated .proposed_labels or plain LabelHypothesis depending on integration style.</span>
 <span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">candidate_spans</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="c1"># Batch all span-query embeddings into ONE _embed_texts() call instead of</span>
+        <span class="c1"># one call per candidate.  The query text must match exactly what</span>
+        <span class="c1"># score_span_against_labels would embed: (span.text or "").strip().lower().</span>
+        <span class="c1"># Candidates with empty span text are embedded as "" here but short-circuit</span>
+        <span class="c1"># to [] in generate_for_candidate, so their row is simply unused.</span>
+        <span class="n">queries</span> <span class="o">=</span> <span class="p">[((</span><span class="nb">getattr</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="s2">"text"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidate_spans</span><span class="p">]</span>
+        <span class="n">q_embs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embed_texts</span><span class="p">(</span><span class="n">queries</span><span class="p">)</span>
+
         <span class="n">outputs</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">cand</span> <span class="ow">in</span> <span class="n">candidate_spans</span><span class="p">:</span>
-            <span class="n">lhyps</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate_for_candidate</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">cand</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">cand</span><span class="p">,</span> <span class="n">q_emb</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">candidate_spans</span><span class="p">,</span> <span class="n">q_embs</span><span class="p">):</span>
+            <span class="n">lhyps</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate_for_candidate</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">cand</span><span class="p">,</span> <span class="n">q_emb</span><span class="o">=</span><span class="n">q_emb</span><span class="p">)</span>
             <span class="n">outputs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">cand</span><span class="p">,</span> <span class="n">lhyps</span><span class="p">))</span>
         <span class="k">return</span> <span class="n">outputs</span></div>
 </div>

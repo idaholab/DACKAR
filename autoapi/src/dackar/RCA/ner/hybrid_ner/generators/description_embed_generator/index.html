@@ -403,16 +403,43 @@ Supports:</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.score_span_against_labels">
-<span class="sig-name descname"><span class="pre">score_span_against_labels</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">span_text</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">context</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../../../_modules/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator.html#DescriptionEmbedGenerator.score_span_against_labels"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.score_span_against_labels" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
+<span class="sig-name descname"><span class="pre">score_span_against_labels</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">span_text</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">context</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">q_emb</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../../../_modules/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator.html#DescriptionEmbedGenerator.score_span_against_labels"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.score_span_against_labels" title="Link to this definition">¶</a></dt>
+<dd><p>Score one span’s query embedding against every label’s example bank.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>span_text</strong> (<em>str</em>) – The candidate span text. When <code class="docutils literal notranslate"><span class="pre">q_emb</span></code> is None it is embedded here
+as <code class="docutils literal notranslate"><span class="pre">(span_text</span> <span class="pre">or</span> <span class="pre">&quot;&quot;).strip().lower()</span></code>.</p></li>
+<li><p><strong>context</strong> (<em>str</em><em>, </em><em>optional</em>) – Unused. Kept for signature stability — context is deliberately NOT
+blended into the query embedding (nearby “wear”/”degradation” would
+otherwise leak into every candidate’s score).</p></li>
+<li><p><strong>q_emb</strong> (<em>numpy.ndarray</em><em>, </em><em>optional</em>) – Precomputed query embedding for the span, supplied by the batched
+<a class="reference internal" href="#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.generate" title="src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.generate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">generate()</span></code></a> path to avoid a per-span <code class="docutils literal notranslate"><span class="pre">_embed_texts</span></code> call. It
+MUST be the single L2-normalized row that <code class="docutils literal notranslate"><span class="pre">_embed_texts</span></code> returns for
+<code class="docutils literal notranslate"><span class="pre">span_text.strip().lower()</span></code> (i.e. <code class="docutils literal notranslate"><span class="pre">_embed_texts([q])[0]</span></code>) — the
+label banks are normalized, so a raw/un-normalized vector silently
+shifts every similarity. When None the span is embedded here.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><code class="docutils literal notranslate"><span class="pre">(label,</span> <span class="pre">score,</span> <span class="pre">&quot;desc_embed&quot;)</span></code> for every indexed label, sorted by
+score descending. <code class="docutils literal notranslate"><span class="pre">score</span> <span class="pre">=</span> <span class="pre">max</span> <span class="pre">pos_sim</span> <span class="pre">-</span> <span class="pre">0.7</span> <span class="pre">*</span> <span class="pre">max</span> <span class="pre">neg_sim</span></code>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list[tuple[str, float, str]]</p>
+</dd>
+</dl>
+</dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.generate_for_candidate">
-<span class="sig-name descname"><span class="pre">generate_for_candidate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">doc</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cand_span</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../../../_modules/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator.html#DescriptionEmbedGenerator.generate_for_candidate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.generate_for_candidate" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">generate_for_candidate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">doc</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cand_span</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">q_emb</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../../../../../_modules/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator.html#DescriptionEmbedGenerator.generate_for_candidate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.generate_for_candidate" title="Link to this definition">¶</a></dt>
 <dd><p>Uses embedding similarity between candidate span text and label description/examples.
 Applies:
 Rule 1: deg_mech requires mechanism cue in span OR near-span context
 Rule 2: G1_PHYSICAL requires label-specific cue token overlap IN SPAN (not context)</p>
+<p><code class="docutils literal notranslate"><span class="pre">q_emb</span></code> is an optional precomputed span-query embedding supplied by the
+batched <code class="docutils literal notranslate"><span class="pre">generate</span></code> path; when None the span is embedded on demand.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>List[<a class="reference internal" href="../../models/index.html#src.dackar.RCA.ner.hybrid_ner.models.LabelHypothesis" title="src.dackar.RCA.ner.hybrid_ner.models.LabelHypothesis">src.dackar.RCA.ner.hybrid_ner.models.LabelHypothesis</a>]</p>
