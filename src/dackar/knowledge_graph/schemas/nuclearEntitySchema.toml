@@ -1,8 +1,8 @@
 title = "Nuclear Entity Graph Schema"
-version = "1.0"
+version = "1.1"
 
 # temporal_entity is a leaf node: it is only a target of relations defined in
-# conditionReportSchema, workOrderSchema, and outageSchema.
+# conditionReportSchema, workOrderSchema, and temporalRelationSchema (anchored_by).
 #
 # nuclear_entity is the text-mention / NLP-extraction layer (unresolved references
 # pulled from free text). It is a target of condition_report.refers, and it also
@@ -36,16 +36,28 @@ node_properties = [
 # ============================================================
 # GROUNDING RELATIONS — resolve text mentions into the structured model
 # (ontology-assessment A4 / §4). Typed per target so every endpoint resolves to
-# a defined node label; `material` is intentionally NOT a target because no
-# material node exists in the current set.
+# a defined node label. A mention can be type-level (resolves_to_definition) or
+# instance-level (resolves_to_asset); both are provided so the resolver need not
+# pick an arbitrary element_usage for a type-level reference. `material` is
+# intentionally NOT a target because no material node exists in the current set.
+# confidence is bounded to [0,1] by the meta-schema (minimum/maximum).
 # ============================================================
+
+[relation.resolves_to_definition]
+relation_description = "Grounds an extracted nuclear_entity mention to the type-level element_definition it denotes (e.g. a component class rather than one installed unit), linking the free-text layer to the MBSE definition layer."
+from_entity = "nuclear_entity"
+to_entity = "element_definition"
+relation_properties = [
+  { name = "confidence", type = "float", optional = true, minimum = 0.0, maximum = 1.0, description = "Resolver confidence in [0,1] that this mention denotes this element definition." },
+  { name = "resolution_method", type = "enum", optional = true, description = "How the grounding was produced.", enum_values = ["exact_match", "alias", "embedding", "human_confirmed"] }
+]
 
 [relation.resolves_to_asset]
 relation_description = "Grounds an extracted nuclear_entity mention to the installed plant asset it denotes, linking the free-text layer to the MBSE model layer."
 from_entity = "nuclear_entity"
 to_entity = "element_usage"
 relation_properties = [
-  { name = "confidence", type = "float", optional = true, description = "Resolver confidence in [0,1] that this mention denotes this asset." },
+  { name = "confidence", type = "float", optional = true, minimum = 0.0, maximum = 1.0, description = "Resolver confidence in [0,1] that this mention denotes this asset." },
   { name = "resolution_method", type = "enum", optional = true, description = "How the grounding was produced.", enum_values = ["exact_match", "alias", "embedding", "human_confirmed"] }
 ]
 
@@ -54,7 +66,7 @@ relation_description = "Grounds an extracted nuclear_entity mention to the failu
 from_entity = "nuclear_entity"
 to_entity = "failure_mode"
 relation_properties = [
-  { name = "confidence", type = "float", optional = true, description = "Resolver confidence in [0,1] that this mention denotes this failure mode." },
+  { name = "confidence", type = "float", optional = true, minimum = 0.0, maximum = 1.0, description = "Resolver confidence in [0,1] that this mention denotes this failure mode." },
   { name = "resolution_method", type = "enum", optional = true, description = "How the grounding was produced.", enum_values = ["exact_match", "alias", "embedding", "human_confirmed"] }
 ]
 
@@ -63,6 +75,6 @@ relation_description = "Grounds an extracted nuclear_entity mention to the degra
 from_entity = "nuclear_entity"
 to_entity = "degradation_mechanism"
 relation_properties = [
-  { name = "confidence", type = "float", optional = true, description = "Resolver confidence in [0,1] that this mention denotes this degradation mechanism." },
+  { name = "confidence", type = "float", optional = true, minimum = 0.0, maximum = 1.0, description = "Resolver confidence in [0,1] that this mention denotes this degradation mechanism." },
   { name = "resolution_method", type = "enum", optional = true, description = "How the grounding was produced.", enum_values = ["exact_match", "alias", "embedding", "human_confirmed"] }
 ]
