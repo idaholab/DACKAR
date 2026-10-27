@@ -44,11 +44,11 @@
         },
         "minimum": {
           "type": "number",
-          "description": "Inclusive lower bound for a numeric (float/integer/floating) property value."
+          "description": "Inclusive lower bound for a numeric (float/integer/floating) property value. NOTE: this declares the intended range in a machine-readable form; it is validated as a well-formed bound here, but runtime property values are NOT yet range-checked at ingestion (see the schema-set follow-up)."
         },
         "maximum": {
           "type": "number",
-          "description": "Inclusive upper bound for a numeric (float/integer/floating) property value."
+          "description": "Inclusive upper bound for a numeric (float/integer/floating) property value. NOTE: declared range only; runtime values are not yet enforced at ingestion (see the schema-set follow-up)."
         }
       },
       "required": [
@@ -56,18 +56,37 @@
         "type",
         "optional"
       ],
-      "if": {
-        "properties": {
-          "type": {
-            "const": "enum"
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "enum"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "enum_values"
+            ]
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              { "required": ["minimum"] },
+              { "required": ["maximum"] }
+            ]
+          },
+          "then": {
+            "properties": {
+              "type": {
+                "enum": ["float", "integer", "floating"]
+              }
+            }
           }
         }
-      },
-      "then": {
-        "required": [
-          "enum_values"
-        ]
-      }
+      ]
     }
   },
   "properties": {
