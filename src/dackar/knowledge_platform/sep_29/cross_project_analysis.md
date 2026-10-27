@@ -113,6 +113,13 @@ Honest status of the pattern: **proven on one concept family (documents), half-p
 (equipment).** The outage and licensing families (activities/resources, requirements) have not been
 tested against it — that is the open risk (§6), and a better next probe than replicating more documents.
 
+**Update (MR#85):** the text-mention-to-model link is now schema-level. `nuclear_entity` (the NLP
+extraction layer) grounds into the structured model via `resolves_to_asset` / `resolves_to_failure_mode`
+/ `resolves_to_mechanism` relations, each carrying a `confidence` and `resolution_method` — so an
+extracted mention resolves to the equipment or failure concept it denotes, with the resolution treated
+as an inference, not a given. This connects the "Events / anomalies" and free-text layers to the
+canonical equipment/failure spine that was previously only enforced for structured entity resolution.
+
 ### 2c. Schema governance — controlling how the ontology grows
 
 The 19 KG schemas are the one asset all three projects share, so governing their growth is a platform
@@ -132,6 +139,15 @@ coverage) is **on hold by decision**; §10 (upper ontology) is our §2d. The poi
 fixes below is to **prevent regression** to the state that assessment had to fix — the cleanup
 happened once; governance keeps it from recurring as three projects edit the files.
 
+**Update (MR#85 merged, 2026-10-27).** A second schema pass shipped to `main` and moves several of
+these fixes from "proposed" to "landed": every node across all 19 schemas now carries a
+`bfo_category` tag (§2d), the A4 text-to-model grounding relations were added (`resolves_to_asset` /
+`_failure_mode` / `_mechanism`, each with `confidence` + `resolution_method`), the meta-schema gained
+numeric `minimum`/`maximum` bound declarations, and a schema-set **acceptance test** now runs
+(`tests/knowledge_graph/test_schema_loading.py`, incl. `test_every_node_has_a_valid_bfo_category`).
+The remaining follow-ups are tracked in the tree at `knowledge_graph/schemas/SCHEMA_FOLLOWUPS.md`
+(not in PR threads). The per-fix status below is annotated accordingly.
+
 **The gap is governing schema *content* (the vocabulary), not *form*.** The meta-schema checks the
 shape of a schema; nothing governs the labels and predicates inside it. Three low-cost fixes, agreed
 2026-10-26:
@@ -141,21 +157,24 @@ shape of a schema; nothing governs the labels and predicates inside it. Three lo
    today. The tell that they drift: a `resolve_node_label(*candidates)` helper already exists to paper
    over naming variants — it exists *because* labels vary. Fix: a central registry of allowed node
    labels and relation predicates that new schemas draw from, so a new schema reuses `caused_by` rather
-   than coining `causes` / `caused-by` / `leads_to`.
-2. **Move the cross-reference check left (CI, not ingest).** An unresolved `to_entity` is currently
-   caught only at ingest time (a `KeyError`). Promote the existing endpoint-resolution + duplicate
-   checks to a **CI test that runs on every schema PR**, so a broken reference fails the pull request,
-   not a production run. *The machinery largely exists:* `knowledge_graph/validator/kg_model_validator.py`
-   (local, not yet merged) already parses the TOML into a `relation_endpoints` map and validates
-   source/target resolution (findings R1/R2/R3) — but today it validates a **populated model** against
-   the schemas. Fix #2 is to repoint that same endpoint map at the **schema set itself** (does every
-   declared `to_entity` resolve to a defined node label?) and run it in CI. Finish + repoint + merge,
-   not build from scratch.
-3. **Coordinated versioning + change-control.** Each file carries its own `version = 1.0` and there is
-   no ontology-wide version and no "who approves a schema change" step — which now matters because
-   three projects share these files. Fix: one ontology-wide version stamp and a lightweight review gate
-   on schema changes (a named owner signs off), so a change that helps one project cannot silently
-   break another.
+   than coining `causes` / `caused-by` / `leads_to`. **Partly landed (MR#85):** the *type-system* half
+   of this shipped — `bfo_category` is a closed controlled vocabulary enforced on every node (§2d). The
+   label/predicate registry itself is still open (and the `cause`/`causal_factor`, `effect`/
+   `consequence`, `event` fragmentation is tracked as follow-up A2/A3).
+2. **Move the cross-reference check left (CI, not ingest).** **Partly landed (MR#85):** a schema-set
+   acceptance test (`tests/knowledge_graph/test_schema_loading.py`) now runs in the suite and gates
+   schema shape + the `bfo_category` tag on every node. That is the "CI runs on every schema PR" part.
+   The remaining piece is endpoint resolution: `knowledge_graph/validator/kg_model_validator.py`
+   already parses the TOML into a `relation_endpoints` map and validates source/target resolution
+   (findings R1/R2/R3), but today it validates a **populated model**. Repoint that same endpoint map at
+   the **schema set itself** (does every declared `to_entity` resolve to a defined node label?) and add
+   it to the acceptance test — repoint + wire in, not build from scratch.
+3. **Coordinated versioning + change-control.** **Tracked (MR#85 follow-up A8).** Each file still
+   carries its own `version = 1.0` and there is no ontology-wide version or "who approves a schema
+   change" step — which matters because three projects share these files. Now recorded as a tracked
+   follow-up in `SCHEMA_FOLLOWUPS.md` (an ontology-wide version stamp + module list + owners). Fix
+   unchanged: one version stamp and a lightweight review gate so a change that helps one project cannot
+   silently break another.
 
 These three govern content without adding machinery — no new formalism, just a registry, a CI check,
 and a sign-off.
@@ -173,6 +192,11 @@ query across schemas ("all Events", "all Requirements") no matter which file def
 new schemas slot their labels into a known partition instead of a flat namespace. The insight is that
 the useful thing to take from **BFO** is not the framework — it is its **top-level partition**. That
 partition is the principled basis the controlled vocabulary (§2c) needs for the type system itself.
+
+**Shipped (MR#85, 2026-10-27).** This is no longer a proposal: `bfo_category` is a field in
+`baseSchema.json` with the closed 8-value enum below, every node across all 19 schemas is tagged, and
+an acceptance test gates it. The remainder of this section is the rationale for the design that landed;
+what is still open is only the two items at the end (required-enforcement and `plant_mode`/states).
 
 **What BFO adds that MBSE alone does not.** MBSE is excellent on the physical/functional *thing* axis
 but has no native home for events, failure modes, or documents. BFO's top split — continuant
@@ -221,18 +245,25 @@ keep MBSE as the load-bearing walls.
 have to defend its knowledge representation to the NRC, "our top categories are grounded in an ISO
 upper ontology" is a credibility asset, not just engineering tidiness.
 
-**The honest boundary — what to borrow vs. what would be the over-complication to avoid:**
-- **Borrow:** the top-category partition, as one declared tag per node in the schema (a `bfo_category`
-  field the meta-schema enforces against a closed list). This is fix #1 from §2c (controlled
-  vocabulary) applied to the type system itself.
-- **Do NOT import:** BFO's full relation hierarchy, its formal axioms, the all-some relational
-  restrictions, or an OWL reasoner. That machinery is what makes upper ontologies painful, and none of
-  it earns its place here.
+**The honest boundary — what was borrowed vs. what was kept out (as shipped in MR#85):**
+- **Borrowed:** the top-category partition, as one declared `bfo_category` tag per node, enforced by
+  the meta-schema against the closed list. This is fix #1 from §2c (controlled vocabulary) applied to
+  the type system itself. The field's own description in `baseSchema.json` states the boundary: "Does
+  NOT import BFO's axioms or a reasoner — it is a single controlled-vocabulary tag."
+- **Kept out:** BFO's full relation hierarchy, its formal axioms, the all-some relational restrictions,
+  and any OWL reasoner. That machinery is what makes upper ontologies painful, and none of it was added.
 
-**Flagged for a future iteration — states and `plant_mode`.** BFO handles states and modes awkwardly (a
-`plant_mode` is arguably a process-boundary or an obtaining state, not cleanly one of the categories
-above). Rather than force it into the clean set now, flag it: the top-category tag ships for the clear
-cases, and `plant_mode` / state modeling is revisited in a later iteration.
+**Still open after MR#85 — two items, both tracked in `SCHEMA_FOLLOWUPS.md`:**
+- **Make the tag required for the curated set.** `baseSchema.json` keeps `bfo_category` *optional* on
+  purpose (marking it required there would break external/experimental schemas that omit it). When we
+  want it required, enforce it for the curated set only — in `KGconstruction.loadPredefinedGraphSchemas`,
+  not the meta-schema. The acceptance test's `test_every_node_has_a_valid_bfo_category` is the interim
+  gate. (This resolves the §2c open "optional → required" question.)
+- **Awkward-fit nodes: states, `plant_mode`, `hazop_node`.** BFO handles states and modes awkwardly
+  (a `plant_mode` is arguably a process-boundary or an obtaining state), and `hazop_node` is
+  heterogeneous (its description spans location / function / process step) — it is tagged
+  `material_entity` as a **placeholder** because its concrete referents are physical. These are flagged,
+  not forced; revisited in the Phase-2 ontology pass (follow-up A2/A3).
 
 **This matures a hedge the prior assessment already proposed.** `ontology-assessment.md` §10 (the
 deferred upper-ontology item) recommended, as a low-cost hedge, tagging each node with a coarse
@@ -545,9 +576,11 @@ example holding up under a live store, not just on paper.
 7. **Next canonical probe** — prove the canonical model on a **non-document concept** (outage
    activity/resource, or licensing requirement) — the untested risk (§2b) — not another document
    (work_order, rca_card are more of the same).
-8. **Top-category tag** (worked out in §2d) — adopt a `bfo_category` tag per node from a closed
-   ~7-category set (BFO's partition, MBSE middle structure, no reasoner). Residual to settle: the
-   exact closed list, and the **`plant_mode` / states** case flagged for a later iteration.
+8. **Top-category tag** (§2d) — **shipped in MR#85**: `bfo_category` on every node, closed 8-value
+   enum, acceptance-tested. Residuals (tracked in `SCHEMA_FOLLOWUPS.md`): make it **required** for the
+   curated set (via `loadPredefinedGraphSchemas`, not the meta-schema); **emit it at ingestion** as a
+   second Neo4j label so `MATCH (n:disposition)` works (today the tag is inert at runtime); and the
+   awkward-fit nodes (`plant_mode` / states, placeholder `hazop_node`) in the Phase-2 pass.
 
 ### 6c. Nearer-term engineering (not meeting decisions)
 9. **Ingest consolidation** — "one ingestion pipeline merged into DACKAR (check for conflict)" plus a
