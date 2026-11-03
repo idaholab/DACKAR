@@ -577,10 +577,14 @@ example holding up under a live store, not just on paper.
    activity/resource, or licensing requirement) — the untested risk (§2b) — not another document
    (work_order, rca_card are more of the same).
 8. **Top-category tag** (§2d) — **shipped in MR#85**: `bfo_category` on every node, closed 8-value
-   enum, acceptance-tested. Residuals (tracked in `SCHEMA_FOLLOWUPS.md`): make it **required** for the
-   curated set (via `loadPredefinedGraphSchemas`, not the meta-schema); **emit it at ingestion** as a
-   second Neo4j label so `MATCH (n:disposition)` works (today the tag is inert at runtime); and the
-   awkward-fit nodes (`plant_mode` / states, placeholder `hazop_node`) in the Phase-2 pass.
+   enum, acceptance-tested. Residuals (tracked in `SCHEMA_FOLLOWUPS.md`):
+   - **Emit it at ingestion** as a second Neo4j label so `MATCH (n:disposition)` works — **DONE**
+     (branch `mandd/kg-bfo-category-ingestion`): `build_bfo_category_map` + `upsert_nodes_batch` now
+     add the category as a second label at ingest; the tag is no longer inert at runtime.
+   - **Make it required** for the curated set (via `loadPredefinedGraphSchemas`, not the meta-schema) —
+     *in progress* (SCHEMA_FOLLOWUPS #2).
+   - **Awkward-fit nodes** (`plant_mode` / states, placeholder `hazop_node`) — deferred to the Phase-2
+     ontology pass.
 
 ### 6c. Nearer-term engineering (not meeting decisions)
 9. **Ingest consolidation** — "one ingestion pipeline merged into DACKAR (check for conflict)" plus a
