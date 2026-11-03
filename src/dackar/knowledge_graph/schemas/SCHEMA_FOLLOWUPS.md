@@ -7,28 +7,32 @@ PR merge rather than living only in PR-review threads.
 
 ## 1. Emit `bfo_category` at ingestion so it reaches queries
 
-**Status:** not started. **Raised by:** wangcj05 (MR#85, baseSchema.json review).
+**Status:** DONE (branch `mandd/kg-bfo-category-ingestion`). **Raised by:** wangcj05 (MR#85, baseSchema.json review).
 
-Today nothing in `KGconstruction` / `kg_schema_builder_workflow` /
-`kg_ingest_neo4j_workflow` reads `bfo_category`; the schema-set acceptance test
-(`tests/knowledge_graph/test_schema_loading.py`) is its only consumer. The tag is
-therefore inert at runtime.
+Implemented: `build_bfo_category_map(schema)` turns the per-node tag into a
+`{label: bfo_category}` map, threaded through `ingest_graph_toml` into
+`Py2Neo.upsert_nodes_batch`, which adds the category as a **second Neo4j label**
+via `SET n:` + category (the MERGE identity is unchanged, so no dedup impact).
+Labels without a tag are upserted exactly as before. `MATCH (n:disposition)` now
+works for cross-schema queries. The tag is no longer inert at runtime.
 
-Intended design: at ingestion, emit each node's `bfo_category` as a second Neo4j
-label alongside the existing node label, so `MATCH (n:disposition)` works directly
-for cross-schema queries. The curated schema set is the registry that mapping
-reads from.
+Original design note: emit each node's `bfo_category` as a second Neo4j label
+alongside the existing node label; the curated schema set is the registry the
+mapping reads from.
 
 ## 2. Make `bfo_category` required for the curated set (not the meta-schema)
 
-**Status:** not started. **Raised by:** wangcj05 (MR#85, test_schema_loading.py review).
+**Status:** DONE (branch `mandd/kg-bfo-category-ingestion`). **Raised by:** wangcj05 (MR#85, test_schema_loading.py review).
 
-`baseSchema.json` keeps `bfo_category` **optional** on purpose: marking it
-`required` there would break any external/experimental schema that omits it. When
-we want it required, enforce it for the curated set only — in
-`KGconstruction.loadPredefinedGraphSchemas` (a curated-only check), not the
-meta-schema. The acceptance test's `test_every_node_has_a_valid_bfo_category` is
-the interim gate until then.
+Implemented: `require_bfo_categories(schema, allowed)` (in
+`kg_schema_builder_workflow`) asserts every node carries a `bfo_category` drawn
+from a given allowed set, raising with every offending node listed.
+`KGconstruction.loadPredefinedGraphSchemas` calls it after the curated set loads,
+with the allowed set read from `baseSchema.json`'s `bfo_category` enum (single
+source of truth). Curated-set-only — `baseSchema.json` keeps the field **optional**
+so external/experimental schemas may still omit it, and `importGraphSchema(s)` for
+partial/external sets is unaffected. The acceptance test
+`test_every_node_has_a_valid_bfo_category` remains as a DB-free gate.
 
 ## 3. Enforce numeric property bounds (`minimum`/`maximum`) at ingestion
 
