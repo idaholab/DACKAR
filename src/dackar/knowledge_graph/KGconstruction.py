@@ -69,35 +69,17 @@ class KG:
         with open(baseSchemaLocation, "r") as f:
             self.baseSchema = json.load(f)
 
-        # Curated set of predefined schemas available in DACKAR. Deprecated
-        # schemas (customMbseSchema, reqTechspecSchema) are intentionally
-        # excluded; their node definitions are superseded by mbseSchema.toml.
+        # Curated set of predefined schemas available in DACKAR. The module list
+        # is the single source of truth in schemas/MANIFEST.toml (SCHEMA_FOLLOWUPS
+        # #4 / A8), not hard-coded here, so it cannot drift from the manifest or
+        # the tests. Deprecated schemas (customMbseSchema, reqTechspecSchema) are
+        # excluded there; their node definitions are superseded by mbseSchema.toml.
         def _schemaPath(name):
             return os.path.join(currentDir, 'schemas', name + '.toml')
 
+        from dackar.knowledge_graph.kg_schema_builder_workflow import curated_module_names
         self.predefinedGraphSchemas = {
-            name: _schemaPath(name)
-            for name in [
-                'nuclearEntitySchema',
-                'mbseSchema',
-                'documentSchema',
-                'conditionReportSchema',
-                'fmeaSchema',
-                'causalSchema',
-                'safetyRiskSchema',
-                'rootCauseAnalysisSchema',
-                'hazopSchema',
-                'stpaSchema',
-                'workOrderSchema',
-                'outageSchema',
-                'equipmentOperationSchema',
-                'monitoringSystemSchema',
-                'numericPerformanceSchema',
-                'supplyChainSchema',
-                'systemSimulationSchema',
-                'temporalRelationSchema',
-                'regulatorySchema',
-            ]
+            name: _schemaPath(name) for name in curated_module_names()
         }
 
     def resetGraph(self):

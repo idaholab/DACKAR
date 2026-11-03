@@ -21,6 +21,31 @@ LOGGER = logging.getLogger(__name__)
 # production ingestion and the interactive KG class share one contract.
 _BASE_SCHEMA_PATH = Path(__file__).resolve().parent / "schemas" / "baseSchema.json"
 
+# Manifest that enumerates the curated schema set (SCHEMA_FOLLOWUPS #4 / A8).
+# Single source of truth for which schemas form the ontology, their versions,
+# and owners, so the list is not hand-duplicated across KGconstruction and tests.
+_MANIFEST_PATH = Path(__file__).resolve().parent / "schemas" / "MANIFEST.toml"
+
+
+def load_curated_manifest() -> Dict[str, Any]:
+    """Load the curated-set manifest (``schemas/MANIFEST.toml``).
+
+    Returns:
+        The parsed manifest dict: ``ontology_version``, ``description``, and a
+        ``module`` list of ``{name, version, owner}`` entries.
+    """
+    with open(_MANIFEST_PATH, "rb") as f:
+        return tomllib.load(f)
+
+
+def curated_module_names() -> List[str]:
+    """Return the curated schema module names, in manifest order.
+
+    The single source of truth for the curated set, replacing the lists that
+    were hand-maintained in ``KGconstruction`` and the tests.
+    """
+    return [m["name"] for m in load_curated_manifest().get("module", [])]
+
 
 # ---------------------------------------------------------------------------
 # Schema loading and helpers

@@ -31,28 +31,12 @@ SCHEMA_DIR = (
 )
 
 # The curated set that the loader (KGconstruction.predefinedGraphSchemas) manages.
-# Deprecated schemas (customMbseSchema, reqTechspecSchema) are intentionally absent.
-CURATED = [
-    "nuclearEntitySchema",
-    "mbseSchema",
-    "documentSchema",
-    "conditionReportSchema",
-    "fmeaSchema",
-    "causalSchema",
-    "safetyRiskSchema",
-    "rootCauseAnalysisSchema",
-    "hazopSchema",
-    "stpaSchema",
-    "workOrderSchema",
-    "outageSchema",
-    "equipmentOperationSchema",
-    "monitoringSystemSchema",
-    "numericPerformanceSchema",
-    "supplyChainSchema",
-    "systemSimulationSchema",
-    "temporalRelationSchema",
-    "regulatorySchema",
-]
+# Single source of truth: schemas/MANIFEST.toml (SCHEMA_FOLLOWUPS #4 / A8), read
+# via curated_module_names so this test cannot drift from the manifest or the
+# loader. Deprecated schemas (customMbseSchema, reqTechspecSchema) are absent there.
+from dackar.knowledge_graph.kg_schema_builder_workflow import curated_module_names
+
+CURATED = curated_module_names()
 
 # Allowed property data types (must match KGconstruction.datatypes).
 ALLOWED_TYPES = {
@@ -576,3 +560,46 @@ def test_upsert_edges_batch_skips_none_and_unbounded():
     other = dict(_edge(999.0), type="mentions")
     client.upsert_edges_batch([other], relation_bounds=_CONF_BOUNDS)
     assert len(client.writes) == 2
+
+
+# ---------------------------------------------------------------------------
+# Curated-set manifest (SCHEMA_FOLLOWUPS #4 / A8): schemas/MANIFEST.toml is the
+# single source of the curated module list + per-file versions. The list-and-
+# versions contract is enforced here; owner is advisory (not checked).
+# ---------------------------------------------------------------------------
+
+def test_manifest_module_list_matches_disk():
+    """The manifest's module list must match exactly the *.toml schema files on
+    disk -- so a schema cannot be added or removed without editing the manifest
+    (and CURATED, which is derived from it, stays in sync automatically)."""
+    manifest_names = set(CURATED)  # CURATED == curated_module_names()
+    # Every *.toml under schemas/ is a curated schema module except the manifest
+    # itself (MANIFEST.toml), which enumerates them.
+    on_disk = {
+        p.stem for p in SCHEMA_DIR.glob("*.toml") if p.name != "MANIFEST.toml"
+    }
+    assert manifest_names == on_disk, (
+        f"manifest-only: {sorted(manifest_names - on_disk)}; "
+        f"disk-only (untracked by manifest): {sorted(on_disk - manifest_names)}"
+    )
+
+
+def test_manifest_versions_match_each_file():
+    """Each module's version in the manifest must equal that schema file's own
+    `version`, so the manifest cannot silently fall behind a file bump."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import load_curated_manifest
+
+    manifest = load_curated_manifest()
+    for module in manifest["module"]:
+        name, declared = module["name"], module["version"]
+        actual = str(_load_toml(name).get("version"))
+        assert declared == actual, (
+            f"{name}: manifest version {declared!r} != file version {actual!r}"
+        )
+
+
+def test_manifest_has_ontology_version():
+    """The set carries one ontology-wide version stamp (A8)."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import load_curated_manifest
+
+    assert load_curated_manifest().get("ontology_version")

@@ -26,15 +26,11 @@ SCHEMA_DIR = (
 )
 
 # The builder resolves every label strictly when a schema is loaded, so the
-# entry-point test loads the full curated set (same list as test_schema_loading).
-CURATED = [
-    "nuclearEntitySchema", "mbseSchema", "documentSchema", "conditionReportSchema",
-    "fmeaSchema", "causalSchema", "safetyRiskSchema", "rootCauseAnalysisSchema",
-    "hazopSchema", "stpaSchema", "workOrderSchema", "outageSchema",
-    "equipmentOperationSchema", "monitoringSystemSchema", "numericPerformanceSchema",
-    "supplyChainSchema", "systemSimulationSchema", "temporalRelationSchema",
-    "regulatorySchema",
-]
+# entry-point test loads the full curated set. Single source of truth:
+# schemas/MANIFEST.toml (SCHEMA_FOLLOWUPS #4 / A8), via curated_module_names.
+from dackar.knowledge_graph.kg_schema_builder_workflow import curated_module_names
+
+CURATED = curated_module_names()
 CURATED_PATHS = [str(SCHEMA_DIR / f"{name}.toml") for name in CURATED]
 
 
