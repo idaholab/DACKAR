@@ -36,16 +36,22 @@ partial/external sets is unaffected. The acceptance test
 
 ## 3. Enforce numeric property bounds (`minimum`/`maximum`) at ingestion
 
-**Status:** not started. **Raised by:** wangcj05 (MR#85, confidence property review).
+**Status:** DONE (branch `mandd/kg-bfo-category-ingestion`). **Raised by:** wangcj05 (MR#85, confidence property review).
 
-The base meta-schema now lets a property declare `minimum`/`maximum` (and
-validates that a declared bound is a well-formed number on a numeric-typed
-property). The grounding-relation `confidence` properties declare `[0, 1]`.
+Implemented: `build_relation_bounds_map(schema)` surfaces the declared
+`minimum`/`maximum` on relation properties as `{rel_type: {prop: {min/max}}}`
+(today: `confidence` `[0, 1]` on the four `resolves_to_*` grounding relations).
+`Py2Neo.upsert_edges_batch` takes this map and, via `_check_relation_bounds`,
+range-checks every edge's `attrs` **before** any write; an out-of-range value
+(e.g. `confidence = 87`) raises `ValueError` and nothing is persisted. `None`
+values and properties without a declared bound are skipped.
 
-But no loader reads property bounds, so a runtime value outside the declared range
-(e.g. `confidence = 87`) still ingests without error. If confidences are ever
-thresholded in queries, add a range check to the ingestion path that reads these
-bounds and rejects or clamps out-of-range values.
+Decision: **reject** (not clamp) — matches the other fail-fast ingestion guards
+and the §5d gate philosophy, so a bad value is fixed upstream rather than silently
+altered. Node-property bounds are not yet enforced because no node declares any;
+`build_relation_bounds_map` covers the only bounds that exist. Wired through
+`ingest_graph_toml` and the Neo4j ingestion entry point alongside the primary-key
+and bfo-category maps.
 
 ## 4. Deferred ontology work (Phase 2 — ontology-assessment A2/A3/A8)
 
