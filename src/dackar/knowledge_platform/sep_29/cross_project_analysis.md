@@ -585,7 +585,12 @@ example holding up under a live store, not just on paper.
 ### 6c. Nearer-term engineering (not meeting decisions)
 9. **Ingest consolidation** — "one ingestion pipeline merged into DACKAR (check for conflict)" plus a
    config file. The merge surface is what the licensing ingest does that DACKAR's does not, and where
-   they collide (§4c).
+   they collide (§4c). **Blocked (2026-11-03): do not start yet.** Its precondition — the
+   licensing→DACKAR content merge (§4c) — has slipped with no firm date, and it is not on `origin/main`.
+   Starting now means consolidating onto the weaker pre-merge base and redoing it when the richer
+   licensing ingest lands; wait for that merge. Unblocked work to do meanwhile: item 8's
+   `bfo_category`-at-ingestion residual, and §2c fix #2 (endpoint-resolution in the schema acceptance
+   test) — both self-contained on merged `main`.
 
 ### 6d. Wish-list (raised, not yet scoped)
 - **Natural-language query over multiple data structures.** Oct 12 action item 1: let a user ask a
