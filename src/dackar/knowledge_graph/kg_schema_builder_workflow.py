@@ -1225,6 +1225,49 @@ def build_bfo_category_map(schema: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
+def require_bfo_categories(
+    schema: Dict[str, Any], allowed: Optional[Iterable[str]] = None
+) -> None:
+    """Assert that every node in *schema* carries a valid ``bfo_category``.
+
+    The meta-schema keeps ``bfo_category`` optional so external or experimental
+    schemas are not forced to carry it; this enforces the stronger contract for
+    the **curated** set — every node present and drawn from the allowed
+    vocabulary. Intended to be called by
+    :meth:`KGconstruction.KG.loadPredefinedGraphSchemas` after the curated set
+    loads, not by the meta-schema (SCHEMA_FOLLOWUPS #2).
+
+    Args:
+        schema: A schema dict (or merged schema) with a ``"node"`` mapping.
+        allowed: Iterable of permitted category values (e.g. the base
+            meta-schema's ``bfo_category`` enum). When ``None``, membership is
+            not checked and only presence is enforced.
+
+    Raises:
+        ValueError: if a node omits ``bfo_category``, or declares one outside
+            *allowed* (when *allowed* is given). The message lists every
+            offending node so one pass surfaces all problems.
+    """
+    allowed_set = set(allowed) if allowed is not None else None
+    missing: List[str] = []
+    invalid: List[str] = []
+    for label, spec in schema.get("node", {}).items():
+        category = spec.get("bfo_category")
+        if not category:
+            missing.append(label)
+        elif allowed_set is not None and category not in allowed_set:
+            invalid.append(f"{label}={category!r}")
+    problems = []
+    if missing:
+        problems.append(f"missing bfo_category on node(s): {sorted(missing)}")
+    if invalid:
+        problems.append(
+            f"bfo_category not in allowed set {sorted(allowed_set)} for: {sorted(invalid)}"
+        )
+    if problems:
+        raise ValueError("Curated schema set bfo_category check failed - " + "; ".join(problems))
+
+
 def ingest_graph_toml(
     client: Py2Neo,
     nodes: List[Dict[str, Any]],

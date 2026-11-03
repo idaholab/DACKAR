@@ -247,6 +247,16 @@ class KG:
         """
         self.importGraphSchemas(self.predefinedGraphSchemas, crossCheck=True, replace=True)
 
+        # Curated-only contract: every node in the predefined set must carry a
+        # bfo_category drawn from the meta-schema's closed enum. The meta-schema
+        # itself keeps the field optional (external/experimental schemas may omit
+        # it), so this stronger requirement is enforced here, for the curated set
+        # only, not in baseSchema.json (SCHEMA_FOLLOWUPS #2).
+        from dackar.knowledge_graph.kg_schema_builder_workflow import require_bfo_categories
+        allowed = self.baseSchema["properties"]["node"]["additionalProperties"]["properties"]["bfo_category"]["enum"]
+        for name, schema in self.graphSchemas.items():
+            require_bfo_categories(schema, allowed=allowed)
+
     def removeGraphSchema(self, graphSchemaName):
         """
         Method that removes a single schema from the session registry and

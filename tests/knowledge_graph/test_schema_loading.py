@@ -441,3 +441,47 @@ def test_upsert_nodes_batch_rejects_unsafe_category():
             primary_keys={"a": "id"},
             bfo_categories={"a": "bad label; DROP"},
         )
+
+
+# ---------------------------------------------------------------------------
+# require_bfo_categories: the curated-only "tag is required" contract
+# (SCHEMA_FOLLOWUPS #2). Enforced for the predefined set in
+# KGconstruction.loadPredefinedGraphSchemas, NOT in the meta-schema (which keeps
+# the field optional so external/experimental schemas may omit it).
+# ---------------------------------------------------------------------------
+
+def test_require_bfo_categories_passes_on_curated_set():
+    """The shipped curated set satisfies the required-tag contract against the
+    meta-schema's allowed enum -- the whole point of the MR."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import (
+        load_and_merge_schemas,
+        require_bfo_categories,
+    )
+
+    merged = load_and_merge_schemas(CURATED_PATHS)
+    require_bfo_categories(merged, allowed=_allowed_bfo_categories())  # must not raise
+
+
+def test_require_bfo_categories_raises_on_missing_tag():
+    from dackar.knowledge_graph.kg_schema_builder_workflow import require_bfo_categories
+
+    schema = {"node": {"tagged": {"bfo_category": "disposition"}, "untagged": {}}}
+    with pytest.raises(ValueError, match="missing bfo_category.*untagged"):
+        require_bfo_categories(schema, allowed=_allowed_bfo_categories())
+
+
+def test_require_bfo_categories_raises_on_out_of_set_value():
+    from dackar.knowledge_graph.kg_schema_builder_workflow import require_bfo_categories
+
+    schema = {"node": {"a": {"bfo_category": "not_a_real_category"}}}
+    with pytest.raises(ValueError, match="not in allowed set"):
+        require_bfo_categories(schema, allowed=_allowed_bfo_categories())
+
+
+def test_require_bfo_categories_presence_only_when_allowed_is_none():
+    """With allowed=None, only presence is enforced (no membership check)."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import require_bfo_categories
+
+    require_bfo_categories({"node": {"a": {"bfo_category": "anything"}}}, allowed=None)
+    with pytest.raises(ValueError, match="missing bfo_category"):
+        require_bfo_categories({"node": {"a": {}}}, allowed=None)
