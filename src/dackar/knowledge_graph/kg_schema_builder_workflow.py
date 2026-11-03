@@ -1202,12 +1202,36 @@ def build_primary_key_map(schema: Dict[str, Any]) -> Dict[str, str]:
     return {label: _node_primary_key(spec) for label, spec in schema.get("node", {}).items()}
 
 
+def build_bfo_category_map(schema: Dict[str, Any]) -> Dict[str, str]:
+    """Build a ``{node_label: bfo_category}`` map from a (merged) TOML schema.
+
+    Includes only nodes that declare a ``bfo_category`` (the tag is optional in
+    the meta-schema, so a node without it is simply absent from the map).
+    Suitable for passing as the ``bfo_categories`` argument to
+    :meth:`Py2Neo.upsert_nodes_batch`, which adds the category as a second Neo4j
+    label so cross-schema queries such as ``MATCH (n:disposition)`` work.
+
+    Args:
+        schema: A schema dict (or merged schema) with a ``"node"`` mapping.
+
+    Returns:
+        Mapping of node label to its declared ``bfo_category``; labels without a
+        declared category are omitted.
+    """
+    return {
+        label: spec["bfo_category"]
+        for label, spec in schema.get("node", {}).items()
+        if spec.get("bfo_category")
+    }
+
+
 def ingest_graph_toml(
     client: Py2Neo,
     nodes: List[Dict[str, Any]],
     edges: List[Dict[str, Any]],
     database: Optional[str] = None,
     primary_keys: Optional[Dict[str, str]] = None,
+    bfo_categories: Optional[Dict[str, str]] = None,
 ) -> None:
     """Bulk-upsert a node list and edge list into Neo4j.
 
@@ -1222,8 +1246,13 @@ def ingest_graph_toml(
         database: Target database name; uses the driver default when ``None``.
         primary_keys: Optional ``{label: key_name}`` merge-key map (e.g. from
             :func:`build_primary_key_map`); defaults to ``"id"`` per label.
+        bfo_categories: Optional ``{label: bfo_category}`` map (e.g. from
+            :func:`build_bfo_category_map`); adds the category as a second node
+            label. Labels absent from the map get no second label.
     """
     if nodes:
-        client.upsert_nodes_batch(nodes, db=database, primary_keys=primary_keys)
+        client.upsert_nodes_batch(
+            nodes, db=database, primary_keys=primary_keys, bfo_categories=bfo_categories
+        )
     if edges:
         client.upsert_edges_batch(edges, db=database, primary_keys=primary_keys)

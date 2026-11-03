@@ -13,6 +13,7 @@ try:
     from dackar.knowledge_graph.py2neo import Py2Neo
     from dackar.knowledge_graph.kg_schema_builder_workflow import (
         apply_schema_constraints,
+        build_bfo_category_map,
         build_graph_from_workflow_artifacts,
         build_primary_key_map,
         ingest_graph_toml,
@@ -22,6 +23,7 @@ except ModuleNotFoundError:  # pragma: no cover - bare-script fallback
     from py2neo import Py2Neo  # type: ignore
     from kg_schema_builder_workflow import (  # type: ignore
         apply_schema_constraints,
+        build_bfo_category_map,
         build_graph_from_workflow_artifacts,
         build_primary_key_map,
         ingest_graph_toml,
@@ -187,8 +189,17 @@ def ingest_workflow_case_to_neo4j(
         len(good_ptrs),
         len(bad_ptrs),
     )
-    primary_keys = build_primary_key_map(load_and_merge_schemas(schema_paths))
-    ingest_graph_toml(client, nodes, edges, database=database, primary_keys=primary_keys)
+    merged_schema = load_and_merge_schemas(schema_paths)
+    primary_keys = build_primary_key_map(merged_schema)
+    bfo_categories = build_bfo_category_map(merged_schema)
+    ingest_graph_toml(
+        client,
+        nodes,
+        edges,
+        database=database,
+        primary_keys=primary_keys,
+        bfo_categories=bfo_categories,
+    )
     return len(nodes), len(edges)
 
 

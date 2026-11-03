@@ -344,3 +344,100 @@ node_description = "A node with no declared properties."
     p.write_text(bad, encoding="utf-8")
     with pytest.raises(ValueError, match="primary key 'id' is not a declared property"):
         load_and_merge_schemas([str(p)])
+
+
+# ---------------------------------------------------------------------------
+# bfo_category ingestion map: build_bfo_category_map turns the (optional) node
+# tag into a {label: bfo_category} map that the Neo4j ingestion path emits as a
+# second node label (SCHEMA_FOLLOWUPS #1 / cross_project_analysis.md 2d). The
+# map is what makes the shipped tag non-inert at runtime.
+# ---------------------------------------------------------------------------
+
+def test_bfo_category_map_covers_every_curated_node():
+    """Over the real curated set, every node maps to its declared category, and
+    every value is drawn from the closed allowed set. Pairs with the acceptance
+    test that every curated node is tagged: here the *map* must not drop any."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import (
+        build_bfo_category_map,
+        load_and_merge_schemas,
+    )
+
+    merged = load_and_merge_schemas(CURATED_PATHS)
+    cat_map = build_bfo_category_map(merged)
+    allowed = _allowed_bfo_categories()
+
+    node_labels = set(merged.get("node", {}))
+    assert set(cat_map) == node_labels, (
+        f"bfo_category map misses {node_labels - set(cat_map)} "
+        f"or has extra {set(cat_map) - node_labels}"
+    )
+    for label, category in cat_map.items():
+        assert category in allowed, (
+            f"node {label!r} mapped to {category!r}, not in {sorted(allowed)}"
+        )
+
+
+def test_bfo_category_map_omits_untagged_nodes():
+    """The tag is optional in the meta-schema, so a node without bfo_category is
+    simply absent from the map (not keyed to None) -- which keeps it out of the
+    second-label SET at ingestion."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import build_bfo_category_map
+
+    schema = {
+        "node": {
+            "tagged": {"bfo_category": "disposition"},
+            "untagged": {},
+        }
+    }
+    cat_map = build_bfo_category_map(schema)
+    assert cat_map == {"tagged": "disposition"}
+
+
+def test_upsert_nodes_batch_emits_second_label_only_when_tagged():
+    """The ingestion write adds `SET n:`<category>`` for a tagged label and omits
+    it for an untagged one, without touching the MERGE (merge identity unchanged).
+    Asserted on the generated Cypher via a fake client -- no live Neo4j."""
+    from dackar.knowledge_graph.py2neo import Py2Neo
+
+    class _FakeNeo(Py2Neo):
+        def __init__(self):  # bypass driver connection
+            self.queries = []
+
+        def write(self, query, parameters=None, db=None):
+            self.queries.append(query)
+
+    client = _FakeNeo()
+    client.upsert_nodes_batch(
+        [
+            {"label": "failure_mode", "attrs": {"id": "fm1"}},
+            {"label": "widget", "attrs": {"id": "w1"}},
+        ],
+        primary_keys={"failure_mode": "id", "widget": "id"},
+        bfo_categories={"failure_mode": "disposition"},  # widget intentionally absent
+    )
+
+    by_label = {q.split("`")[1]: q for q in client.queries}
+    assert "SET n:`disposition`" in by_label["failure_mode"]
+    assert "MERGE (n:`failure_mode`" in by_label["failure_mode"]
+    assert "SET n:" not in by_label["widget"].replace("SET n += row", "")
+
+
+def test_upsert_nodes_batch_rejects_unsafe_category():
+    """A category that is not a safe Neo4j identifier is rejected (same guard the
+    label/primary-key interpolation already uses), never interpolated raw."""
+    from dackar.knowledge_graph.py2neo import Py2Neo
+
+    class _FakeNeo(Py2Neo):
+        def __init__(self):
+            self.queries = []
+
+        def write(self, query, parameters=None, db=None):
+            self.queries.append(query)
+
+    client = _FakeNeo()
+    with pytest.raises(ValueError, match="Invalid Neo4j bfo_category"):
+        client.upsert_nodes_batch(
+            [{"label": "a", "attrs": {"id": "x"}}],
+            primary_keys={"a": "id"},
+            bfo_categories={"a": "bad label; DROP"},
+        )

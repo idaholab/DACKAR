@@ -50,8 +50,10 @@ class _CaptureClient:
         self.ddl.append(statement)
         return []
 
-    def upsert_nodes_batch(self, nodes, db=None, primary_keys=None):
-        self.node_batches.append({"nodes": nodes, "primary_keys": primary_keys})
+    def upsert_nodes_batch(self, nodes, db=None, primary_keys=None, bfo_categories=None):
+        self.node_batches.append(
+            {"nodes": nodes, "primary_keys": primary_keys, "bfo_categories": bfo_categories}
+        )
 
     def upsert_edges_batch(self, edges, db=None, primary_keys=None):
         self.edge_batches.append({"edges": edges, "primary_keys": primary_keys})

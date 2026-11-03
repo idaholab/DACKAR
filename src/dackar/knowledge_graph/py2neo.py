@@ -332,7 +332,7 @@ class Py2Neo:
         # result = [record.values() for record in result]
         return result
 
-    def upsert_nodes_batch(self, nodes, db=None, primary_keys=None):
+    def upsert_nodes_batch(self, nodes, db=None, primary_keys=None, bfo_categories=None):
         """Batch-upsert a collection of nodes, grouped by label.
 
         Nodes are merged on their primary-key attribute so that repeated calls
@@ -344,12 +344,22 @@ class Py2Neo:
         must contain the merge-key property. Used by the schema-governed KG
         batch-ingestion workflows.
 
+        When *bfo_categories* supplies a category for a label, that category is
+        added as a **second Neo4j label** on the merged node (via ``SET``, not in
+        the ``MERGE`` pattern), so cross-schema queries such as
+        ``MATCH (n:disposition)`` work without changing merge identity. A label
+        absent from the map (e.g. an external schema that omits ``bfo_category``)
+        is upserted exactly as before.
+
         Args:
             nodes (Sequence[dict]): sequence of ``{"label": str, "attrs": dict}`` dicts.
             db (str, optional): target database name; uses the driver default when None. Defaults to None.
             primary_keys (dict, optional): ``{label: key_name}`` merge-key map. Defaults to ``"id"`` per label.
+            bfo_categories (dict, optional): ``{label: bfo_category}`` map; adds the category as a
+                second node label. Labels absent from the map get no second label. Defaults to None.
         """
         primary_keys = primary_keys or {}
+        bfo_categories = bfo_categories or {}
         grouped = {}
         for node in nodes:
             label = _safe_token(node["label"], "label")
@@ -362,6 +372,10 @@ class Py2Neo:
                 f"MERGE (n:`{label}` {{`{pk}`: row.`{pk}`}}) "
                 f"SET n += row"
             )
+            category = bfo_categories.get(label)
+            if category:
+                safe_category = _safe_token(category, "bfo_category")
+                query += f" SET n:`{safe_category}`"
             self.write(query, {"rows": rows}, db=db)
 
     def upsert_edges_batch(self, edges, db=None, primary_keys=None):
