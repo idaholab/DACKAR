@@ -55,13 +55,21 @@ and bfo-category maps.
 
 ## 4. Deferred ontology work (Phase 2 — ontology-assessment A2/A3/A8)
 
-**Status:** deferred by decision, not part of MR#85.
+- **A8** ontology-wide version + change-control manifest — **DONE** (branch
+  `mandd/kg-bfo-category-ingestion`). `schemas/MANIFEST.toml` is the single source
+  of truth for the curated set: `ontology_version` stamp, the module list, per-file
+  versions, and (advisory) owners. `KGconstruction.predefinedGraphSchemas` and the
+  tests' `CURATED` are built from it via `curated_module_names()`, ending the
+  hand-duplicated list. Enforced (DB-free): manifest module list == `*.toml` on disk,
+  and each module's version == its file's version; owners are advisory.
 
-- **A2/A3** semantic unification: `cause` / `causal_factor` are forked; `effect` /
-  `consequence` and `event` are fragmented across schemas. Needs a supertype /
-  unification pass. Related: `hazop_node` is a heterogeneous node (its description
-  spans location / function / process step) — no single `bfo_category` fits it
-  cleanly; currently tagged `material_entity` as a placeholder because its concrete
-  referents are physical.
-- **A8** ontology-wide version + change-control manifest (one version stamp +
-  module list + owners), since multiple projects edit these files.
+- **A2/A3** semantic unification — **still deferred (Phase 2).** `cause` /
+  `causal_factor` are forked; `effect` / `consequence` and `event` are fragmented
+  across schemas. Needs a mid-level supertype / specialization pass — the
+  `bfo_category` tags corroborate which nodes are the same *kind* (e.g. `cause` and
+  `causal_factor` are both `disposition`) but do not themselves unify or reconcile
+  properties; note `event` spans two categories (`process` vs `basic_event` as
+  `disposition`), so the "event" fork cannot simply collapse. Related: `hazop_node`
+  is heterogeneous (location / function / process step) — no single `bfo_category`
+  fits; tagged `material_entity` as a placeholder. This is a cross-schema refactor
+  touching causal reasoning and warrants its own design turn, not a tail-end change.
