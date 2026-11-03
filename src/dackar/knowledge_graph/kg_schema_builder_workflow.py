@@ -21,6 +21,31 @@ LOGGER = logging.getLogger(__name__)
 # production ingestion and the interactive KG class share one contract.
 _BASE_SCHEMA_PATH = Path(__file__).resolve().parent / "schemas" / "baseSchema.json"
 
+# Manifest that enumerates the curated schema set (SCHEMA_FOLLOWUPS #4 / A8).
+# Single source of truth for which schemas form the ontology, their versions,
+# and owners, so the list is not hand-duplicated across KGconstruction and tests.
+_MANIFEST_PATH = Path(__file__).resolve().parent / "schemas" / "MANIFEST.toml"
+
+
+def load_curated_manifest() -> Dict[str, Any]:
+    """Load the curated-set manifest (``schemas/MANIFEST.toml``).
+
+    Returns:
+        The parsed manifest dict: ``ontology_version``, ``description``, and a
+        ``module`` list of ``{name, version, owner}`` entries.
+    """
+    with open(_MANIFEST_PATH, "rb") as f:
+        return tomllib.load(f)
+
+
+def curated_module_names() -> List[str]:
+    """Return the curated schema module names, in manifest order.
+
+    The single source of truth for the curated set, replacing the lists that
+    were hand-maintained in ``KGconstruction`` and the tests.
+    """
+    return [m["name"] for m in load_curated_manifest().get("module", [])]
+
 
 # ---------------------------------------------------------------------------
 # Schema loading and helpers
@@ -1202,12 +1227,111 @@ def build_primary_key_map(schema: Dict[str, Any]) -> Dict[str, str]:
     return {label: _node_primary_key(spec) for label, spec in schema.get("node", {}).items()}
 
 
+def build_bfo_category_map(schema: Dict[str, Any]) -> Dict[str, str]:
+    """Build a ``{node_label: bfo_category}`` map from a (merged) TOML schema.
+
+    Includes only nodes that declare a ``bfo_category`` (the tag is optional in
+    the meta-schema, so a node without it is simply absent from the map).
+    Suitable for passing as the ``bfo_categories`` argument to
+    :meth:`Py2Neo.upsert_nodes_batch`, which adds the category as a second Neo4j
+    label so cross-schema queries such as ``MATCH (n:disposition)`` work.
+
+    Args:
+        schema: A schema dict (or merged schema) with a ``"node"`` mapping.
+
+    Returns:
+        Mapping of node label to its declared ``bfo_category``; labels without a
+        declared category are omitted.
+    """
+    return {
+        label: spec["bfo_category"]
+        for label, spec in schema.get("node", {}).items()
+        if spec.get("bfo_category")
+    }
+
+
+def require_bfo_categories(
+    schema: Dict[str, Any], allowed: Optional[Iterable[str]] = None
+) -> None:
+    """Assert that every node in *schema* carries a valid ``bfo_category``.
+
+    The meta-schema keeps ``bfo_category`` optional so external or experimental
+    schemas are not forced to carry it; this enforces the stronger contract for
+    the **curated** set — every node present and drawn from the allowed
+    vocabulary. Intended to be called by
+    :meth:`KGconstruction.KG.loadPredefinedGraphSchemas` after the curated set
+    loads, not by the meta-schema (SCHEMA_FOLLOWUPS #2).
+
+    Args:
+        schema: A schema dict (or merged schema) with a ``"node"`` mapping.
+        allowed: Iterable of permitted category values (e.g. the base
+            meta-schema's ``bfo_category`` enum). When ``None``, membership is
+            not checked and only presence is enforced.
+
+    Raises:
+        ValueError: if a node omits ``bfo_category``, or declares one outside
+            *allowed* (when *allowed* is given). The message lists every
+            offending node so one pass surfaces all problems.
+    """
+    allowed_set = set(allowed) if allowed is not None else None
+    missing: List[str] = []
+    invalid: List[str] = []
+    for label, spec in schema.get("node", {}).items():
+        category = spec.get("bfo_category")
+        if not category:
+            missing.append(label)
+        elif allowed_set is not None and category not in allowed_set:
+            invalid.append(f"{label}={category!r}")
+    problems = []
+    if missing:
+        problems.append(f"missing bfo_category on node(s): {sorted(missing)}")
+    if invalid:
+        problems.append(
+            f"bfo_category not in allowed set {sorted(allowed_set)} for: {sorted(invalid)}"
+        )
+    if problems:
+        raise ValueError("Curated schema set bfo_category check failed - " + "; ".join(problems))
+
+
+def build_relation_bounds_map(schema: Dict[str, Any]) -> Dict[str, Dict[str, Dict[str, float]]]:
+    """Build a ``{relation_type: {prop_name: {"minimum": .., "maximum": ..}}}`` map.
+
+    Collects the numeric ``minimum`` / ``maximum`` bounds declared on relation
+    properties in a (merged) TOML schema, so the ingestion path can range-check
+    edge property values. Only properties that declare at least one bound are
+    included; a relation with no bounded properties is absent from the map.
+
+    Relations are list-valued after merge (one spec per declared endpoint pair);
+    bounds are keyed by relation type (name), merged across endpoint pairs — the
+    same bound is expected to hold for every pair sharing a relation name.
+
+    Args:
+        schema: A schema dict (or merged schema) with a ``"relation"`` mapping.
+
+    Returns:
+        Mapping of relation type to ``{prop_name: bounds}``; relation types with
+        no bounded properties are omitted. Each ``bounds`` dict carries whichever
+        of ``"minimum"`` / ``"maximum"`` was declared.
+    """
+    out: Dict[str, Dict[str, Dict[str, float]]] = {}
+    for rel_name, spec in schema.get("relation", {}).items():
+        specs = spec if isinstance(spec, list) else [spec]
+        for one in specs:
+            for prop in one.get("relation_properties", []):
+                bounds = {k: prop[k] for k in ("minimum", "maximum") if k in prop}
+                if bounds:
+                    out.setdefault(rel_name, {}).setdefault(prop["name"], {}).update(bounds)
+    return out
+
+
 def ingest_graph_toml(
     client: Py2Neo,
     nodes: List[Dict[str, Any]],
     edges: List[Dict[str, Any]],
     database: Optional[str] = None,
     primary_keys: Optional[Dict[str, str]] = None,
+    bfo_categories: Optional[Dict[str, str]] = None,
+    relation_bounds: Optional[Dict[str, Dict[str, Dict[str, float]]]] = None,
 ) -> None:
     """Bulk-upsert a node list and edge list into Neo4j.
 
@@ -1222,8 +1346,18 @@ def ingest_graph_toml(
         database: Target database name; uses the driver default when ``None``.
         primary_keys: Optional ``{label: key_name}`` merge-key map (e.g. from
             :func:`build_primary_key_map`); defaults to ``"id"`` per label.
+        bfo_categories: Optional ``{label: bfo_category}`` map (e.g. from
+            :func:`build_bfo_category_map`); adds the category as a second node
+            label. Labels absent from the map get no second label.
+        relation_bounds: Optional ``{rel_type: {prop: {min/max}}}`` map (e.g. from
+            :func:`build_relation_bounds_map`); edge property values outside a
+            declared bound are rejected at ingestion.
     """
     if nodes:
-        client.upsert_nodes_batch(nodes, db=database, primary_keys=primary_keys)
+        client.upsert_nodes_batch(
+            nodes, db=database, primary_keys=primary_keys, bfo_categories=bfo_categories
+        )
     if edges:
-        client.upsert_edges_batch(edges, db=database, primary_keys=primary_keys)
+        client.upsert_edges_batch(
+            edges, db=database, primary_keys=primary_keys, relation_bounds=relation_bounds
+        )

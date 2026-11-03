@@ -31,28 +31,12 @@ SCHEMA_DIR = (
 )
 
 # The curated set that the loader (KGconstruction.predefinedGraphSchemas) manages.
-# Deprecated schemas (customMbseSchema, reqTechspecSchema) are intentionally absent.
-CURATED = [
-    "nuclearEntitySchema",
-    "mbseSchema",
-    "documentSchema",
-    "conditionReportSchema",
-    "fmeaSchema",
-    "causalSchema",
-    "safetyRiskSchema",
-    "rootCauseAnalysisSchema",
-    "hazopSchema",
-    "stpaSchema",
-    "workOrderSchema",
-    "outageSchema",
-    "equipmentOperationSchema",
-    "monitoringSystemSchema",
-    "numericPerformanceSchema",
-    "supplyChainSchema",
-    "systemSimulationSchema",
-    "temporalRelationSchema",
-    "regulatorySchema",
-]
+# Single source of truth: schemas/MANIFEST.toml (SCHEMA_FOLLOWUPS #4 / A8), read
+# via curated_module_names so this test cannot drift from the manifest or the
+# loader. Deprecated schemas (customMbseSchema, reqTechspecSchema) are absent there.
+from dackar.knowledge_graph.kg_schema_builder_workflow import curated_module_names
+
+CURATED = curated_module_names()
 
 # Allowed property data types (must match KGconstruction.datatypes).
 ALLOWED_TYPES = {
@@ -344,3 +328,278 @@ node_description = "A node with no declared properties."
     p.write_text(bad, encoding="utf-8")
     with pytest.raises(ValueError, match="primary key 'id' is not a declared property"):
         load_and_merge_schemas([str(p)])
+
+
+# ---------------------------------------------------------------------------
+# bfo_category ingestion map: build_bfo_category_map turns the (optional) node
+# tag into a {label: bfo_category} map that the Neo4j ingestion path emits as a
+# second node label (SCHEMA_FOLLOWUPS #1 / cross_project_analysis.md 2d). The
+# map is what makes the shipped tag non-inert at runtime.
+# ---------------------------------------------------------------------------
+
+def test_bfo_category_map_covers_every_curated_node():
+    """Over the real curated set, every node maps to its declared category, and
+    every value is drawn from the closed allowed set. Pairs with the acceptance
+    test that every curated node is tagged: here the *map* must not drop any."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import (
+        build_bfo_category_map,
+        load_and_merge_schemas,
+    )
+
+    merged = load_and_merge_schemas(CURATED_PATHS)
+    cat_map = build_bfo_category_map(merged)
+    allowed = _allowed_bfo_categories()
+
+    node_labels = set(merged.get("node", {}))
+    assert set(cat_map) == node_labels, (
+        f"bfo_category map misses {node_labels - set(cat_map)} "
+        f"or has extra {set(cat_map) - node_labels}"
+    )
+    for label, category in cat_map.items():
+        assert category in allowed, (
+            f"node {label!r} mapped to {category!r}, not in {sorted(allowed)}"
+        )
+
+
+def test_bfo_category_map_omits_untagged_nodes():
+    """The tag is optional in the meta-schema, so a node without bfo_category is
+    simply absent from the map (not keyed to None) -- which keeps it out of the
+    second-label SET at ingestion."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import build_bfo_category_map
+
+    schema = {
+        "node": {
+            "tagged": {"bfo_category": "disposition"},
+            "untagged": {},
+        }
+    }
+    cat_map = build_bfo_category_map(schema)
+    assert cat_map == {"tagged": "disposition"}
+
+
+def test_upsert_nodes_batch_emits_second_label_only_when_tagged():
+    """The ingestion write adds `SET n:`<category>`` for a tagged label and omits
+    it for an untagged one, without touching the MERGE (merge identity unchanged).
+    Asserted on the generated Cypher via a fake client -- no live Neo4j."""
+    from dackar.knowledge_graph.py2neo import Py2Neo
+
+    class _FakeNeo(Py2Neo):
+        def __init__(self):  # bypass driver connection
+            self.queries = []
+
+        def write(self, query, parameters=None, db=None):
+            self.queries.append(query)
+
+    client = _FakeNeo()
+    client.upsert_nodes_batch(
+        [
+            {"label": "failure_mode", "attrs": {"id": "fm1"}},
+            {"label": "widget", "attrs": {"id": "w1"}},
+        ],
+        primary_keys={"failure_mode": "id", "widget": "id"},
+        bfo_categories={"failure_mode": "disposition"},  # widget intentionally absent
+    )
+
+    by_label = {q.split("`")[1]: q for q in client.queries}
+    assert "SET n:`disposition`" in by_label["failure_mode"]
+    assert "MERGE (n:`failure_mode`" in by_label["failure_mode"]
+    assert "SET n:" not in by_label["widget"].replace("SET n += row", "")
+
+
+def test_upsert_nodes_batch_rejects_unsafe_category():
+    """A category that is not a safe Neo4j identifier is rejected (same guard the
+    label/primary-key interpolation already uses), never interpolated raw."""
+    from dackar.knowledge_graph.py2neo import Py2Neo
+
+    class _FakeNeo(Py2Neo):
+        def __init__(self):
+            self.queries = []
+
+        def write(self, query, parameters=None, db=None):
+            self.queries.append(query)
+
+    client = _FakeNeo()
+    with pytest.raises(ValueError, match="Invalid Neo4j bfo_category"):
+        client.upsert_nodes_batch(
+            [{"label": "a", "attrs": {"id": "x"}}],
+            primary_keys={"a": "id"},
+            bfo_categories={"a": "bad label; DROP"},
+        )
+
+
+# ---------------------------------------------------------------------------
+# require_bfo_categories: the curated-only "tag is required" contract
+# (SCHEMA_FOLLOWUPS #2). Enforced for the predefined set in
+# KGconstruction.loadPredefinedGraphSchemas, NOT in the meta-schema (which keeps
+# the field optional so external/experimental schemas may omit it).
+# ---------------------------------------------------------------------------
+
+def test_require_bfo_categories_passes_on_curated_set():
+    """The shipped curated set satisfies the required-tag contract against the
+    meta-schema's allowed enum -- the whole point of the MR."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import (
+        load_and_merge_schemas,
+        require_bfo_categories,
+    )
+
+    merged = load_and_merge_schemas(CURATED_PATHS)
+    require_bfo_categories(merged, allowed=_allowed_bfo_categories())  # must not raise
+
+
+def test_require_bfo_categories_raises_on_missing_tag():
+    from dackar.knowledge_graph.kg_schema_builder_workflow import require_bfo_categories
+
+    schema = {"node": {"tagged": {"bfo_category": "disposition"}, "untagged": {}}}
+    with pytest.raises(ValueError, match="missing bfo_category.*untagged"):
+        require_bfo_categories(schema, allowed=_allowed_bfo_categories())
+
+
+def test_require_bfo_categories_raises_on_out_of_set_value():
+    from dackar.knowledge_graph.kg_schema_builder_workflow import require_bfo_categories
+
+    schema = {"node": {"a": {"bfo_category": "not_a_real_category"}}}
+    with pytest.raises(ValueError, match="not in allowed set"):
+        require_bfo_categories(schema, allowed=_allowed_bfo_categories())
+
+
+def test_require_bfo_categories_presence_only_when_allowed_is_none():
+    """With allowed=None, only presence is enforced (no membership check)."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import require_bfo_categories
+
+    require_bfo_categories({"node": {"a": {"bfo_category": "anything"}}}, allowed=None)
+    with pytest.raises(ValueError, match="missing bfo_category"):
+        require_bfo_categories({"node": {"a": {}}}, allowed=None)
+
+
+# ---------------------------------------------------------------------------
+# Numeric property bounds (SCHEMA_FOLLOWUPS #3): the meta-schema declares
+# minimum/maximum on numeric properties; build_relation_bounds_map surfaces them
+# and upsert_edges_batch rejects out-of-range edge property values at ingestion.
+# Today the only bounds are confidence [0,1] on the resolves_to_* grounding
+# relations.
+# ---------------------------------------------------------------------------
+
+def test_relation_bounds_map_captures_confidence_on_grounding_relations():
+    """Over the real curated set, every resolves_to_* relation surfaces a
+    confidence bound of [0, 1]."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import (
+        build_relation_bounds_map,
+        load_and_merge_schemas,
+    )
+
+    merged = load_and_merge_schemas(CURATED_PATHS)
+    bounds = build_relation_bounds_map(merged)
+
+    grounding = [r for r in merged.get("relation", {}) if r.startswith("resolves_to_")]
+    assert grounding, "expected resolves_to_* relations in the curated set"
+    for rel in grounding:
+        assert bounds[rel]["confidence"] == {"minimum": 0.0, "maximum": 1.0}, (
+            f"{rel} confidence bound not surfaced correctly: {bounds.get(rel)}"
+        )
+
+
+def test_relation_bounds_map_omits_unbounded_relations():
+    """A relation whose properties declare no min/max is absent from the map."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import build_relation_bounds_map
+
+    schema = {
+        "relation": {
+            "bounded": [{"relation_properties": [
+                {"name": "p", "type": "float", "minimum": 0.0, "maximum": 1.0}
+            ]}],
+            "unbounded": [{"relation_properties": [{"name": "q", "type": "string"}]}],
+        }
+    }
+    bounds = build_relation_bounds_map(schema)
+    assert bounds == {"bounded": {"p": {"minimum": 0.0, "maximum": 1.0}}}
+
+
+def _bounds_client():
+    from dackar.knowledge_graph.py2neo import Py2Neo
+
+    class _FakeNeo(Py2Neo):
+        def __init__(self):
+            self.writes = []
+
+        def write(self, query, parameters=None, db=None):
+            self.writes.append((query, parameters))
+
+    return _FakeNeo()
+
+
+_CONF_BOUNDS = {"resolves_to_asset": {"confidence": {"minimum": 0.0, "maximum": 1.0}}}
+
+
+def _edge(confidence):
+    return {
+        "from_label": "nuclear_entity", "to_label": "element_usage",
+        "type": "resolves_to_asset", "from": "m1", "to": "a1",
+        "attrs": {"confidence": confidence},
+    }
+
+
+def test_upsert_edges_batch_accepts_in_range_value():
+    client = _bounds_client()
+    client.upsert_edges_batch([_edge(0.8)], relation_bounds=_CONF_BOUNDS)
+    assert len(client.writes) == 1  # persisted
+
+
+@pytest.mark.parametrize("bad", [87.0, 1.5, -0.1])
+def test_upsert_edges_batch_rejects_out_of_range_value(bad):
+    client = _bounds_client()
+    with pytest.raises(ValueError, match="outside declared bounds"):
+        client.upsert_edges_batch([_edge(bad)], relation_bounds=_CONF_BOUNDS)
+    assert client.writes == []  # nothing persisted (fail-fast, before write)
+
+
+def test_upsert_edges_batch_skips_none_and_unbounded():
+    """A None value and a property with no declared bound are not checked."""
+    client = _bounds_client()
+    client.upsert_edges_batch([_edge(None)], relation_bounds=_CONF_BOUNDS)
+    # edge whose relation type has no bounds entry at all
+    other = dict(_edge(999.0), type="mentions")
+    client.upsert_edges_batch([other], relation_bounds=_CONF_BOUNDS)
+    assert len(client.writes) == 2
+
+
+# ---------------------------------------------------------------------------
+# Curated-set manifest (SCHEMA_FOLLOWUPS #4 / A8): schemas/MANIFEST.toml is the
+# single source of the curated module list + per-file versions. The list-and-
+# versions contract is enforced here; owner is advisory (not checked).
+# ---------------------------------------------------------------------------
+
+def test_manifest_module_list_matches_disk():
+    """The manifest's module list must match exactly the *.toml schema files on
+    disk -- so a schema cannot be added or removed without editing the manifest
+    (and CURATED, which is derived from it, stays in sync automatically)."""
+    manifest_names = set(CURATED)  # CURATED == curated_module_names()
+    # Every *.toml under schemas/ is a curated schema module except the manifest
+    # itself (MANIFEST.toml), which enumerates them.
+    on_disk = {
+        p.stem for p in SCHEMA_DIR.glob("*.toml") if p.name != "MANIFEST.toml"
+    }
+    assert manifest_names == on_disk, (
+        f"manifest-only: {sorted(manifest_names - on_disk)}; "
+        f"disk-only (untracked by manifest): {sorted(on_disk - manifest_names)}"
+    )
+
+
+def test_manifest_versions_match_each_file():
+    """Each module's version in the manifest must equal that schema file's own
+    `version`, so the manifest cannot silently fall behind a file bump."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import load_curated_manifest
+
+    manifest = load_curated_manifest()
+    for module in manifest["module"]:
+        name, declared = module["name"], module["version"]
+        actual = str(_load_toml(name).get("version"))
+        assert declared == actual, (
+            f"{name}: manifest version {declared!r} != file version {actual!r}"
+        )
+
+
+def test_manifest_has_ontology_version():
+    """The set carries one ontology-wide version stamp (A8)."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import load_curated_manifest
+
+    assert load_curated_manifest().get("ontology_version")

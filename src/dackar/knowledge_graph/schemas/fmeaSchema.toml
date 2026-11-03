@@ -1,5 +1,5 @@
 title = "Failure Mode and Effects Analysis (FMEA) Graph Schema"
-version = "1.0"
+version = "1.1"
 
 # ============================================================
 # NODE ENTITIES
@@ -49,14 +49,10 @@ node_properties = [
   { name = "description", type = "string", optional = true, description = "Detailed explanation of the cause." }
 ]
 
-[node.effect]
-bfo_category = "information_artifact"
-node_description = "Represents the local or end effect resulting from the occurrence of a failure mode, including impacts on safety, reliability, and performance."
-node_properties = [
-  { name = "id", type = "string", optional = false, description = "Stable unique identifier for the effect." },
-  { name = "level", type = "enum", optional = true, description = "Level of the effect.", enum_values = ["local", "next_higher", "end_effect"] },
-  { name = "description", type = "string", optional = true, description = "Detailed description of the effect." }
-]
+# The former [node.effect] was unified into hazopSchema's `consequence` node
+# (ontology-assessment A2; same concept, both prospective outcomes). FMEA effects
+# are now `consequence` nodes carrying the optional `level` property; the
+# leads_to_effect / mitigates_effect relations below point at `consequence`.
 
 [node.control]
 bfo_category = "information_artifact"
@@ -126,9 +122,9 @@ from_entity = "failure_mode"
 to_entity = "cause"
 
 [relation.leads_to_effect]
-relation_description = "Links a failure mode to one of its effects."
+relation_description = "Links a failure mode to one of its effects (modeled as a consequence)."
 from_entity = "failure_mode"
-to_entity = "effect"
+to_entity = "consequence"
 
 [relation.has_risk_assessment]
 relation_description = "Associates a failure mode with its risk assessment covering severity, occurrence, detection, and RPN."
@@ -141,9 +137,9 @@ from_entity = "failure_mode"
 to_entity = "control"
 
 [relation.mitigates_effect]
-relation_description = "Indicates that a control specifically mitigates an effect of a failure mode."
+relation_description = "Indicates that a control specifically mitigates an effect (consequence) of a failure mode."
 from_entity = "control"
-to_entity = "effect"
+to_entity = "consequence"
 
 [relation.recommends_action]
 relation_description = "Indicates that the FMEA case recommends a specific action to reduce risk."

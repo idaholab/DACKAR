@@ -332,7 +332,7 @@ class Py2Neo:
         # result = [record.values() for record in result]
         return result
 
-    def upsert_nodes_batch(self, nodes, db=None, primary_keys=None):
+    def upsert_nodes_batch(self, nodes, db=None, primary_keys=None, bfo_categories=None):
         """Batch-upsert a collection of nodes, grouped by label.
 
         Nodes are merged on their primary-key attribute so that repeated calls
@@ -344,12 +344,22 @@ class Py2Neo:
         must contain the merge-key property. Used by the schema-governed KG
         batch-ingestion workflows.
 
+        When *bfo_categories* supplies a category for a label, that category is
+        added as a **second Neo4j label** on the merged node (via ``SET``, not in
+        the ``MERGE`` pattern), so cross-schema queries such as
+        ``MATCH (n:disposition)`` work without changing merge identity. A label
+        absent from the map (e.g. an external schema that omits ``bfo_category``)
+        is upserted exactly as before.
+
         Args:
             nodes (Sequence[dict]): sequence of ``{"label": str, "attrs": dict}`` dicts.
             db (str, optional): target database name; uses the driver default when None. Defaults to None.
             primary_keys (dict, optional): ``{label: key_name}`` merge-key map. Defaults to ``"id"`` per label.
+            bfo_categories (dict, optional): ``{label: bfo_category}`` map; adds the category as a
+                second node label. Labels absent from the map get no second label. Defaults to None.
         """
         primary_keys = primary_keys or {}
+        bfo_categories = bfo_categories or {}
         grouped = {}
         for node in nodes:
             label = _safe_token(node["label"], "label")
@@ -362,9 +372,41 @@ class Py2Neo:
                 f"MERGE (n:`{label}` {{`{pk}`: row.`{pk}`}}) "
                 f"SET n += row"
             )
+            category = bfo_categories.get(label)
+            if category:
+                safe_category = _safe_token(category, "bfo_category")
+                query += f" SET n:`{safe_category}`"
             self.write(query, {"rows": rows}, db=db)
 
-    def upsert_edges_batch(self, edges, db=None, primary_keys=None):
+    @staticmethod
+    def _check_relation_bounds(edge, relation_bounds):
+        """Range-check one edge's attrs against declared numeric bounds.
+
+        Args:
+            edge (dict): an edge descriptor with ``"type"`` and optional ``"attrs"``.
+            relation_bounds (dict): ``{rel_type: {prop: {"minimum"/"maximum": num}}}``.
+
+        Raises:
+            ValueError: if a property value is below its ``minimum`` or above its
+                ``maximum``. ``None`` values and unbounded properties are skipped.
+        """
+        bounds_for_type = relation_bounds.get(edge.get("type"))
+        if not bounds_for_type:
+            return
+        attrs = edge.get("attrs") or {}
+        for prop, bounds in bounds_for_type.items():
+            value = attrs.get(prop)
+            if value is None:
+                continue
+            lo = bounds.get("minimum")
+            hi = bounds.get("maximum")
+            if (lo is not None and value < lo) or (hi is not None and value > hi):
+                raise ValueError(
+                    f"Relation {edge.get('type')!r} property {prop!r}={value!r} "
+                    f"is outside declared bounds [{lo}, {hi}]"
+                )
+
+    def upsert_edges_batch(self, edges, db=None, primary_keys=None, relation_bounds=None):
         """Batch-upsert a collection of relationships, grouped by endpoint labels and type.
 
         Each dict in *edges* must contain ``"from_label"``, ``"to_label"``,
@@ -374,12 +416,27 @@ class Py2Neo:
         (a ``{label: key_name}`` mapping) and defaulting to ``"id"`` per label.
         Used by the schema-governed KG batch-ingestion workflows.
 
+        When *relation_bounds* supplies numeric bounds for a relation type's
+        properties, each edge's ``attrs`` values are range-checked **before**
+        anything is written; a value outside its declared ``[minimum, maximum]``
+        raises :class:`ValueError` and nothing is persisted (fail-fast, matching
+        the other ingestion guards). A property without a declared bound, or a
+        ``None`` value, is not checked.
+
         Args:
             edges (Sequence[dict]): sequence of edge descriptor dicts.
             db (str, optional): target database name; uses the driver default when None. Defaults to None.
             primary_keys (dict, optional): ``{label: key_name}`` merge-key map. Defaults to ``"id"`` per label.
+            relation_bounds (dict, optional): ``{rel_type: {prop: {"minimum"/"maximum": num}}}`` map
+                (e.g. from :func:`build_relation_bounds_map`). Defaults to None (no range check).
+
+        Raises:
+            ValueError: if an edge property value falls outside its declared bound.
         """
         primary_keys = primary_keys or {}
+        relation_bounds = relation_bounds or {}
+        for edge in edges:
+            self._check_relation_bounds(edge, relation_bounds)
         grouped = {}
         for edge in edges:
             key = (

@@ -1,7 +1,6 @@
 """Unit tests for rca_pattern_search.indexer"""
 from __future__ import annotations
 
-import importlib.util
 import json
 import tempfile
 from datetime import datetime, timedelta
@@ -17,12 +16,20 @@ import pytest
 # a core-only `pip install .` has neither engine, so skip this module there
 # rather than erroring — honoring the "core deps cover the full test suite" CI
 # contract. The engine-backed uv --all-groups jobs still exercise these tests.
-if (
-    importlib.util.find_spec("pyarrow") is None
-    and importlib.util.find_spec("fastparquet") is None
-):
+#
+# Probe the engine the way pandas does at write time — attempt to resolve a
+# usable engine, not merely check that a package is *installed*. importlib
+# find_spec reports pyarrow as present even when `import pyarrow` fails (a
+# broken/ABI-incompatible build on a runner), which let the module load and
+# then error inside to_parquet instead of skipping. get_engine("auto") raises
+# ImportError exactly when no engine is actually usable.
+try:
+    from pandas.io.parquet import get_engine as _get_parquet_engine
+
+    _get_parquet_engine("auto")
+except ImportError:
     pytest.skip(
-        "no parquet engine (pyarrow/fastparquet) available",
+        "no usable parquet engine (pyarrow/fastparquet) available",
         allow_module_level=True,
     )
 
