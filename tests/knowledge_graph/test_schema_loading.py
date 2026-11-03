@@ -485,3 +485,94 @@ def test_require_bfo_categories_presence_only_when_allowed_is_none():
     require_bfo_categories({"node": {"a": {"bfo_category": "anything"}}}, allowed=None)
     with pytest.raises(ValueError, match="missing bfo_category"):
         require_bfo_categories({"node": {"a": {}}}, allowed=None)
+
+
+# ---------------------------------------------------------------------------
+# Numeric property bounds (SCHEMA_FOLLOWUPS #3): the meta-schema declares
+# minimum/maximum on numeric properties; build_relation_bounds_map surfaces them
+# and upsert_edges_batch rejects out-of-range edge property values at ingestion.
+# Today the only bounds are confidence [0,1] on the resolves_to_* grounding
+# relations.
+# ---------------------------------------------------------------------------
+
+def test_relation_bounds_map_captures_confidence_on_grounding_relations():
+    """Over the real curated set, every resolves_to_* relation surfaces a
+    confidence bound of [0, 1]."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import (
+        build_relation_bounds_map,
+        load_and_merge_schemas,
+    )
+
+    merged = load_and_merge_schemas(CURATED_PATHS)
+    bounds = build_relation_bounds_map(merged)
+
+    grounding = [r for r in merged.get("relation", {}) if r.startswith("resolves_to_")]
+    assert grounding, "expected resolves_to_* relations in the curated set"
+    for rel in grounding:
+        assert bounds[rel]["confidence"] == {"minimum": 0.0, "maximum": 1.0}, (
+            f"{rel} confidence bound not surfaced correctly: {bounds.get(rel)}"
+        )
+
+
+def test_relation_bounds_map_omits_unbounded_relations():
+    """A relation whose properties declare no min/max is absent from the map."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import build_relation_bounds_map
+
+    schema = {
+        "relation": {
+            "bounded": [{"relation_properties": [
+                {"name": "p", "type": "float", "minimum": 0.0, "maximum": 1.0}
+            ]}],
+            "unbounded": [{"relation_properties": [{"name": "q", "type": "string"}]}],
+        }
+    }
+    bounds = build_relation_bounds_map(schema)
+    assert bounds == {"bounded": {"p": {"minimum": 0.0, "maximum": 1.0}}}
+
+
+def _bounds_client():
+    from dackar.knowledge_graph.py2neo import Py2Neo
+
+    class _FakeNeo(Py2Neo):
+        def __init__(self):
+            self.writes = []
+
+        def write(self, query, parameters=None, db=None):
+            self.writes.append((query, parameters))
+
+    return _FakeNeo()
+
+
+_CONF_BOUNDS = {"resolves_to_asset": {"confidence": {"minimum": 0.0, "maximum": 1.0}}}
+
+
+def _edge(confidence):
+    return {
+        "from_label": "nuclear_entity", "to_label": "element_usage",
+        "type": "resolves_to_asset", "from": "m1", "to": "a1",
+        "attrs": {"confidence": confidence},
+    }
+
+
+def test_upsert_edges_batch_accepts_in_range_value():
+    client = _bounds_client()
+    client.upsert_edges_batch([_edge(0.8)], relation_bounds=_CONF_BOUNDS)
+    assert len(client.writes) == 1  # persisted
+
+
+@pytest.mark.parametrize("bad", [87.0, 1.5, -0.1])
+def test_upsert_edges_batch_rejects_out_of_range_value(bad):
+    client = _bounds_client()
+    with pytest.raises(ValueError, match="outside declared bounds"):
+        client.upsert_edges_batch([_edge(bad)], relation_bounds=_CONF_BOUNDS)
+    assert client.writes == []  # nothing persisted (fail-fast, before write)
+
+
+def test_upsert_edges_batch_skips_none_and_unbounded():
+    """A None value and a property with no declared bound are not checked."""
+    client = _bounds_client()
+    client.upsert_edges_batch([_edge(None)], relation_bounds=_CONF_BOUNDS)
+    # edge whose relation type has no bounds entry at all
+    other = dict(_edge(999.0), type="mentions")
+    client.upsert_edges_batch([other], relation_bounds=_CONF_BOUNDS)
+    assert len(client.writes) == 2

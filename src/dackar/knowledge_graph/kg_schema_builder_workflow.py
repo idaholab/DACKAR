@@ -1268,6 +1268,37 @@ def require_bfo_categories(
         raise ValueError("Curated schema set bfo_category check failed - " + "; ".join(problems))
 
 
+def build_relation_bounds_map(schema: Dict[str, Any]) -> Dict[str, Dict[str, Dict[str, float]]]:
+    """Build a ``{relation_type: {prop_name: {"minimum": .., "maximum": ..}}}`` map.
+
+    Collects the numeric ``minimum`` / ``maximum`` bounds declared on relation
+    properties in a (merged) TOML schema, so the ingestion path can range-check
+    edge property values. Only properties that declare at least one bound are
+    included; a relation with no bounded properties is absent from the map.
+
+    Relations are list-valued after merge (one spec per declared endpoint pair);
+    bounds are keyed by relation type (name), merged across endpoint pairs — the
+    same bound is expected to hold for every pair sharing a relation name.
+
+    Args:
+        schema: A schema dict (or merged schema) with a ``"relation"`` mapping.
+
+    Returns:
+        Mapping of relation type to ``{prop_name: bounds}``; relation types with
+        no bounded properties are omitted. Each ``bounds`` dict carries whichever
+        of ``"minimum"`` / ``"maximum"`` was declared.
+    """
+    out: Dict[str, Dict[str, Dict[str, float]]] = {}
+    for rel_name, spec in schema.get("relation", {}).items():
+        specs = spec if isinstance(spec, list) else [spec]
+        for one in specs:
+            for prop in one.get("relation_properties", []):
+                bounds = {k: prop[k] for k in ("minimum", "maximum") if k in prop}
+                if bounds:
+                    out.setdefault(rel_name, {}).setdefault(prop["name"], {}).update(bounds)
+    return out
+
+
 def ingest_graph_toml(
     client: Py2Neo,
     nodes: List[Dict[str, Any]],
@@ -1275,6 +1306,7 @@ def ingest_graph_toml(
     database: Optional[str] = None,
     primary_keys: Optional[Dict[str, str]] = None,
     bfo_categories: Optional[Dict[str, str]] = None,
+    relation_bounds: Optional[Dict[str, Dict[str, Dict[str, float]]]] = None,
 ) -> None:
     """Bulk-upsert a node list and edge list into Neo4j.
 
@@ -1292,10 +1324,15 @@ def ingest_graph_toml(
         bfo_categories: Optional ``{label: bfo_category}`` map (e.g. from
             :func:`build_bfo_category_map`); adds the category as a second node
             label. Labels absent from the map get no second label.
+        relation_bounds: Optional ``{rel_type: {prop: {min/max}}}`` map (e.g. from
+            :func:`build_relation_bounds_map`); edge property values outside a
+            declared bound are rejected at ingestion.
     """
     if nodes:
         client.upsert_nodes_batch(
             nodes, db=database, primary_keys=primary_keys, bfo_categories=bfo_categories
         )
     if edges:
-        client.upsert_edges_batch(edges, db=database, primary_keys=primary_keys)
+        client.upsert_edges_batch(
+            edges, db=database, primary_keys=primary_keys, relation_bounds=relation_bounds
+        )

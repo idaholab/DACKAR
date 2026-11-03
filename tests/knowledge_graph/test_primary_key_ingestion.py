@@ -55,8 +55,10 @@ class _CaptureClient:
             {"nodes": nodes, "primary_keys": primary_keys, "bfo_categories": bfo_categories}
         )
 
-    def upsert_edges_batch(self, edges, db=None, primary_keys=None):
-        self.edge_batches.append({"edges": edges, "primary_keys": primary_keys})
+    def upsert_edges_batch(self, edges, db=None, primary_keys=None, relation_bounds=None):
+        self.edge_batches.append(
+            {"edges": edges, "primary_keys": primary_keys, "relation_bounds": relation_bounds}
+        )
 
 
 def test_entry_point_uses_declared_natural_key_for_document():
