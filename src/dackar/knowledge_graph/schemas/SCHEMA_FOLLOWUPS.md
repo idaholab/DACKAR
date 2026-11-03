@@ -63,13 +63,25 @@ and bfo-category maps.
   hand-duplicated list. Enforced (DB-free): manifest module list == `*.toml` on disk,
   and each module's version == its file's version; owners are advisory.
 
-- **A2/A3** semantic unification — **still deferred (Phase 2).** `cause` /
-  `causal_factor` are forked; `effect` / `consequence` and `event` are fragmented
-  across schemas. Needs a mid-level supertype / specialization pass — the
-  `bfo_category` tags corroborate which nodes are the same *kind* (e.g. `cause` and
-  `causal_factor` are both `disposition`) but do not themselves unify or reconcile
-  properties; note `event` spans two categories (`process` vs `basic_event` as
-  `disposition`), so the "event" fork cannot simply collapse. Related: `hazop_node`
-  is heterogeneous (location / function / process step) — no single `bfo_category`
-  fits; tagged `material_entity` as a placeholder. This is a cross-schema refactor
-  touching causal reasoning and warrants its own design turn, not a tail-end change.
+- **A2/A3** semantic unification — **partly DONE** (branch `mandd/kg-bfo-category-ingestion`),
+  the rest deferred. The scoping that drove this is in
+  `knowledge_platform/sep_29/a2a3_concept_unification_scope.md`.
+  - **Effect family — DONE (unified).** `effect` (fmeaSchema) was folded into
+    `consequence` (hazopSchema): same concept, both prospective outcomes /
+    `information_artifact`. `consequence` gained an optional `level`; the
+    `leads_to_effect` / `mitigates_effect` relations now target `consequence`.
+  - **Cause family — DONE (NOT merged; retagged instead).** `cause` (FMEA) and
+    `causal_factor` (RCA) are **different kinds**, not a fork: by the modal principle a
+    `cause` is a prospective **disposition** (what could happen) and a `causal_factor` is
+    the realized occurrence (what did happen), so `causal_factor` was retagged
+    `disposition` -> `process`. `basic_event` correctly stays `disposition` (the PRA
+    projection of the FMEA cause/effect pair — a potential). `degradation_mechanism` stays
+    a distinct `disposition` specialization.
+  - **`abnormal_event` — DEFERRED (own branch).** Not a node: it is a classification (a
+    subset of the canonical `event` — the reactive/unplanned `event_type`s) to be emitted as
+    a second Neo4j label at ingestion (reusing the `bfo_category` mechanism). It touches
+    `causality_engine_v31/v32` + `kg_context_builder`, so it is kept to its own
+    regression-tested branch.
+  - **`initiating_event` -> `event` anchor — DEFERRED (trivial).** Add an `occurs_as`-style
+    edge; low risk, not yet done.
+  - **Still Phase-2:** `hazop_node` heterogeneity (placeholder `material_entity`).
