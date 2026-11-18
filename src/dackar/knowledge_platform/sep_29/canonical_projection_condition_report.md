@@ -1,7 +1,12 @@
 # Canonical model + projections — worked example: condition_report
 
 **Created:** 2026-09-30 · design notes, shared on branch `mandd/architecture_notes`
-**Grounding:** origin/main (`bed68d5`), read from `git show`. Local checkout is behind origin.
+**Grounding:** written against origin/main `bed68d5` (2026-09-30), before the PR#73 schema
+cleanup. **Re-checked 2026-11-18:** the argument holds, but three facts about the KG schema
+changed and are corrected below: the condition_report id property is now `id` (it was `ID`), and
+its relations now point at `causal_factor`, `element_usage` and `temporal_entity` (the old
+placeholder targets `causal_entity`, `mbse_entity` and `event_entity` no longer exist). The record
+family (`RCA/schemas/*.json`) still holds as described.
 
 ## Purpose
 Test one claim on one concept, end to end: *can the schemas be the basis for all
@@ -57,10 +62,12 @@ concept: condition_report
 ## Resolved: document identity
 The linchpin: every projection joins on `canonical_id`, so it must be one value both stores
 carry. Today they do not. The record family already names `doc_id` "stable canonical document
-identifier" and keeps the raw CR number in `source.source_id`, but the KG `condition_report.ID`
-reads "identification number of the condition report" — the source number — so the graph node id
-and the record id are a different concept and likely a different value. (The KG is split
-internally too: `condition_report.ID` vs `work_order.id` / `rca_case.id`.)
+identifier" and keeps the raw CR number in `source.source_id`, but the KG id property
+(`condition_report.ID` when this was written, `id` now) read "identification number of the condition report" — the source number — so the graph node id
+and the record id were a different concept and likely a different value. (At the time the KG was
+split internally too: `condition_report.ID` vs `work_order.id` / `rca_case.id`. The PR#73 cleanup
+renamed it to `id`, which fixes the naming split, but the property still means "the CR's
+identification number", so the point stands: it must carry the platform-minted `canonical_id`.)
 
 The rule, same shape as the vocabularies rule: the canonical id is a **platform-minted key, never
 a raw source id** — deterministic so re-ingest reproduces it, namespaced so it is globally unique,
@@ -154,14 +161,15 @@ not the source entity. They stay in the artifact schemas and do not enter the ca
 domain model. Conflating the two would be the non-robust trap.
 
 ## Projection 1 — KG (the existing TOML, unchanged)
-- **identity:** node property `ID` carries `canonical_id`; `date` carries `reported_at`.
+- **identity:** node property `id` carries `canonical_id`; `date` carries `reported_at`.
 - **attributes kept:** `severity_level`, `status`, `report_author`, `location`,
   `conjecture` — all as flat scalar node properties (the only shape `baseSchema.json`
   allows).
-- **relations:** each canonical relation renders as a typed edge —
-  `caused_by` to `causal_entity`, `mentions` to `mbse_entity`, `refers` to
-  `nuclear_entity`, `temporal_reference` to `temporal_entity`, `related_to_event` to
-  `event_entity`, `linked_to_report` to `condition_report`.
+- **relations:** each canonical relation renders as a typed edge (as on main today) —
+  `caused_by` to `causal_factor`, `mentions` to `element_usage`, `refers` to
+  `nuclear_entity`, `has_temporal_reference` to `temporal_entity`, `linked_to_report` to
+  `condition_report`. The link to events now runs the other way: the temporal schema has an
+  `occurs_as` edge from `condition_report` to the canonical `event`.
 - **dropped:** all narrative text, chunks, spans, measurements, provenance. The graph
   holds structure, not content.
 
@@ -194,9 +202,9 @@ domain model. Conflating the two would be the non-robust trap.
 ## What the canonical model must resolve (the six concrete divergences)
 These are real, in the schemas today — not hypothetical:
 
-1. **Identity field mismatch.** KG uses node property `ID`; the record family uses
-   `doc_id` (and `record_id = doc_id::chunk_index`). Nothing guarantees
-   `condition_report.ID == document.doc_id`, and the KG `ID` reads like the source CR number
+1. **Identity field mismatch.** KG uses node property `id` (it was `ID` when this was written);
+   the record family uses `doc_id` (and `record_id = doc_id::chunk_index`). Nothing guarantees
+   `condition_report.id == document.doc_id`, and the KG `id` reads like the source CR number
    while the record `doc_id` is a separate canonical value. **Resolved** (see Resolved:
    document identity): one platform-minted, namespaced `canonical_id` carried by both; the raw
    source id is retained in `source.source_id`.
@@ -228,7 +236,7 @@ The canonical-id spine **already exists for equipment/assets**, just not for doc
 So a surface form like "pump 101" already resolves to one canonical asset id shared by
 the chroma record and the KG Asset node. The join key for *equipment* is real and
 enforced by entity resolution. The gap is that *document-class* concepts (the CR itself,
-WOs, RCAs) have not adopted the same discipline — `condition_report.ID` and `doc_id` are
+WOs, RCAs) have not adopted the same discipline — `condition_report.id` and `doc_id` are
 not yet the same declared `canonical_id`.
 
 ## Verdict

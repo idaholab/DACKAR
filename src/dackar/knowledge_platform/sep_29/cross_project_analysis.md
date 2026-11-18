@@ -1,6 +1,7 @@
 # Cross-Project Knowledge Platform — Notes for the Oct 27 Meeting
 
-**Created:** 2026-10-20 · **Restructured:** 2026-10-26 · design notes, shared on branch `mandd/architecture_notes`
+**Created:** 2026-10-20 · **Restructured:** 2026-10-26 · **Updated:** 2026-11-18 (after the Oct 27
+meeting and the November team sketch, §2e) · design notes, shared on branch `mandd/architecture_notes`
 **Purpose:** Gather robust ideas for the Oct 27 discussion (action item 1 from the Oct 12
 meeting: notes and observations about APIs for the shared data structures). Scope is the three
 projects that will rely on the knowledge platform — RCA, Outage (FY-27), Licensing (ISU).
@@ -161,23 +162,23 @@ shape of a schema; nothing governs the labels and predicates inside it. Three lo
    of this shipped — `bfo_category` is a closed controlled vocabulary enforced on every node (§2d). The
    label/predicate registry itself is still open (and the `cause`/`causal_factor`, `effect`/
    `consequence`, `event` fragmentation is tracked as follow-up A2/A3).
-2. **Move the cross-reference check left (CI, not ingest).** **Partly landed (MR#85):** a schema-set
-   acceptance test (`tests/knowledge_graph/test_schema_loading.py`) now runs in the suite and gates
-   schema shape + the `bfo_category` tag on every node. That is the "CI runs on every schema PR" part.
-   The remaining piece is endpoint resolution: `knowledge_graph/validator/kg_model_validator.py`
-   already parses the TOML into a `relation_endpoints` map and validates source/target resolution
-   (findings R1/R2/R3), but today it validates a **populated model**. Repoint that same endpoint map at
-   the **schema set itself** (does every declared `to_entity` resolve to a defined node label?) and add
-   it to the acceptance test — repoint + wire in, not build from scratch.
-3. **Coordinated versioning + change-control.** **Tracked (MR#85 follow-up A8).** Each file still
-   carries its own `version = 1.0` and there is no ontology-wide version or "who approves a schema
-   change" step — which matters because three projects share these files. Now recorded as a tracked
-   follow-up in `SCHEMA_FOLLOWUPS.md` (an ontology-wide version stamp + module list + owners). Fix
-   unchanged: one version stamp and a lightweight review gate so a change that helps one project cannot
-   silently break another.
+2. **Move the cross-reference check left (CI, not ingest).** **Done.** The schema-set acceptance test
+   (`tests/knowledge_graph/test_schema_loading.py`) runs in CI on every PR and already checks, without a
+   database: shape against the meta-schema, allowed property types, primary keys, **every relation
+   endpoint resolves to a defined node** (`test_relation_endpoints_resolve`), no duplicate node labels,
+   no duplicate relation triples, and a valid `bfo_category` on every node. A broken reference now
+   fails the pull request, not a production run.
+3. **Coordinated versioning + change-control.** **Done on branch `mandd/kg-bfo-category-ingestion`
+   (pending merge).** The problem: each file carried its own, independently chosen version (they ranged
+   from `1.0` to `3.4`), with no ontology-wide version and no "who approves a schema change" step, which
+   matters because three projects share these files. The fix: `schemas/MANIFEST.toml` holds one
+   ontology-wide version, the module list, each file's version, and an owner per module. A test fails if
+   the manifest and the files on disk disagree, so a schema can't be added, removed or re-versioned
+   without editing the manifest. Owners are recorded but not checked automatically.
 
 These three govern content without adding machinery — no new formalism, just a registry, a CI check,
-and a sign-off.
+and a sign-off. Of the three, fix 2 is done, fix 3 is done pending merge, and fix 1 is half done (the
+type-system tag shipped; the label/predicate registry is still open).
 
 **Deferred to §2d — the upper-ontology question.** Whether each node should also declare one top-level
 *category* (so the platform can query "all Events" or "all Requirements" regardless of which file
@@ -236,7 +237,7 @@ is reserved.
   partition splits them correctly: an activity is a **process**, a resource is a **material entity**, a
   constraint is an **information artifact**. The family was mis-grouped; the partition decomposes it.
 
-**The division of labor (the actual proposal).** BFO supplies the **top partition** — the ~7-category
+**The division of labor (the actual proposal).** BFO supplies the **top partition** — the 8-category
 closed set above, one tag per node. MBSE supplies the **detailed middle structure** for the material +
 function + requirement subtree (decomposition, ports, connectors, definition/usage). Borrow BFO's roof;
 keep MBSE as the load-bearing walls.
@@ -253,17 +254,18 @@ upper ontology" is a credibility asset, not just engineering tidiness.
 - **Kept out:** BFO's full relation hierarchy, its formal axioms, the all-some relational restrictions,
   and any OWL reasoner. That machinery is what makes upper ontologies painful, and none of it was added.
 
-**Still open after MR#85 — two items, both tracked in `SCHEMA_FOLLOWUPS.md`:**
-- **Make the tag required for the curated set.** `baseSchema.json` keeps `bfo_category` *optional* on
-  purpose (marking it required there would break external/experimental schemas that omit it). When we
-  want it required, enforce it for the curated set only — in `KGconstruction.loadPredefinedGraphSchemas`,
-  not the meta-schema. The acceptance test's `test_every_node_has_a_valid_bfo_category` is the interim
-  gate. (This resolves the §2c open "optional → required" question.)
+**After MR#85 — status of the follow-ups (tracked in `SCHEMA_FOLLOWUPS.md`):**
+- **Make the tag required for the curated set — done** (branch `mandd/kg-bfo-category-ingestion`,
+  pending merge). `baseSchema.json` keeps `bfo_category` *optional* on purpose (marking it required
+  there would break external/experimental schemas that omit it), so the requirement is enforced for the
+  curated set only, in `KGconstruction.loadPredefinedGraphSchemas`, not in the meta-schema.
+- **Emit the tag at ingestion — done** (same branch). Each node gets its category as a second Neo4j
+  label, so `MATCH (n:disposition)` works; before this the tag was stored but never read.
 - **Awkward-fit nodes: states, `plant_mode`, `hazop_node`.** BFO handles states and modes awkwardly
   (a `plant_mode` is arguably a process-boundary or an obtaining state), and `hazop_node` is
   heterogeneous (its description spans location / function / process step) — it is tagged
   `material_entity` as a **placeholder** because its concrete referents are physical. These are flagged,
-  not forced; revisited in the Phase-2 ontology pass (follow-up A2/A3).
+  not forced; still open for the Phase-2 ontology pass.
 
 **This matures a hedge the prior assessment already proposed.** `ontology-assessment.md` §10 (the
 deferred upper-ontology item) recommended, as a low-cost hedge, tagging each node with a coarse
@@ -392,7 +394,11 @@ not a decision. Three things to hold in mind:
 **Already decided — present as closed, do not reopen.** Store roles (KG spine / Chroma content / wiki
 render); **KG holds metadata only**; canonical model plus projections; document identity
 (platform-minted `canonical_id`, raw source id retained); **one write path** (project out of canonical,
-never sync peer-to-peer); two store tiers (platform vs private); Spark ruled out.
+never sync peer-to-peer); two store tiers (platform vs private); Spark ruled out. From the
+November team sketch (§2e): one schema per file; document identity assigned at ingest, entity linking
+done later by analytics; an equipment-ID list counts as an MBSE model with nodes only; Chroma and the
+KG must never drift apart, on any write path; every analytics write carries provenance; every data
+element keeps metadata back to its source file.
 
 ---
 
@@ -555,8 +561,10 @@ and how it is keyed:
 - **`persist(canonical_object) -> canonical_id`** — persist a canonical concept (a condition_report, a
   work_order, an asset). The caller hands over one canonical object; the platform mints/uses its
   `canonical_id` and **fans out to its projections**. Identity-keyed, multi-store. This **is** the
-  one-write-path rule expressed as an API: a caller cannot write one store without the others, so the
-  stores cannot desync. **Two kinds of projection, not one tempo:** KG and Chroma are written
+  one-write-path rule expressed as an API: a caller cannot write one store without the others. That
+  alone does **not** guarantee the stores stay in sync: Neo4j and Chroma share no transaction, so a
+  failure between the two writes leaves them out of step. The no-drift rule (§2e) needs a recovery
+  mechanism on top of `persist`; that mechanism is still open (§6, open question 11). **Two kinds of projection, not one tempo:** KG and Chroma are written
   **synchronously** inside the call (cheap, deterministic). The **wiki page is LLM-generated**, so it
   cannot block the write — it is regenerated **asynchronously** when the canonical concept changes. So
   `persist` returns once KG + Chroma are committed; the wiki projection is an eventually-consistent
@@ -576,8 +584,9 @@ In-place mutation (gap #4, §4d) is a pure-compute concern *between* engines, no
 never reaches either intent, so the protocol need not address it.
 
 ### 5d. The gate
-Every write passes schema validation before it persists (`ValidationGate` + `RCAArtifactValidator`,
-already merged). Under the agentic path this is the trust boundary: a non-deterministic agent's writes
+Every write passes schema validation before it persists. **Status: proposed, not built.** The
+validator exists (`RCAArtifactValidator`, `RCA/validation/schema_validator.py`), but no gate that wraps
+every write path exists yet; a draft lives only as an untracked prototype. Under the agentic path this is the trust boundary: a non-deterministic agent's writes
 are schema-valid or they do not land. Reads are not gated; writes always are.
 
 **Generated projections need a second check — grounding, not just shape.** A schema-valid LLM-rendered
@@ -602,7 +611,7 @@ meaningful." Make both **first-class fields** carried by the protocol, not left 
 If we go agentic, these shapes are the agent's tools, one-to-one: `retrieve`, `graph_query`, `get`,
 `persist`, `save_artifact`, each behind the gate. The wiki `get`/`retrieve` give an agent a
 human-readable page to read as a tool. An agent says "persist this condition_report," never "upsert
-these nodes" — one write tool per intent, and it cannot desync the stores. Two added requirements fall
+these nodes" — one write tool per intent, so it cannot write one store and skip the other. Two added requirements fall
 out: the shapes need **machine-readable descriptions** (the schema registry becomes the tool catalog),
 and the envelope's **origin** field becomes mandatory (so agent writes are distinguishable). Nothing
 else changes — the same protocol serves deterministic engines and agent tools, which is exactly why the
@@ -630,8 +639,9 @@ example holding up under a live store, not just on paper.
 
 ### 6a. To settle at the meeting (protocol)
 1. **`graph_query` shape** — parameterized templates (safer, limited) vs. raw Cypher passthrough
-   (flexible, injection risk)? Licensing's schema-aware MERGE/DDL with `_safe_token()` suggests a
-   templated/guarded middle path.
+   (flexible, injection risk)? DACKAR's `Py2Neo` already guards interpolated labels and
+   relation types with `_safe_token()` (`knowledge_graph/py2neo.py`), which suggests a templated, guarded
+   middle path.
 2. **Envelope schema** — agree the exact provenance + confidence fields now (§5e), since every read and
    write carries them and retrofitting later is costly.
 3. **One retriever, many backends** — licensing's `VectorStoreBackend` ABC (Chroma + Qdrant behind one
@@ -655,7 +665,11 @@ example holding up under a live store, not just on paper.
      (branch `mandd/kg-bfo-category-ingestion`): `build_bfo_category_map` + `upsert_nodes_batch` now
      add the category as a second label at ingest; the tag is no longer inert at runtime.
    - **Make it required** for the curated set (via `loadPredefinedGraphSchemas`, not the meta-schema) —
-     *in progress* (SCHEMA_FOLLOWUPS #2).
+     **DONE** (same branch).
+   - Also done on that branch: numeric property bounds enforced at ingestion (out-of-range values are
+     rejected), the A8 manifest (§2c fix 3), and the decided A2/A3 changes (`effect` merged into
+     `consequence`; `causal_factor` retagged as `process`). Details in
+     `a2a3_concept_unification_scope.md`.
    - **Awkward-fit nodes** (`plant_mode` / states, placeholder `hazop_node`) — deferred to the Phase-2
      ontology pass.
 
@@ -665,12 +679,18 @@ example holding up under a live store, not just on paper.
    they collide (§4c). **Blocked (2026-11-03): do not start yet.** Its precondition — the
    licensing→DACKAR content merge (§4c) — has slipped with no firm date, and it is not on `origin/main`.
    Starting now means consolidating onto the weaker pre-merge base and redoing it when the richer
-   licensing ingest lands; wait for that merge. Unblocked work to do meanwhile: item 8's
-   `bfo_category`-at-ingestion residual, and §2c fix #2 (endpoint-resolution in the schema acceptance
-   test) — both self-contained on merged `main`.
+   licensing ingest lands; wait for that merge. The unblocked work listed here earlier (`bfo_category` at
+   ingestion, and §2c fix 2) is now done.
 10. **Ingestion update policy (on standby, §2e)** — how to handle re-ingesting the same file, an
     amended CR (a new version linked to the old one), and deletions. Not decided. Meanwhile every record
     stores its content hash and source id, so the policy can be applied later without re-parsing.
+11. **How "no drift" is guaranteed (to discuss)** — Neo4j and Chroma share no transaction, so `persist`
+    alone cannot keep them in sync if a write fails partway (§5c). Options: a write journal in the
+    canonical layer replayed until both stores confirm, writing canonical first and rebuilding the
+    projections from it, or a periodic reconciliation job.
+12. **Relation and update writes (to discuss)** — §2e has analytics add edges between existing nodes
+    and replace their own earlier output, but the protocol's two write intents (`persist`,
+    `save_artifact`) express neither. The most frequent write in the design has no protocol shape yet.
 
 ### 6d. Wish-list (raised, not yet scoped)
 - **Natural-language query over multiple data structures.** Oct 12 action item 1: let a user ask a

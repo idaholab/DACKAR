@@ -1,7 +1,20 @@
 # Cross-Project Knowledge Platform — Diagrams and Assessment
 
 **Companion to:** `cross_project_analysis.md` (Oct 27 meeting notes)
-**Reviewed:** 2026-10-27 · local planning doc (untracked, do not `git add`)
+**Reviewed:** 2026-10-27 · design notes, shared on branch `mandd/architecture_notes`
+
+> **Status (2026-11-18): dated snapshot.** This review describes `cross_project_analysis.md` as it
+> stood on Oct 27 and is kept unchanged as a record. Several of its findings have since been acted on;
+> read the current state in the main doc:
+> - **Folded in:** P7 (the gate is now marked "proposed, not built"), P12 (the endpoint check exists
+>   in the acceptance test), P13 (versioning premise corrected; the A8 manifest is done on branch
+>   `mandd/kg-bfo-category-ingestion`), the P14 category count (8, not ~7), and the `_safe_token()`
+>   location (it is in DACKAR's `py2neo.py`).
+> - **Still open, now tracked in the main doc's §6:** P5 (how "no drift" is guaranteed, open
+>   question 11) and P4's relation and update writes (open question 12).
+> - **Superseded:** the A2/A3 parts of P14 were decided separately; see
+>   `a2a3_concept_unification_scope.md`.
+
 **Contents:** Part 1 has diagrams of the current structure and the proposed changes. Part 2 is an
 assessment of each proposed change, with confidence scores. Part 3 lists the factual claims that
 were checked against the code.

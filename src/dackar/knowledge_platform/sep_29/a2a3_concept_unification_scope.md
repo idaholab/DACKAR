@@ -7,7 +7,11 @@ branch `mandd/kg-bfo-category-ingestion`.
 **Purpose:** list the issues and the decisions to make, so we can iterate before any
 code. Grounded in a full read of the schema node defs + a complete relation-map recon
 across all 19 `*.toml` files + a production-code string sweep (RCA/KG engines).
-**Nothing here is decided yet.**
+
+**Status (2026-11-18):** decisions D1, D1b, D2, D3 and D5 are made. The two schema-only
+changes are **done** on branch `mandd/kg-bfo-category-ingestion` (pending merge): `effect`
+merged into `consequence`, and `causal_factor` retagged as `process`. Still open: D4
+(`initiating_event` anchor), D5's implementation (its own branch), and D6 (migration).
 
 ---
 
@@ -137,20 +141,21 @@ The organizational-factor case (e.g. an inadequate procedure) is accepted as a `
 too: such a factor *unfolds over time* as it is enacted, so the coarse fit is defensible, not
 a compromise. One-line schema change, DB-free to test.
 
-### D1b — Effect-family unification mechanism
-The effect merge still needs a mechanism (merge-rename is the obvious one, since they are
-genuinely the same kind). Confirm: collapse `effect` + `consequence` into one node,
-retarget the 6 edges, union attributes (D3). No supertype needed — no distinction to
+### D1b — Effect-family unification mechanism — DECIDED and DONE: merge-rename
+`effect` and `consequence` are collapsed into one node, the edges are retargeted, and the
+attributes are unioned (D3). No supertype is needed, since there is no distinction to
 preserve.
 
 ### D2 — (resolved) cause merge scope
 Moot: the cause family is not being merged. `degradation_mechanism` stays a distinct
 specialization (`disposition`), as it already is.
 
-### D3 — Effect vs consequence merged name + attributes
-If merging: which name wins (`effect`? `consequence`? a neutral third?), and how to reconcile
-the two different attribute sets (`level` vs `severity`) — keep both as optional, or is one
-canonical?
+### D3 — Effect vs consequence merged name + attributes — DECIDED and DONE
+The merged node is **`consequence`** (hazopSchema), keeping **`severity`** as its main
+attribute. FMEA's `level` (local / next_higher / end_effect) was added as an optional
+property, so FMEA effects keep it. `description` stays required, which is a small
+tightening for FMEA, where it used to be optional. `fmeaSchema`'s `leads_to_effect` and
+`mitigates_effect` relations now point at `consequence`.
 
 ### D4 — `initiating_event` → `event` anchoring
 Add an `occurs_as`-style edge from `initiating_event` to the canonical `event` (finishing A3),
@@ -198,10 +203,9 @@ this schema-forward-only? Affects whether we need a relabel/migration step.
 
 ## 5. Suggested sequencing (for discussion)
 Updated for the §1 decisions (effect merges, cause does not):
-1. **Effect/consequence merge** (D1b, D3) — the only merge. 6 edges, zero engine exposure, no
-   `abnormal_event` entanglement. Clean schema-only change + acceptance test. Do first.
-2. **`causal_factor` retag** (D1) — one-line `bfo_category` change, DB-free; but settle the
-   (A)/(B) reading and the organizational-factor snag first. Schema-only.
+1. **Effect/consequence merge** (D1b, D3) — **done.** The only merge; zero engine exposure, no
+   `abnormal_event` entanglement.
+2. **`causal_factor` retag** (D1) — **done**, as `process` (reading A).
 3. **`initiating_event` → `event` anchor** (D4) — trivial, optional; bundle with step 1 or 2.
 4. **`abnormal_event` reconciliation (D5) — its own branch.** The only causal-engine-touching,
    regression-prone piece; isolate it so steps 1–3 stay low-risk and schema-only.
