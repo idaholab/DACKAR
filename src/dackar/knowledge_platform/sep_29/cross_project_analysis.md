@@ -8,10 +8,10 @@ projects that will rely on the knowledge platform — RCA, Outage (FY-27), Licen
 **Sources:** `projects_info/` briefs (RCA LWRS Jun-2026, Outage LWRS Jun-2026, Reg-Dev licensing
 review Aug-2026, and the three-project architecture-notes deck).
 
-**Flow:** why one platform (§1) → what it stores, how the schemas are governed, and how the stores
-get populated (§2) → how users drive it (§3) → what the engines
-actually do (§4, the evidence) → the access-protocol proposal (§5, the deliverable) → open questions
-and next steps (§6). The meeting's headline is §5; §4 is the evidence it rests on.
+**Flow:** §1 explains why one platform; §2 covers what it stores, how the schemas are governed, and
+how the stores get populated; §3 covers how users drive it; §4 shows what the engines actually do (the
+evidence); §5 is the access-protocol proposal (the deliverable); §6 lists open questions and next
+steps. The meeting's headline is §5; §4 is the evidence it rests on.
 
 ---
 
@@ -132,8 +132,8 @@ relation triples, and unresolved relation endpoints. So the structural-governanc
 place; the meta-schema **is** the robust-and-flexible base.
 
 **This builds on a completed cleanup, not a cold start.** The 19 schemas already went through a
-10-section assessment (`knowledge_graph/schemas/ontology-assessment.md`, BLOCKER / GAP / CONSISTENCY /
-DESIGN), and its structural fixes shipped (PR#73, merged to `main` — verified: no dangling
+10-section assessment (BLOCKER / GAP / CONSISTENCY / DESIGN; a working document, not in the repo — it
+was dropped from the schema MR on purpose, and its follow-ups now live in `SCHEMA_FOLLOWUPS.md`), and its structural fixes shipped (PR#73, merged to `main` — verified: no dangling
 `mbse_entity`, no stale `str`/`int` type vocab, no bare `properties`, finalized richer meta-schema).
 So §1–§5, §7, §8, §9 of that assessment are **resolved on main**; §6 (lifecycle / nuclear / regulatory
 coverage) is **on hold by decision**; §10 (upper ontology) is our §2d. The point of the governance
@@ -267,7 +267,7 @@ upper ontology" is a credibility asset, not just engineering tidiness.
   `material_entity` as a **placeholder** because its concrete referents are physical. These are flagged,
   not forced; still open for the Phase-2 ontology pass.
 
-**This matures a hedge the prior assessment already proposed.** `ontology-assessment.md` §10 (the
+**This matures a hedge the prior assessment already proposed.** The assessment's §10 (the
 deferred upper-ontology item) recommended, as a low-cost hedge, tagging each node with a coarse
 `category = continuant | occurrent` so that "if you later adopt an upper ontology, that tagging is most
 of the mapping work already done." §2d is that hedge matured: BFO's finer partition (material entity /
@@ -708,7 +708,7 @@ example holding up under a live store, not just on paper.
 9. **Ingest consolidation** — "one ingestion pipeline merged into DACKAR (check for conflict)" plus a
    config file. The merge surface is what the licensing ingest does that DACKAR's does not, and where
    they collide (§4c). **Blocked (2026-11-03): do not start yet.** Its precondition — the
-   licensing→DACKAR content merge (§4c) — has slipped with no firm date, and it is not on `origin/main`.
+   merge of licensing content into DACKAR (§4c) — has slipped with no firm date, and it is not on `origin/main`.
    Starting now means consolidating onto the weaker pre-merge base and redoing it when the richer
    licensing ingest lands; wait for that merge. The unblocked work listed here earlier (`bfo_category` at
    ingestion, and §2c fix 2) is now done.

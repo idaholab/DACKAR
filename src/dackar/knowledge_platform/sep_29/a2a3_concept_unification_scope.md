@@ -23,8 +23,8 @@ in two+ schemas) or **fragmented** (one word, several incompatible nodes). `bfo_
 needs a mid-level supertype/specialization pass BFO deliberately doesn't provide.
 
 ### Decisions so far (2026-11-03)
-- **Effect family → UNIFY.** Decided.
-- **Cause family → DO NOT unify.** Decided, on an ontological (not duplicate-avoidance)
+- **Effect family: unify.** Decided.
+- **Cause family: do not unify.** Decided, on an ontological (not duplicate-avoidance)
   basis — see "The organizing principle" below. BFO *supports* the split rather than merely
   permitting it.
 - **Organizing principle (the BFO payoff):** prospective/predictive analyses (FMEA, HAZOP,
@@ -35,14 +35,14 @@ needs a mid-level supertype/specialization pass BFO deliberately doesn't provide
   top-level categories.
 
 ### The organizing principle, spelled out
-- **`cause` (FMEA)** = "what *could* bring about this failure mode" → a **disposition** (a
+- **`cause` (FMEA)** = "what *could* bring about this failure mode", which is a **disposition** (a
   latent potential). Prospective. Correct as tagged.
-- **`causal_factor` (RCA)** = "what *did* contribute to the failure that occurred" → the
-  *realization* of such a disposition → an **occurrent**. Retrospective. **Currently
+- **`causal_factor` (RCA)** = "what *did* contribute to the failure that occurred", which is the
+  *realization* of such a disposition, so an **occurrent**. Retrospective. **Currently
   mis-tagged `disposition`** — flattening exactly the distinction we want to keep (see D1).
-- **`basic_event` (PRA)** = the projection of the FMEA cause→effect pair into the plant risk
+- **`basic_event` (PRA)** = the projection of the FMEA cause-and-effect pair into the plant risk
   model (the schema already has `failure_mode represented_in_pra_by basic_event`): a
-  *potential* failure carrying a probability → **disposition**, prospective. Consistent with
+  *potential* failure carrying a probability, so a **disposition**, prospective. Consistent with
   `cause`. So it correctly sits with the "could happen" cluster, NOT with event occurrences.
 - Net: the disposition/"could-happen" cluster = {`cause`, `failure_mode`, `deviation`,
   `basic_event`, `hazard`}; only RCA's realized `causal_factor` crosses to the occurrent
@@ -157,7 +157,7 @@ property, so FMEA effects keep it. `description` stays required, which is a smal
 tightening for FMEA, where it used to be optional. `fmeaSchema`'s `leads_to_effect` and
 `mitigates_effect` relations now point at `consequence`.
 
-### D4 — `initiating_event` → `event` anchoring
+### D4 — Anchoring `initiating_event` to `event`
 Add an `occurs_as`-style edge from `initiating_event` to the canonical `event` (finishing A3),
 or leave PRA events in their own silo? Low risk either way.
 
@@ -189,7 +189,7 @@ Open sub-items:
 - **`log` is the fuzzy case** — a log entry may be routine or abnormal. Safe default: include
   it; retune later since the set is declarative.
 - **SOE is not an `event_type`** (the enum has `log`, not `soe`); an SOE is really a *sequence*
-  of events. Either map SOE → `log`, or add `soe` to the enum. Flag, not a blocker.
+  of events. Either map SOE to `log`, or add `soe` to the enum. Flag, not a blocker.
 
 **Still its own branch** — the only causal-engine-touching, regression-prone piece; isolate it
 so the schema-only work (effect merge, causal_factor retag, initiating_event anchor) stays
@@ -206,7 +206,7 @@ Updated for the §1 decisions (effect merges, cause does not):
 1. **Effect/consequence merge** (D1b, D3) — **done.** The only merge; zero engine exposure, no
    `abnormal_event` entanglement.
 2. **`causal_factor` retag** (D1) — **done**, as `process` (reading A).
-3. **`initiating_event` → `event` anchor** (D4) — trivial, optional; bundle with step 1 or 2.
+3. **Anchor `initiating_event` to `event`** (D4) — trivial, optional; bundle with step 1 or 2.
 4. **`abnormal_event` reconciliation (D5) — its own branch.** The only causal-engine-touching,
    regression-prone piece; isolate it so steps 1–3 stay low-risk and schema-only.
 
