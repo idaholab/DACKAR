@@ -7,8 +7,8 @@ projects that will rely on the knowledge platform — RCA, Outage (FY-27), Licen
 **Sources:** `projects_info/` briefs (RCA LWRS Jun-2026, Outage LWRS Jun-2026, Reg-Dev licensing
 review Aug-2026, and the three-project architecture-notes deck).
 
-**Flow:** why one platform (§1) → what it stores and how the schemas are governed (§2) → how users
-drive it (§3) → what the engines
+**Flow:** why one platform (§1) → what it stores, how the schemas are governed, and how the stores
+get populated (§2) → how users drive it (§3) → what the engines
 actually do (§4, the evidence) → the access-protocol proposal (§5, the deliverable) → open questions
 and next steps (§6). The meeting's headline is §5; §4 is the evidence it rests on.
 
@@ -274,6 +274,79 @@ the bare two-way split, which is what lets the platform query "all Requirements"
 not just "all occurrents." Same move, one level of resolution finer.
 
 Tracked in §6 (open question 8).
+
+### 2e. The ingestion pipeline — how the stores get populated (team sketch, 2026-11-18)
+
+Sketched with the team after the Oct 27 meeting. Four steps, then the rules agreed on top of them.
+
+**The four steps**
+1. **Parse.** A set of parsers reads raw files by format: PDF, CSV, TXT.
+2. **Classify against a schema.** Each parsed file is matched to the existing schema it contains (CRs,
+   WOs, anomalies, an equipment-ID list, or an MBSE model). This can be done with deterministic
+   methods or with an agentic system using dedicated skills.
+3. **Populate the stores.** Chroma and the KG are populated from the classified records (the LLM wiki
+   joins later, §2a).
+4. **Analyze through APIs.** Data-analytics tools work on the stores through specific APIs. They can:
+   - modify the stores (NER, causal methods, semantic analysis);
+   - visualize facets of the stores;
+   - run pattern-recognition analyses.
+
+**Agreed rules**
+
+- **Document identity is assigned at ingest; everything else is analysis.** Step 3 gives each record
+  its platform `canonical_id` (minted from the source system and the source id, §2a), so a CR that
+  arrives once as a PDF and again in a CSV export lands as one node, not two. This is deterministic
+  and involves no NER. Recognizing *entities* inside a record (equipment IDs, failure modes, and so
+  on) and resolving them to nodes is **not** done at ingest. It is an analytics step (step 4) that
+  runs after the stores are populated, either deterministically (exact-ID search) or stochastically.
+
+- **One schema per file, enforced at the gate.** A file holds information for a single schema. A CSV
+  holds many data elements of that schema (for example 500 WOs); a PDF is assumed to hold one data
+  element (one CR). The gate checks the second assumption rather than trusting it, since some exports
+  bundle several reports into one PDF. A file that matches no schema, or one the classifier isn't
+  confident about, is rejected or quarantined for review, never written on a guess.
+
+- **The equipment list is a minimal MBSE model, and both are ordinary inputs.** A full MBSE model may
+  not be available; often there is only a list of equipment IDs, which is an MBSE model with nodes and
+  no relations. Without the full model the platform cannot answer RCA questions, but knowledge
+  management still works. Once the list or the model is ingested, NER methods (step 4) create the
+  links between documents and equipment nodes. Two consequences:
+  - **Arrival order.** Documents may arrive before the equipment list or model, so the linking step
+    must be safe to re-run when the list or model arrives later.
+  - **Upgrading the list to a full model.** When a full MBSE model replaces an ID list, its nodes must
+    keep the same ids as the list's nodes. Otherwise every document-to-equipment edge has to be rebuilt.
+
+- **Chroma and the KG stay synchronized: mandatory, no drift allowed.** This applies to every write
+  path, not only ingest. If an analytics method adds a CR-to-equipment edge in the KG, the Chroma
+  record for that CR must gain the same equipment id. So all writes go through one shared write
+  function that updates both stores together (the `persist` intent, §5c), rather than each tool
+  writing each store on its own.
+
+- **Analytics methods may modify the stores, with provenance.** For example, NER creates a new KG
+  edge from a CR to an equipment node; semantic analysis creates a similarity mapping between data
+  elements (similar events across CRs and shift logs), held as a KG edge that carries a score. Every
+  derived write records which method and version produced it and which run it came from (the
+  envelope, §5e), so re-running a method replaces its earlier output instead of duplicating it.
+
+- **Every data element carries precise metadata back to its source.** Each chunk and node keeps a
+  pointer to its raw file and location (page, row). This is what makes licensing traceability possible
+  and what lets the platform re-parse later.
+
+- **The entity list has two parts.** NER extracts more than equipment (failure modes, degradation
+  mechanisms, time references, materials), so it draws on:
+  - **the label vocabulary**: which *kinds* of entity exist, taken from the schema node labels
+    (§2c, §2d);
+  - **the instance list**: which *specific* items exist, for example pump P-101. For equipment this
+    is the MBSE model, or the ID list as a model with nodes and no relations.
+
+- **Two kinds of analytics API.** Some tools read and write the stores (NER, retrieval). Others are
+  pure computation that takes data in and returns results (the LOGOS scheduler, the causality
+  engine); those need an agreed data format, not store access (§4, §5a).
+
+- **On standby: updates over time.** How to handle re-ingesting the same file, an amended CR, or a
+  deletion is not decided yet. One cheap safeguard now: every record stores its content hash and its
+  source id in its metadata, so whatever update policy is chosen later can work on data already
+  ingested without re-parsing it. Tracked in §6.
 
 ---
 
@@ -595,6 +668,9 @@ example holding up under a live store, not just on paper.
    licensing ingest lands; wait for that merge. Unblocked work to do meanwhile: item 8's
    `bfo_category`-at-ingestion residual, and §2c fix #2 (endpoint-resolution in the schema acceptance
    test) — both self-contained on merged `main`.
+10. **Ingestion update policy (on standby, §2e)** — how to handle re-ingesting the same file, an
+    amended CR (a new version linked to the old one), and deletions. Not decided. Meanwhile every record
+    stores its content hash and source id, so the policy can be applied later without re-parsing.
 
 ### 6d. Wish-list (raised, not yet scoped)
 - **Natural-language query over multiple data structures.** Oct 12 action item 1: let a user ask a
