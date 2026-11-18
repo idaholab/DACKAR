@@ -1,6 +1,6 @@
 # Cross-Project Knowledge Platform — Notes for the Oct 27 Meeting
 
-**Created:** 2026-10-20 · **Restructured:** 2026-10-26 · local planning doc (untracked, do not `git add`)
+**Created:** 2026-10-20 · **Restructured:** 2026-10-26 · design notes, shared on branch `mandd/architecture_notes`
 **Purpose:** Gather robust ideas for the Oct 27 discussion (action item 1 from the Oct 12
 meeting: notes and observations about APIs for the shared data structures). Scope is the three
 projects that will rely on the knowledge platform — RCA, Outage (FY-27), Licensing (ISU).
