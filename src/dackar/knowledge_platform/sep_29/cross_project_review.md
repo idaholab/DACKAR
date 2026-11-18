@@ -10,8 +10,9 @@
 >   in the acceptance test), P13 (versioning premise corrected; the A8 manifest is done on branch
 >   `mandd/kg-bfo-category-ingestion`), the P14 category count (8, not ~7), and the `_safe_token()`
 >   location (it is in DACKAR's `py2neo.py`).
-> - **Still open, now tracked in the main doc's §6:** P5 (how "no drift" is guaranteed, open
->   question 11) and P4's relation and update writes (open question 12).
+> - **Decided on 2026-11-18, now in the main doc's §5c:** P5 (no drift is guaranteed by a write
+>   journal, open question 11) and P4's relation writes (a third write intent, `assert_relation`, open
+>   question 12).
 > - **Superseded:** the A2/A3 parts of P14 were decided separately; see
 >   `a2a3_concept_unification_scope.md`.
 

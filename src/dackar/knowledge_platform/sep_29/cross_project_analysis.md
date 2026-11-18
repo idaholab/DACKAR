@@ -321,7 +321,8 @@ Sketched with the team after the Oct 27 meeting. Four steps, then the rules agre
 - **Chroma and the KG stay synchronized: mandatory, no drift allowed.** This applies to every write
   path, not only ingest. If an analytics method adds a CR-to-equipment edge in the KG, the Chroma
   record for that CR must gain the same equipment id. So all writes go through one shared write
-  function that updates both stores together (the `persist` intent, §5c), rather than each tool
+  function that updates both stores together (the `persist` and `assert_relation` intents, kept in
+  sync by a write journal, §5c), rather than each tool
   writing each store on its own.
 
 - **Analytics methods may modify the stores, with provenance.** For example, NER creates a new KG
@@ -398,7 +399,9 @@ never sync peer-to-peer); two store tiers (platform vs private); Spark ruled out
 November team sketch (§2e): one schema per file; document identity assigned at ingest, entity linking
 done later by analytics; an equipment-ID list counts as an MBSE model with nodes only; Chroma and the
 KG must never drift apart, on any write path; every analytics write carries provenance; every data
-element keeps metadata back to its source file.
+element keeps metadata back to its source file. From the write-side discussion (§5c): a third
+write intent, `assert_relation`, for relations between existing concepts; and a write journal that
+guarantees Chroma and the KG stay in sync.
 
 ---
 
@@ -508,7 +511,7 @@ This is the meeting's deliverable. Designed from the §4 evidence, not invented.
 **the protocol governs how an engine touches a platform store — nothing more.** Pure-compute engines
 (the whole C layer, all of LOGOS) take JSON in and return JSON out; they are not protocol consumers,
 and the protocol must not try to wrap them. Private stores (§2a) sit behind an engine and are invisible
-here too. So the protocol is small: **three reads, two writes, a gate, and an envelope** that rides on
+here too. So the protocol is small: **three reads, three writes, a gate, and an envelope** that rides on
 every read and write.
 
 ### 5a. What the protocol is NOT responsible for
@@ -552,36 +555,63 @@ Deliberately **not** promoted to protocol level: the tuple-returning `(matches, 
 (gap #2). That is one engine's enriched variant of `retrieve`; keep it as that engine's own method, not
 a platform shape. Forcing every retriever to return a tuple would tax the common path for one caller.
 
-### 5c. Writes — two intents, not three sinks
-Earlier drafts exposed the three physical sinks (`upsert_records`, `upsert_nodes`, `save`) as the
+### 5c. Writes — three intents, one journal (updated 2026-11-18)
+Earlier drafts exposed the physical sinks (`upsert_records`, `upsert_nodes`, `save`) as the
 protocol's write surface. That reasons at the **sink level** and leaks store mechanics to the caller.
-At the **protocol level** there are only **two write intents**, distinguished by what is being written
-and how it is keyed:
+At the **protocol level** there are **three write intents**, distinguished by what is being written
+and how it is keyed. (The first draft had two; the third was added on 2026-11-18, because the
+analytics writes in §2e had no protocol shape.)
 
-- **`persist(canonical_object) -> canonical_id`** — persist a canonical concept (a condition_report, a
-  work_order, an asset). The caller hands over one canonical object; the platform mints/uses its
-  `canonical_id` and **fans out to its projections**. Identity-keyed, multi-store. This **is** the
-  one-write-path rule expressed as an API: a caller cannot write one store without the others. That
-  alone does **not** guarantee the stores stay in sync: Neo4j and Chroma share no transaction, so a
-  failure between the two writes leaves them out of step. The no-drift rule (§2e) needs a recovery
-  mechanism on top of `persist`; that mechanism is still open (§6, open question 11). **Two kinds of projection, not one tempo:** KG and Chroma are written
-  **synchronously** inside the call (cheap, deterministic). The **wiki page is LLM-generated**, so it
-  cannot block the write — it is regenerated **asynchronously** when the canonical concept changes. So
-  `persist` returns once KG + Chroma are committed; the wiki projection is an eventually-consistent
-  render triggered by the change, not a synchronous leg.
-- **`save_artifact(run_id, name, payload) -> key`** — persist a derived run output (an RCA card, an
+- **`persist(canonical_object) -> canonical_id`** — write a canonical concept (a condition_report, a
+  work_order, an asset). The caller hands over one canonical object; the platform mints or reuses its
+  `canonical_id` and **fans out to its projections**. Identity-keyed, multi-store. This is the
+  one-write-path rule expressed as an API: a caller cannot write one store without the others.
+- **`assert_relation(from_id, relation, to_id, attrs, producer) -> relation_key`** — record a
+  relation between two concepts that already exist. This is the most frequent write in the design
+  (§2e): NER linking a CR to an equipment node, semantic analysis linking similar events across CRs
+  and shift logs with a score. Rules:
+  - **`producer`** names the method and its version (for example `ner-v3`). A re-run of the same
+    producer **replaces** the relations it wrote before instead of adding duplicates, so analytics can
+    be re-run safely (the arrival-order rule in §2e depends on this).
+  - **Gated like every write:** the relation name must be declared in the schemas, and both
+    endpoints must already exist.
+  - **Fans out to both stores:** the KG gets the edge, and Chroma's records for the source concept
+    gain the matching reference (for example the CR's chunks gain the equipment id), so the stores
+    agree.
+  - **`attrs`** carries the edge properties, such as a similarity score or a resolution confidence,
+    checked against any bounds the schema declares.
+- **`save_artifact(run_id, name, payload) -> key`** — write a derived run output (an RCA card, an
   evidence bundle, a schedule-impact report). Run-keyed, single-store (the artifact store). These are
   not canonical concepts that fan out; they are the record of one workflow run.
 
-Why two and not one: a canonical concept and a run artifact are genuinely different writes — one is
-identity-keyed and projects to many stores, the other is run-keyed and lands in one. Collapsing them
-would be the over-abstraction. Why two and not three-plus: the three physical sinks
-(`upsert_records` / `upsert_nodes` / `save_list`) are **demoted to internal projection mechanics**
-below `persist` — the projection logic decides which sinks fire for a given canonical object. The
-caller never chooses a sink.
+Why three and not fewer: a canonical concept, a relation between existing concepts, and a run artifact
+are genuinely different writes. `persist` is identity-keyed and creates or updates a concept;
+`assert_relation` is keyed by its producer and connects concepts that already exist; `save_artifact`
+is run-keyed and lands in one store. Folding relations into `persist` would force a caller to resend
+a whole concept just to add one edge, and would lose the producer-replace rule. Why not more: the
+physical sinks (`upsert_records` / `upsert_nodes` / `upsert_edges_batch` / `save_list`) are
+**internal projection mechanics** below these intents. The caller never chooses a sink.
+
+**How the stores stay in sync: a write journal (decided 2026-11-18).** Neo4j and Chroma share no
+transaction, so a write can succeed in one store and fail in the other. The no-drift rule (§2e) is
+guaranteed by a journal in the canonical layer:
+1. Every `persist` and `assert_relation` is first appended to the journal, then applied to both
+   stores.
+2. An entry is marked complete only when **both** stores confirm it.
+3. Incomplete entries are retried until they land, both at startup and on a schedule.
+
+This works because every write is **idempotent**: replaying an entry gives the same result, since a
+concept is keyed by its `canonical_id` and a relation by its endpoints, name and producer. The journal
+also gives an ordered history of every change, which helps the update policy that is still on standby
+(§6, open question 10). `save_artifact` writes one store, so it needs no journal.
+
+**Two tempos:** KG and Chroma are applied **synchronously** inside the call. The **wiki page is
+LLM-generated**, so it cannot block the write — it is regenerated **asynchronously** when a concept
+changes. So the call returns once KG and Chroma are committed; the wiki is an eventually-consistent
+render triggered by the change, not a synchronous leg.
 
 In-place mutation (gap #4, §4d) is a pure-compute concern *between* engines, not a store write — it
-never reaches either intent, so the protocol need not address it.
+never reaches any write intent, so the protocol need not address it.
 
 ### 5d. The gate
 Every write passes schema validation before it persists. **Status: proposed, not built.** The
@@ -609,9 +639,10 @@ meaningful." Make both **first-class fields** carried by the protocol, not left 
 
 ### 5f. Agentic framing — the protocol IS the tool surface
 If we go agentic, these shapes are the agent's tools, one-to-one: `retrieve`, `graph_query`, `get`,
-`persist`, `save_artifact`, each behind the gate. The wiki `get`/`retrieve` give an agent a
-human-readable page to read as a tool. An agent says "persist this condition_report," never "upsert
-these nodes" — one write tool per intent, so it cannot write one store and skip the other. Two added requirements fall
+`persist`, `assert_relation`, `save_artifact`, each behind the gate. The wiki `get`/`retrieve` give
+an agent a human-readable page to read as a tool. An agent says "persist this condition_report" or
+"assert that this CR mentions pump P-101," never "upsert these nodes" — one write tool per intent, so
+it cannot write one store and skip the other. Two added requirements fall
 out: the shapes need **machine-readable descriptions** (the schema registry becomes the tool catalog),
 and the envelope's **origin** field becomes mandatory (so agent writes are distinguishable). Nothing
 else changes — the same protocol serves deterministic engines and agent tools, which is exactly why the
@@ -684,13 +715,14 @@ example holding up under a live store, not just on paper.
 10. **Ingestion update policy (on standby, §2e)** — how to handle re-ingesting the same file, an
     amended CR (a new version linked to the old one), and deletions. Not decided. Meanwhile every record
     stores its content hash and source id, so the policy can be applied later without re-parsing.
-11. **How "no drift" is guaranteed (to discuss)** — Neo4j and Chroma share no transaction, so `persist`
-    alone cannot keep them in sync if a write fails partway (§5c). Options: a write journal in the
-    canonical layer replayed until both stores confirm, writing canonical first and rebuilding the
-    projections from it, or a periodic reconciliation job.
-12. **Relation and update writes (to discuss)** — §2e has analytics add edges between existing nodes
-    and replace their own earlier output, but the protocol's two write intents (`persist`,
-    `save_artifact`) express neither. The most frequent write in the design has no protocol shape yet.
+11. **How "no drift" is guaranteed — DECIDED (2026-11-18): a write journal.** Every `persist` and
+    `assert_relation` is appended to a journal in the canonical layer, applied to both stores, and
+    retried until both confirm; writes are idempotent so replay is safe (§5c). Still to design: where
+    the journal lives, and how retries are reported.
+12. **Relation and update writes — DECIDED (2026-11-18): a third write intent, `assert_relation`.**
+    It records a relation between existing concepts, names its producer so a re-run replaces earlier
+    output, is gated, and fans out to both stores (§5c). Still to design: whether a producer can
+    retract a single relation, and how a human review marks a relation as confirmed.
 
 ### 6d. Wish-list (raised, not yet scoped)
 - **Natural-language query over multiple data structures.** Oct 12 action item 1: let a user ask a
